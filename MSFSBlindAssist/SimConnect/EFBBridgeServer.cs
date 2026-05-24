@@ -20,8 +20,8 @@ namespace MSFSBlindAssist.SimConnect
 
     public class EFBBridgeServer : IDisposable
     {
-        private const int Port = 19777;
-        private const string Prefix = "http://localhost:19777/";
+        private readonly int _port;
+        private string Prefix => $"http://localhost:{_port}/";
         private const int HeartbeatTimeoutSeconds = 15;
         private const int CommandExpirySeconds = 30;
         private const int MaxRequestBodyBytes = 512 * 1024; // 512 KB — raised for page_html which can be 200-500 KB
@@ -29,7 +29,10 @@ namespace MSFSBlindAssist.SimConnect
 
         private HttpListener? _listener;
         private CancellationTokenSource? _cts;
+        // Default queue — used by PMDG EFB bridge (polls /commands) and 787 EFB bridge (polls /commands/efb)
         private readonly ConcurrentQueue<(EFBCommand Command, DateTime EnqueuedAt)> _commandQueue = new();
+        // MFD-specific queue — used by 787 MFD bridge (polls /commands/mfd)
+        private readonly ConcurrentQueue<(EFBCommand Command, DateTime EnqueuedAt)> _mfdCommandQueue = new();
         private readonly SynchronizationContext? _syncContext;
         private DateTime _lastHeartbeat = DateTime.MinValue;
         private bool _disposed;
@@ -41,6 +44,14 @@ namespace MSFSBlindAssist.SimConnect
         // Cached display elements for serving via /display-data
         private string _cachedDisplayElementsJson = "[]";
         private readonly object _displayLock = new();
+
+        // Last eval_result posted by a bridge (HS787 MFD or PMDG EFB), captured
+        // in ALL build configs so the always-available GET /mfd-eval-result can
+        // return it. This is the Release-safe readback path for the live bridge
+        // REPL: POST /mfd-eval enqueues an eval_js MFD command, the bridge polls
+        // it, evals, and posts eval_result back here. Same localhost-only trust
+        // boundary the PMDG EFB bridge already ships eval_js under.
+        private volatile string _lastMfdEvalResultJson = "{\"status\":\"none\"}";
 
 #if DEBUG
         // Debug: ring buffer of recent state updates keyed by type, for
@@ -75,8 +86,9 @@ namespace MSFSBlindAssist.SimConnect
         public bool IsRunning => _listener?.IsListening == true;
         public bool IsBridgeConnected => (DateTime.UtcNow - _lastHeartbeat).TotalSeconds < HeartbeatTimeoutSeconds;
 
-        public EFBBridgeServer()
+        public EFBBridgeServer(int port = 19777)
         {
+            _port = port;
             _syncContext = SynchronizationContext.Current;
         }
 
@@ -122,6 +134,7 @@ namespace MSFSBlindAssist.SimConnect
             }
         }
 
+        /// <summary>Enqueue a command for the EFB bridge (or PMDG EFB). Polled at /commands.</summary>
         public void EnqueueCommand(string command, Dictionary<string, string>? payload = null)
         {
             while (_commandQueue.Count >= MaxQueueSize)
@@ -132,6 +145,12 @@ namespace MSFSBlindAssist.SimConnect
                 }
             }
             _commandQueue.Enqueue((new EFBCommand { Command = command, Payload = payload }, DateTime.UtcNow));
+        }
+
+        /// <summary>Enqueue a command exclusively for the 787 MFD bridge. Polled at /commands/mfd.</summary>
+        public void EnqueueMfdCommand(string command, Dictionary<string, string>? payload = null)
+        {
+            _mfdCommandQueue.Enqueue((new EFBCommand { Command = command, Payload = payload }, DateTime.UtcNow));
         }
 
         public bool HasPendingCommand(string commandName)
@@ -218,6 +237,7 @@ namespace MSFSBlindAssist.SimConnect
             response.Headers.Add("Access-Control-Allow-Origin", "*");
             response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
             response.Headers.Add("Access-Control-Allow-Headers", "Content-Type");
+            response.Headers.Add("Access-Control-Allow-Private-Network", "true");
 
             try
             {
@@ -239,7 +259,13 @@ namespace MSFSBlindAssist.SimConnect
                         await HandleStateUpdate(request, response);
                         break;
                     case "/commands" when request.HttpMethod == "GET":
-                        await HandleGetCommands(response);
+                        await HandleGetCommands(response, _commandQueue);
+                        break;
+                    case "/commands/mfd" when request.HttpMethod == "GET":
+                        await HandleGetCommands(response, _mfdCommandQueue);
+                        break;
+                    case "/commands/efb" when request.HttpMethod == "GET":
+                        await HandleGetCommands(response, _commandQueue);
                         break;
                     case "/display":
                         await ServeDisplayPage(response);
@@ -252,6 +278,17 @@ namespace MSFSBlindAssist.SimConnect
                         break;
                     case "/display-set-value" when request.HttpMethod == "POST":
                         await HandleDisplaySetValue(request, response);
+                        break;
+                    // Always-available live bridge REPL (Release-safe). Localhost-only
+                    // (HttpListener binds 127.0.0.1), same trust boundary the PMDG EFB
+                    // bridge already ships eval_js under. POST a JS snippet, the MFD
+                    // bridge polls + evals + posts eval_result back; GET reads it.
+                    // Used to iterate bridge JS without sim/MSFSBA restarts.
+                    case "/mfd-eval" when request.HttpMethod == "POST":
+                        await HandleMfdEval(request, response);
+                        break;
+                    case "/mfd-eval-result" when request.HttpMethod == "GET":
+                        await HandleMfdEvalResult(response);
                         break;
 #if DEBUG
                     // Debug endpoints gated to Debug builds only. /debug-enqueue
@@ -326,6 +363,18 @@ namespace MSFSBlindAssist.SimConnect
 
                 var args = new EFBStateUpdateEventArgs { Type = type, Data = data };
 
+                // Capture eval_result in ALL build configs for the Release-safe
+                // GET /mfd-eval-result readback (the live bridge REPL).
+                if (type == "eval_result")
+                {
+                    _lastMfdEvalResultJson = JsonSerializer.Serialize(new
+                    {
+                        status = "ok",
+                        receivedAt = DateTime.UtcNow.ToString("O"),
+                        data
+                    });
+                }
+
 #if DEBUG
                 // Record for debug introspection (external test access).
                 _debugLastState[type] = new DebugStateRecord
@@ -353,14 +402,15 @@ namespace MSFSBlindAssist.SimConnect
             await WriteJson(response, new { received = true });
         }
 
-        private async Task HandleGetCommands(HttpListenerResponse response)
+        private async Task HandleGetCommands(HttpListenerResponse response,
+            ConcurrentQueue<(EFBCommand Command, DateTime EnqueuedAt)> queue)
         {
             _lastHeartbeat = DateTime.UtcNow;
 
             var commands = new List<object>();
             var now = DateTime.UtcNow;
 
-            while (_commandQueue.TryDequeue(out var item))
+            while (queue.TryDequeue(out var item))
             {
                 if ((now - item.EnqueuedAt).TotalSeconds > CommandExpirySeconds)
                     continue;
@@ -641,6 +691,62 @@ loadItems();
                 System.Diagnostics.Debug.WriteLine($"EFBBridgeServer: Set value error: {ex.Message}");
                 await WriteJson(response, new { set = false, error = ex.Message });
             }
+        }
+
+        // --- Always-available live bridge REPL (Release-safe) ---
+        //
+        // The HS787 MFD bridge (and PMDG EFB bridge) ship an eval_js command.
+        // These two endpoints expose it for restart-free iteration:
+        //
+        //   POST /mfd-eval         body: {"code":"document.querySelector('.x')&&1"}
+        //   GET  /mfd-eval-result  -> {"status":"ok","data":{"result":"…"}}
+        //
+        // Flow: POST a snippet (enqueued as an eval_js MFD command) -> the MFD
+        // bridge polls /commands/mfd, evals it, posts eval_result back -> GET
+        // /mfd-eval-result returns the latest. Localhost-only (HttpListener
+        // binds 127.0.0.1); only the local MSFSBA process can be reached. This
+        // is the SAME trust boundary the PMDG EFB bridge already ships eval_js
+        // under (via the in-app Ctrl+Shift+R hot-reload command queue) — these
+        // endpoints just make it scriptable for bridge debugging. NOTE: the MFD
+        // bridge only dequeues commands while a CDU page is visible on the MFD.
+
+        private async Task HandleMfdEval(HttpListenerRequest request, HttpListenerResponse response)
+        {
+            if (request.ContentLength64 > MaxRequestBodyBytes)
+            {
+                response.StatusCode = 413;
+                await WriteJson(response, new { error = "Request too large" });
+                return;
+            }
+            using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
+            string body = await reader.ReadToEndAsync();
+            try
+            {
+                var json = JsonDocument.Parse(body);
+                string code = json.RootElement.GetProperty("code").GetString() ?? "";
+                if (string.IsNullOrEmpty(code))
+                {
+                    response.StatusCode = 400;
+                    await WriteJson(response, new { error = "code required" });
+                    return;
+                }
+                EnqueueMfdCommand("eval_js", new Dictionary<string, string> { ["code"] = code });
+                await WriteJson(response, new { enqueued = true, bytes = code.Length });
+            }
+            catch (Exception ex)
+            {
+                response.StatusCode = 500;
+                await WriteJson(response, new { error = ex.Message });
+            }
+        }
+
+        private async Task HandleMfdEvalResult(HttpListenerResponse response)
+        {
+            response.ContentType = "application/json";
+            byte[] bytes = Encoding.UTF8.GetBytes(_lastMfdEvalResultJson);
+            response.ContentLength64 = bytes.Length;
+            await response.OutputStream.WriteAsync(bytes);
+            response.Close();
         }
 
 #if DEBUG
