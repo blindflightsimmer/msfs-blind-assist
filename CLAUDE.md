@@ -196,6 +196,10 @@ Details: [docs/taxi-guidance.md](docs/taxi-guidance.md).
 
 **Announcements:** Use `Announce()` (queued) in ProcessSimVarUpdate, `AnnounceImmediate()` only in HandleHotkeyAction. `IsAnnounced = true` is required for continuous monitoring registration. Suppress button push state (_Sw_Pushed) announcements via RenderAsButton check. Annunciator lights announce both on and off states. For variables needing cache but no auto-announcement, set `IsAnnounced = true` and return `true` from ProcessSimVarUpdate to suppress.
 
+### PMDG 737-800 NG3 Specific Patterns
+
+Details: [docs/pmdg-737.md](docs/pmdg-737.md). Key gotchas: two CDUs (no observer), no FPA mode, annunciator names differ from 777 (LVL_CHG / HDG_SEL / VOR_LOC), DU selectors have "reverse sequence for FO", fire handles need an active fire to test, EFB support is gated on `IPMDGAircraft.HasEFBSupport` (false for 737 until the follow-up PR).
+
 ### PMDG 777 EFB Bridge
 
 The EFB (Electronic Flight Bag) tablet is made accessible via a JavaScript bridge injected through an MSFS mod package override.
@@ -302,6 +306,7 @@ Written by `hs787-mfd-bridge.js` via `SimVar.SetSimVarValue`; read by C# via Sim
 - **Fenix rotary encoders (RMP, FCU)** → [Fenix Increment/Decrement](docs/fenix-increment-decrement.md)
 - **Tuning visual guidance PID controller** → [Visual Guidance](docs/visual-guidance.md)
 - **Working on taxi guidance (graph, router, tone, form)** → [Taxi Guidance](docs/taxi-guidance.md)
+- **Working on PMDG 737-800 panels, CDU, NG3 data struct** → [PMDG 737-800](docs/pmdg-737.md)
 - **Understanding variable patterns** → [Variable System](docs/variable-system.md)
 - **API reference** → [Aircraft Definitions](docs/aircraft-definitions.md)
 - **Dependencies and key files** → [Development](docs/development.md)
@@ -314,6 +319,7 @@ Written by `hs787-mfd-bridge.js` via `SimVar.SetSimVarValue`; read by C# via Sim
 - **[Fenix Increment/Decrement](docs/fenix-increment-decrement.md)** - Counter-based pattern for Fenix rotary encoders
 - **[Visual Guidance](docs/visual-guidance.md)** - PID controller tuning and ground track monitoring
 - **[Taxi Guidance](docs/taxi-guidance.md)** - Turn-by-turn taxi assistance, steering tone, ATC-constrained routing
+- **[PMDG 737-800](docs/pmdg-737.md)** - NG3 SDK patterns, two-CDU convention, FIRE_HandlePos ordering, EFB gating
 - **[Aircraft Definitions](docs/aircraft-definitions.md)** - Multi-aircraft dictionary system API reference
 - **[Hotkey System](docs/hotkey-system.md)** - Dual-mode hotkeys and multi-aircraft routing
 - **[Development](docs/development.md)** - Dependencies, key files, development notes

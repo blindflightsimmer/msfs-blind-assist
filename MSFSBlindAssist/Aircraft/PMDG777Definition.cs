@@ -9,10 +9,12 @@ namespace MSFSBlindAssist.Aircraft;
 /// Panel structure and event ID dictionary are defined here.
 /// Variables and panel controls will be populated in subsequent tasks.
 /// </summary>
-public class PMDG777Definition : BaseAircraftDefinition
+public class PMDG777Definition : BaseAircraftDefinition, IPMDGAircraft
 {
     public override string AircraftName => "PMDG 777";
     public override string AircraftCode => "PMDG_777";
+
+    public bool HasEFBSupport => true;
 
     // Cached merged variables dictionary — built once on first access.
     // All callers are read-only so sharing a single instance is safe.
@@ -5415,7 +5417,7 @@ public class PMDG777Definition : BaseAircraftDefinition
         if (varKey == "LTS_EmerLights")
         {
             int target = (int)value;
-            var dm = simConnect.PMDG777DataManager;
+            var dm = simConnect.PMDGDataManager;
             if (dm != null && (int)dm.GetFieldValue("LTS_EmerLightsSelector") == target)
             {
                 return true;
@@ -5436,9 +5438,16 @@ public class PMDG777Definition : BaseAircraftDefinition
             if (EventIds.TryGetValue(guardPair.Guard, out int gId) &&
                 EventIds.TryGetValue(guardPair.Switch, out int sId))
             {
-                _ = simConnect.SendPMDGGuardedToggle(
+                int targetPos = (int)value;
+                var dm = simConnect.PMDGDataManager;
+                if (dm != null && (int)dm.GetFieldValue(varDef.Name) == targetPos)
+                {
+                    return true; // already at target — no-op
+                }
+                _ = simConnect.SendPMDGGuardedSet(
                     guardPair.Guard,  (uint)gId,
-                    guardPair.Switch, (uint)sId);
+                    guardPair.Switch, (uint)sId,
+                    targetPos);
                 return true;
             }
         }
@@ -5526,7 +5535,7 @@ public class PMDG777Definition : BaseAircraftDefinition
             varKey == "MCP_ATArm_L" || varKey == "MCP_ATArm_R")
         {
             int target = (int)value;
-            var dm = simConnect.PMDG777DataManager;
+            var dm = simConnect.PMDGDataManager;
             if (dm != null)
             {
                 int current = (int)dm.GetFieldValue(varDef.Name);
@@ -5555,7 +5564,7 @@ public class PMDG777Definition : BaseAircraftDefinition
         // ------------------------------------------------------------------
         if (varKey == "ELEC_APU_Start")
         {
-            var dm = simConnect.PMDG777DataManager;
+            var dm = simConnect.PMDGDataManager;
             int current = dm != null ? (int)dm.GetFieldValue("ELEC_APU_Selector") : 0;
             if (current == 1)
                 simConnect.SendPMDGEvent(eventName, eventId, 2); // 2 = Start position
@@ -5574,7 +5583,7 @@ public class PMDG777Definition : BaseAircraftDefinition
         if (varKey == "FCTL_Flaps")
         {
             int target = (int)value;
-            var dm = simConnect.PMDG777DataManager;
+            var dm = simConnect.PMDGDataManager;
             if (dm != null && (int)dm.GetFieldValue("FCTL_Flaps_Lever") == target)
             {
                 return true;
@@ -5619,7 +5628,7 @@ public class PMDG777Definition : BaseAircraftDefinition
         if (varDef.ValueDescriptions.Count >= 2)
         {
             int target = (int)value;
-            var dm = simConnect.PMDG777DataManager;
+            var dm = simConnect.PMDGDataManager;
             if (dm != null)
             {
                 int current = (int)dm.GetFieldValue(varDef.Name);
@@ -5980,7 +5989,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
             case HotkeyAction.ReadHeading:
             {
-                var dm = simConnect.PMDG777DataManager;
+                var dm = simConnect.PMDGDataManager;
                 if (dm == null) return false;
                 int heading = (int)dm.GetFieldValue("MCP_Heading");
                 string hdgMode = (int)dm.GetFieldValue("MCP_HDGDial_Mode") == 0 ? "HDG" : "TRK";
@@ -5993,7 +6002,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
             case HotkeyAction.ReadSpeed:
             {
-                var dm = simConnect.PMDG777DataManager;
+                var dm = simConnect.PMDGDataManager;
                 if (dm == null) return false;
                 bool isBlank = (int)dm.GetFieldValue("MCP_IASBlank") > 0;
                 if (isBlank)
@@ -6017,7 +6026,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
             case HotkeyAction.ReadAltitude:
             {
-                var dm = simConnect.PMDG777DataManager;
+                var dm = simConnect.PMDGDataManager;
                 if (dm == null) return false;
                 int altitude = (int)dm.GetFieldValue("MCP_Altitude");
                 string altMode = "";
@@ -6030,7 +6039,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
             case HotkeyAction.ReadFCUVerticalSpeedFPA:
             {
-                var dm = simConnect.PMDG777DataManager;
+                var dm = simConnect.PMDGDataManager;
                 if (dm == null) return false;
                 int vsMode = (int)dm.GetFieldValue("MCP_VSDial_Mode");
                 string vsEngaged = (int)dm.GetFieldValue("MCP_annunVS_FPA") > 0 ? ", engaged" : "";
@@ -6053,7 +6062,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
             case HotkeyAction.ReadFuelQuantity:
             {
-                var dm = simConnect.PMDG777DataManager;
+                var dm = simConnect.PMDGDataManager;
                 if (dm == null) return false;
                 int left   = (int)Math.Round(dm.GetFieldValue("FUEL_QtyLeft"));
                 int center = (int)Math.Round(dm.GetFieldValue("FUEL_QtyCenter"));
@@ -6071,7 +6080,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
             case HotkeyAction.ReadFlaps:
             {
-                var dm = simConnect.PMDG777DataManager;
+                var dm = simConnect.PMDGDataManager;
                 if (dm == null) return false;
                 int lever = (int)dm.GetFieldValue("FCTL_Flaps_Lever");
                 string position = lever switch
@@ -6091,7 +6100,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
             case HotkeyAction.ReadGear:
             {
-                var dm = simConnect.PMDG777DataManager;
+                var dm = simConnect.PMDGDataManager;
                 if (dm == null) return false;
                 int gear = (int)dm.GetFieldValue("GEAR_Lever");
                 // GEAR_Lever: 0 = up, 1 = down
@@ -6105,7 +6114,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
             case HotkeyAction.ReadAltimeter:
             {
-                var dm = simConnect.PMDG777DataManager;
+                var dm = simConnect.PMDGDataManager;
                 if (dm == null) return false;
 
                 // Read actual altimeter setting from cached SimConnect variable
@@ -6133,7 +6142,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
             case HotkeyAction.ReadDistanceToTOD:
             {
-                var dm = simConnect.PMDG777DataManager;
+                var dm = simConnect.PMDGDataManager;
                 if (dm == null) return false;
 
                 // Enhanced mode: probe the PROG page on demand. The monitor
@@ -6193,7 +6202,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
             case HotkeyAction.ReadDistanceToDest:
             {
-                var dm = simConnect.PMDG777DataManager;
+                var dm = simConnect.PMDGDataManager;
                 if (dm == null) return false;
 
                 // Enhanced mode: probe the PROG DEST line on demand.
@@ -6283,7 +6292,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
             case HotkeyAction.ReadFuelInfo:
             {
-                var dm = simConnect.PMDG777DataManager;
+                var dm = simConnect.PMDGDataManager;
                 if (dm == null) return false;
                 int leftKg   = (int)Math.Round(dm.GetFieldValue("FUEL_QtyLeft") * 0.453592);
                 int centerKg = (int)Math.Round(dm.GetFieldValue("FUEL_QtyCenter") * 0.453592);
@@ -6396,7 +6405,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
     public override void RequestFCUHeading(SimConnect.SimConnectManager simConnect, ScreenReaderAnnouncer announcer)
     {
-        var dm = simConnect.PMDG777DataManager;
+        var dm = simConnect.PMDGDataManager;
         if (dm == null) return;
         int heading = (int)dm.GetFieldValue("MCP_Heading");
         announcer.AnnounceImmediate($"Heading {heading}");
@@ -6404,7 +6413,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
     public override void RequestFCUSpeed(SimConnect.SimConnectManager simConnect, ScreenReaderAnnouncer announcer)
     {
-        var dm = simConnect.PMDG777DataManager;
+        var dm = simConnect.PMDGDataManager;
         if (dm == null) return;
         float speed = (float)dm.GetFieldValue("MCP_IASMach");
         string speedText = speed < 10f
@@ -6415,7 +6424,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
     public override void RequestFCUAltitude(SimConnect.SimConnectManager simConnect, ScreenReaderAnnouncer announcer)
     {
-        var dm = simConnect.PMDG777DataManager;
+        var dm = simConnect.PMDGDataManager;
         if (dm == null) return;
         int altitude = (int)dm.GetFieldValue("MCP_Altitude");
         announcer.AnnounceImmediate($"Altitude {altitude}");
@@ -6423,7 +6432,7 @@ public class PMDG777Definition : BaseAircraftDefinition
 
     public override void RequestFCUVerticalSpeed(SimConnect.SimConnectManager simConnect, ScreenReaderAnnouncer announcer)
     {
-        var dm = simConnect.PMDG777DataManager;
+        var dm = simConnect.PMDGDataManager;
         if (dm == null) return;
         int vsMode = (int)dm.GetFieldValue("MCP_VSDial_Mode");
         if (vsMode == 1)
@@ -6475,7 +6484,7 @@ public class PMDG777Definition : BaseAircraftDefinition
     /// </summary>
     private static void AnnounceTODFromSDK(
         SimConnect.SimConnectManager simConnect,
-        SimConnect.PMDG777DataManager dm,
+        SimConnect.IPMDGDataManager dm,
         ScreenReaderAnnouncer announcer)
     {
         float dist = (float)dm.GetFieldValue("FMC_DistanceToTOD");
@@ -6504,7 +6513,7 @@ public class PMDG777Definition : BaseAircraftDefinition
     /// </summary>
     private static void AnnounceDestFromSDK(
         SimConnect.SimConnectManager simConnect,
-        SimConnect.PMDG777DataManager dm,
+        SimConnect.IPMDGDataManager dm,
         ScreenReaderAnnouncer announcer)
     {
         float dist = (float)dm.GetFieldValue("FMC_DistanceToDest");
@@ -6531,7 +6540,7 @@ public class PMDG777Definition : BaseAircraftDefinition
             return;
         }
 
-        var dm = simConnect.PMDG777DataManager;
+        var dm = simConnect.PMDGDataManager;
 
         var toggles = new List<ToggleButtonDef>
         {
@@ -6586,7 +6595,7 @@ public class PMDG777Definition : BaseAircraftDefinition
             return;
         }
 
-        var dm = simConnect.PMDG777DataManager;
+        var dm = simConnect.PMDGDataManager;
 
         var toggles = new List<ToggleButtonDef>
         {
@@ -6651,7 +6660,7 @@ public class PMDG777Definition : BaseAircraftDefinition
             return;
         }
 
-        var dm = simConnect.PMDG777DataManager;
+        var dm = simConnect.PMDGDataManager;
 
         var toggles = new List<ToggleButtonDef>
         {
@@ -6706,7 +6715,7 @@ public class PMDG777Definition : BaseAircraftDefinition
             return;
         }
 
-        var dm = simConnect.PMDG777DataManager;
+        var dm = simConnect.PMDGDataManager;
 
         var toggles = new List<ToggleButtonDef>
         {
