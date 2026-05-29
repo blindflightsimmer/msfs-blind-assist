@@ -8,6 +8,7 @@ using MSFSBlindAssist.Forms.A32NX;
 using MSFSBlindAssist.Forms.FenixA320;
 using MSFSBlindAssist.Forms.PMDG737;
 using MSFSBlindAssist.Forms.PMDG777;
+using MSFSBlindAssist.Forms.PMDGEFB;
 using MSFSBlindAssist.Forms.HS787;
 using MSFSBlindAssist.Hotkeys;
 using MSFSBlindAssist.Services;
@@ -134,19 +135,6 @@ public partial class MainForm : Form
         // Load last selected aircraft from settings
         var settings = MSFSBlindAssist.Settings.SettingsManager.Current;
         currentAircraft = LoadAircraftFromCode(settings.LastAircraft ?? "A320");
-
-        // Diagnostic: log the starting aircraft so we can see what the saved profile is.
-        try
-        {
-            var logPath = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "MSFSBlindAssist", "pmdg_ng3_diag.log");
-            var dir = System.IO.Path.GetDirectoryName(logPath);
-            if (dir != null) System.IO.Directory.CreateDirectory(dir);
-            System.IO.File.AppendAllText(logPath,
-                $"{DateTime.Now:HH:mm:ss.fff}  MainForm ctor: starting aircraft = {currentAircraft.GetType().Name} (code={currentAircraft.AircraftCode}, IPMDGAircraft={(currentAircraft is Aircraft.IPMDGAircraft)})\n");
-        }
-        catch { }
 
         InitializeComponent();
         InitializeManagers();
@@ -398,16 +386,6 @@ public partial class MainForm : Form
 
             // After SimConnect connects, if current aircraft is a PMDG type, initialize data manager.
             // Use IPMDGAircraft (not == "PMDG_777") so the 737 NG3 is initialized too.
-            try
-            {
-                var logPath = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "MSFSBlindAssist", "pmdg_ng3_diag.log");
-                System.IO.File.AppendAllText(logPath,
-                    $"{DateTime.Now:HH:mm:ss.fff}  OnConnect: currentAircraft={currentAircraft.GetType().Name}, is IPMDGAircraft={currentAircraft is IPMDGAircraft}\n");
-            }
-            catch { }
-
             if (currentAircraft is IPMDGAircraft)
             {
                 simConnectManager.InitializePMDG(currentAircraft);
@@ -1068,6 +1046,39 @@ public partial class MainForm : Form
                             combo.SelectedIndex = index;
                         }
                     }
+                }
+            }
+            else if (control is TextBox textBox && textBox.ReadOnly)
+            {
+                // Read-only status TextBox. Two flavors:
+                //  (a) Continuous-numeric readout (RenderAsReadOnlyStatus + Units +
+                //      no ValueDescriptions) — format as "<value:Format> <Units>".
+                //  (b) Enum-style status field (door state, annunciator, etc.) —
+                //      mirror the value through ValueDescriptions; fall back to
+                //      raw numeric if the cached value isn't in the map.
+                if (currentAircraft.GetVariables().ContainsKey(varName))
+                {
+                    var varDef = currentAircraft.GetVariables()[varName];
+                    string newText;
+                    bool isContinuousReadout =
+                        varDef.RenderAsReadOnlyStatus &&
+                        (varDef.ValueDescriptions == null || varDef.ValueDescriptions.Count == 0) &&
+                        !string.IsNullOrEmpty(varDef.Units);
+                    if (isContinuousReadout)
+                    {
+                        double displayValue = value * varDef.Scale + varDef.Offset;
+                        newText = $"{displayValue.ToString(varDef.Format, System.Globalization.CultureInfo.InvariantCulture)} {varDef.Units}";
+                    }
+                    else if (varDef.ValueDescriptions.TryGetValue(value, out string? desc))
+                    {
+                        newText = desc;
+                    }
+                    else
+                    {
+                        newText = value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    }
+                    if (textBox.Text != newText)
+                        textBox.Text = newText;
                 }
             }
             else if (control is Button btn)
@@ -2108,13 +2119,12 @@ public partial class MainForm : Form
             return;
         }
 
-        // Phase E will add a 737 case here.
         if (pmdgEFBForm == null || pmdgEFBForm.IsDisposed)
         {
-            pmdgEFBForm = new PMDG777EFBForm(efbBridgeServer, announcer);
+            pmdgEFBForm = new PMDGEFBForm(efbBridgeServer, announcer, currentAircraft.AircraftCode);
         }
 
-        ((PMDG777EFBForm)pmdgEFBForm).ShowForm();
+        ((PMDGEFBForm)pmdgEFBForm).ShowForm();
     }
 
     private void ShowHS787EFBFormDialog()
@@ -3579,18 +3589,6 @@ public partial class MainForm : Form
 
     private void SwitchAircraft(IAircraftDefinition newAircraft)
     {
-        try
-        {
-            var logPath = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "MSFSBlindAssist", "pmdg_ng3_diag.log");
-            var dir = System.IO.Path.GetDirectoryName(logPath);
-            if (dir != null) System.IO.Directory.CreateDirectory(dir);
-            System.IO.File.AppendAllText(logPath,
-                $"{DateTime.Now:HH:mm:ss.fff}  SwitchAircraft: from={currentAircraft?.GetType().Name} to={newAircraft.GetType().Name} (code={newAircraft.AircraftCode}, IPMDGAircraft={newAircraft is IPMDGAircraft}, IsConnected={simConnectManager.IsConnected})\n");
-        }
-        catch { }
-
         // Update the aircraft instance
         currentAircraft = newAircraft;
 
@@ -4350,6 +4348,62 @@ public partial class MainForm : Form
                 layout.Controls.Add(controlButton, 1, rowIndex);
                 currentControls[varKey] = controlButton;
             }
+            else if (varDef.RenderAsReadOnlyStatus &&
+                     (varDef.ValueDescriptions == null || varDef.ValueDescriptions.Count == 0) &&
+                     !string.IsNullOrEmpty(varDef.Units))
+            {
+                // Continuous-numeric read-only TextBox. Used for cockpit gauges
+                // exposed by the PMDG NG3 SDK as float fields (cabin altitude,
+                // DP, duct pressure, APU EGT, fuel temp, etc.). Text is
+                // "{value:Format} {Units}" and is silently refreshed on each
+                // continuous broadcast via UpdateControlFromSimVar — the user
+                // reads the current value by Tab-focusing the field.
+                TextBox readoutBox = new TextBox();
+                readoutBox.ReadOnly = true;
+                readoutBox.TabStop = true;
+                readoutBox.Size = new Size(240, 25);
+                readoutBox.Name = varKey;
+                readoutBox.AccessibleName = varDef.DisplayName;
+
+                string initial = "—";
+                if (currentSimVarValues.ContainsKey(varKey))
+                {
+                    double cur = currentSimVarValues[varKey] * varDef.Scale + varDef.Offset;
+                    initial = $"{cur.ToString(varDef.Format, System.Globalization.CultureInfo.InvariantCulture)} {varDef.Units}";
+                }
+                readoutBox.Text = initial;
+
+                layout.Controls.Add(readoutBox, 1, rowIndex);
+                currentControls[varKey] = readoutBox;
+            }
+            else if (varDef.ValueDescriptions != null && varDef.ValueDescriptions.Count > 1 &&
+                     (varDef.RenderAsReadOnlyStatus || varDef.OnlyAnnounceValueDescriptionMatches))
+            {
+                // Read-only status field (annunciators, door state, etc.).
+                // ValueDescriptions still drive the text; the user can focus the
+                // field for the screen reader to read it, but cannot change it.
+                TextBox statusBox = new TextBox();
+                statusBox.ReadOnly = true;
+                statusBox.TabStop = true;
+                statusBox.Size = new Size(240, 25);
+                statusBox.Name = varKey;
+                statusBox.AccessibleName = varDef.DisplayName;
+
+                // Seed initial text from cached value, falling back to numeric string
+                // and finally to "—" if no value is known yet.
+                string initial = "—";
+                if (currentSimVarValues.ContainsKey(varKey))
+                {
+                    double cur = currentSimVarValues[varKey];
+                    initial = varDef.ValueDescriptions.TryGetValue(cur, out string? desc)
+                        ? desc
+                        : cur.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
+                statusBox.Text = initial;
+
+                layout.Controls.Add(statusBox, 1, rowIndex);
+                currentControls[varKey] = statusBox;
+            }
             else if (varDef.ValueDescriptions != null && varDef.ValueDescriptions.Count > 1)
             {
                 // Check if variable should be rendered as button instead of combo box (aircraft-specific)
@@ -4781,6 +4835,22 @@ public partial class MainForm : Form
                 
                 button.Click += (s2, e2) =>
                 {
+                    // Aircraft delegation: let the loaded aircraft claim _SET keys
+                    // (e.g., PMDG 737's EFIS_MinsValueFt_*_SET vars need RST-then-rotate
+                    // dispatch). The aircraft parses textBox.Text itself; we pass the
+                    // double value when parseable, else 0.
+                    double parsedValue = 0;
+                    double.TryParse(
+                        textBox.Text.Replace(',', '.'),
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out parsedValue);
+                    if (currentAircraft.HandleUIVariableSet(
+                            varKey, parsedValue, varDef, simConnectManager, announcer))
+                    {
+                        return;
+                    }
+
                     // Special handling for transponder code (requires BCD encoding)
                     if (varKey == "TRANSPONDER_CODE_SET")
                     {

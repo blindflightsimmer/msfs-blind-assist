@@ -5,14 +5,20 @@ using MSFSBlindAssist.Forms;
 namespace MSFSBlindAssist.Aircraft;
 
 /// <summary>
-/// Aircraft definition for the PMDG 737-800 (NG3). Variables, panels, hotkey
+/// Aircraft definition for the PMDG 737 (NG3) family. Variables, panels, hotkey
 /// routing, MCP direct-set dialogs, and announcement logic. Tasks C2–C13 fill
-/// in the data dictionaries and behavior methods.
+/// in the data dictionaries and behavior methods. The NG3 SDK is shared across
+/// the 737 variants, so this definition serves all of them.
 /// </summary>
 public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
 {
-    public override string AircraftName => "PMDG 737-800";
+    public override string AircraftName => "PMDG 737";
     public override string AircraftCode => "PMDG_737";
+
+    // EFB accessibility bridge is supported on the 738 — it ships the identical
+    // EFB app as the 777, so the shared bridge JS + package and the 777 EFB panels
+    // are reused. Opened with Shift+T via the shared PMDGEFBForm.
+    public bool HasEFBSupport => true;
 
     // Cached merged variables dictionary — built once on first access.
     // All callers are read-only so sharing a single instance is safe.
@@ -55,6 +61,115 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
     private byte _lastAttendPressCount;
     private byte _lastGrdCallPressCount;
 
+    // Stabilizer trim, in units. Last announced value rounded to 0.1 unit, or
+    // NaN until the baseline is absorbed silently on connect. See the
+    // MON_PMDG737_StabTrim case in ProcessSimVarUpdate.
+    private double _lastAnnouncedStabTrim = double.NaN;
+
+    // Speed-brake lever position. The NG3 SDK exposes no lever-position field
+    // (the 777 has FCTL_Speedbrake_Lever; the 737 does not) and PMDG does not
+    // drive the stock SPOILERS HANDLE POSITION SimVar, so the analog handle
+    // position comes from the PMDG L-var switch_679_73X. The L-var sweeps
+    // CONTINUOUSLY as the lever animates (verified live — e.g. 62 / 337 caught
+    // mid-move), and continuous monitoring only fires on change, so a value that
+    // settles at a detent produces one final event then silence. We therefore
+    // announce on a trailing-edge SETTLE timer: every change restarts the timer
+    // and the resting detent is announced once movement stops. Detent values
+    // were verified live against MSFS NG3 (TFM's 272 for flight was a P3D value;
+    // it reads 337 here). Positions that come to rest between detents say nothing.
+    private readonly object _speedBrakeLock = new object();
+    private double _speedBrakeLatestValue = double.NaN;
+    private int _lastSpeedBrakeDetentAnnounced = int.MinValue;
+    private System.Threading.Timer? _speedBrakeSettleTimer;
+    private ScreenReaderAnnouncer? _speedBrakeAnnouncer;
+    private const int SpeedBrakeSettleMs = 300;
+
+    // EFIS Minimums knob step sizes per click on the PMDG NG3 737. RADIO mode
+    // (DH) clicks in 1-ft increments; BARO mode (DA) clicks in 20-ft increments.
+    // Values are empirical and may need tuning if a tester reports drift —
+    // change here and rebuild; no other code depends on these.
+    private const int MINS_STEP_FT_RADIO = 1;
+    private const int MINS_STEP_FT_BARO  = 20;
+    // Safety cap on a single Set operation. ~40 seconds worst-case at 40ms/click.
+    private const int MINS_MAX_CLICKS_PER_SET = 1000;
+
+    private static readonly (double Value, string Label)[] SpeedBrakeDetents =
+    {
+        (0,   "Speed brake down"),
+        (100, "Speed brake armed"),
+        (250, "Speed brake 50 percent"),
+        (337, "Speed brake flight"),
+        (400, "Speed brake fully deployed"),
+    };
+
+    // The detent index the handle is resting at (within tolerance), or -1 if it
+    // came to rest between named detents.
+    private static int SettledSpeedBrakeDetent(double value)
+    {
+        for (int i = 0; i < SpeedBrakeDetents.Length; i++)
+            if (Math.Abs(value - SpeedBrakeDetents[i].Value) <= 10.0) return i;
+        return -1;
+    }
+
+    // Fires SpeedBrakeSettleMs after the handle stops moving (the timer is
+    // restarted on every value change). Announces the resting detent once,
+    // skipping the initial baseline and unchanged positions. Runs on a
+    // thread-pool thread; ScreenReaderAnnouncer.Announce is queue-locked and
+    // safe to call off the UI thread.
+    private void OnSpeedBrakeSettle(object? state)
+    {
+        double value;
+        ScreenReaderAnnouncer? announcer;
+        lock (_speedBrakeLock)
+        {
+            value = _speedBrakeLatestValue;
+            announcer = _speedBrakeAnnouncer;
+        }
+        if (announcer == null || double.IsNaN(value)) return;
+
+        int idx = SettledSpeedBrakeDetent(value);
+        if (idx < 0) return;  // resting between detents — say nothing
+
+        bool announce;
+        lock (_speedBrakeLock)
+        {
+            if (idx == _lastSpeedBrakeDetentAnnounced) return;
+            announce = _lastSpeedBrakeDetentAnnounced != int.MinValue;  // skip baseline
+            _lastSpeedBrakeDetentAnnounced = idx;
+        }
+        if (announce)
+            announcer.Announce(SpeedBrakeDetents[idx].Label);
+    }
+
+    // Flap-position announcement state. The NG3 SDK exposes only the analog
+    // trailing-edge needle (MAIN_TEFlapsNeedle, degrees) — no commanded-detent
+    // field — so we snap to the nearest detent and debounce (announce a new
+    // detent only after two consecutive settled samples, so a multi-step
+    // extension doesn't chatter every intermediate detent it sweeps past).
+    private int _lastFlapDetentAnnounced = int.MinValue;
+    private int _flapDetentCandidate = int.MinValue;
+    private static readonly double[] FlapDetentDegs = { 0, 1, 2, 5, 10, 15, 25, 30, 40 };
+
+    // The detent the needle is settled at (within tolerance), or -1 mid-transit.
+    private static int SettledFlapDetent(double needleDeg)
+    {
+        foreach (double d in FlapDetentDegs)
+            if (Math.Abs(needleDeg - d) <= 0.6) return (int)d;
+        return -1;
+    }
+
+    // Nearest detent regardless of transit (for the on-demand "L" readout).
+    private static int NearestFlapDetent(double needleDeg)
+    {
+        int best = 0; double bestDiff = double.MaxValue;
+        foreach (double d in FlapDetentDegs)
+        {
+            double diff = Math.Abs(needleDeg - d);
+            if (diff < bestDiff) { bestDiff = diff; best = (int)d; }
+        }
+        return best;
+    }
+
     // PMDG 737 MCP supports direct SetValue events for SPD/HDG/ALT/VS (NG3 SDK
     // exposes EVT_*_SET style events just like the 777).
     public override FCUControlType GetAltitudeControlType() => FCUControlType.SetValue;
@@ -76,18 +191,18 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
                 "Anti-Ice", "Air Systems", "Lights", "Signs", "Oxygen",
                 "Wipers", "Flight Controls", "Flight Recorder"
             },
-            ["Glareshield"] = new List<string>
-            {
-                "Warnings", "EFIS Captain", "EFIS First Officer", "MCP", "Display Select"
-            },
             ["Forward Panel"] = new List<string>
             {
                 "Landing Gear", "Autobrake", "GPWS", "Instruments"
             },
             ["Pedestal"] = new List<string>
             {
-                "Control Stand", "Transponder", "Fire Protection", "Cargo Fire",
-                "Communication", "Flight Deck Door", "Trim"
+                "Control Stand", "Transponder/TCAS", "Fire Protection", "Cargo Fire",
+                "Radio", "Calls", "Flight Deck Door", "Boris Audio Works"
+            },
+            ["Glareshield"] = new List<string>
+            {
+                "MCP", "Warnings", "EFIS Captain", "EFIS First Officer", "Display Select"
             },
         };
     }
@@ -102,6 +217,12 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
             return _cachedVariables;
 
         var variables = GetBaseVariables();
+        // The PMDG NG3 does not drive the stock ELEVATOR TRIM POSITION SimVar
+        // (it stays pinned within ±0.04° regardless of actual stabilizer trim),
+        // so the base-class trim announcement is meaningless for this aircraft.
+        // Drop it and announce the real stab-trim units from the PMDG L-var
+        // ElevTrimTT instead (MON_PMDG737_StabTrim, added in GetPMDGVariables).
+        variables.Remove("MON_ElevatorTrim");
         var pmdgVars = GetPMDGVariables();
         foreach (var kvp in pmdgVars)
             variables[kvp.Key] = kvp.Value;
@@ -146,6 +267,24 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
                 IsAnnounced = true,
                 OnlyAnnounceValueDescriptionMatches = true,
                 ValueDescriptions = new Dictionary<double, string> { [0] = "off", [1] = "on" }
+            };
+        // Cabin/cargo door open-or-closed annunciator. The NG3 SDK models each
+        // door as a single bool (set = the overhead DOORS annunciator is lit =
+        // door open/unlatched). There is NO armed / closing / opening state — the
+        // 777 gets those from its multi-state DOOR_state[] array, but the 737 SDK
+        // has only the boolean, so the 737 announces open/closed only. Same shape
+        // as Annun but with door-appropriate "open"/"closed" labels instead of
+        // "on"/"off" (which read as the odd "Forward entry door off").
+        static SimConnect.SimVarDefinition Door(string name, string display) =>
+            new SimConnect.SimVarDefinition
+            {
+                Name = name,
+                DisplayName = display,
+                Type = SimConnect.SimVarType.PMDGVar,
+                UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+                IsAnnounced = true,
+                OnlyAnnounceValueDescriptionMatches = true,
+                ValueDescriptions = new Dictionary<double, string> { [0] = "closed", [1] = "open" }
             };
         // AnnunInverted: for annunciators named `annunOFF` / `annunBUS_OFF` / `annunSOURCE_OFF` etc.
         // These lamps light when the system they describe is OFF (the lamp NAME is the abnormal
@@ -193,7 +332,29 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
                 UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
                 IsAnnounced = false
             };
-        static SimConnect.SimVarDefinition Momentary(string name, string display) =>
+        // Continuous-numeric read-only TextBox for cockpit gauge readouts
+        // (cabin altitude, DP, duct pressure, APU EGT, fuel temp, etc.).
+        // Renders via the MainForm `RenderAsReadOnlyStatus + Units + no
+        // ValueDescriptions` branch. IsAnnounced=false so the gauge doesn't
+        // speak every broadcast — the user reads the value by Tab-focusing
+        // the TextBox.
+        static SimConnect.SimVarDefinition Readout(string name, string display,
+                                                   string units, string format = "F0",
+                                                   double scale = 1.0, double offset = 0.0) =>
+            new SimConnect.SimVarDefinition
+            {
+                Name = name,
+                DisplayName = display,
+                Type = SimConnect.SimVarType.PMDGVar,
+                UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+                IsAnnounced = false,
+                RenderAsReadOnlyStatus = true,
+                Units = units,
+                Format = format,
+                Scale = scale,
+                Offset = offset
+            };
+        static SimConnect.SimVarDefinition Momentary(string name, string display, string? stateVar = null) =>
             new SimConnect.SimVarDefinition
             {
                 Name = name,
@@ -201,10 +362,41 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
                 Type = SimConnect.SimVarType.PMDGVar,
                 UpdateFrequency = SimConnect.UpdateFrequency.Never,
                 RenderAsButton = true,
-                IsMomentary = true
+                IsMomentary = true,
+                StateVariable = stateVar
             };
 
         var d = new Dictionary<string, SimConnect.SimVarDefinition>();
+
+        // Stabilizer trim, in units (~0–17). The NG3 SDK exposes no trim
+        // position field (only the cutout switches) and PMDG does not drive the
+        // stock ELEVATOR TRIM POSITION SimVar, so the real value comes from the
+        // PMDG L-var ElevTrimTT — the same source TFM used and the value the
+        // cockpit stab-trim indicator shows. Announced (in units) by the
+        // MON_PMDG737_StabTrim case in ProcessSimVarUpdate; the stock-SimVar
+        // trim announcement is removed in GetVariables.
+        d["MON_PMDG737_StabTrim"] = new SimConnect.SimVarDefinition
+        {
+            Name = "ElevTrimTT",
+            DisplayName = "Stab Trim",
+            Type = SimConnect.SimVarType.LVar,
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = true  // custom announcement in ProcessSimVarUpdate
+        };
+
+        // Speed-brake lever position. The NG3 SDK exposes no lever-position
+        // field and PMDG does not drive the stock SPOILERS HANDLE POSITION
+        // SimVar, so the handle position comes from the PMDG L-var
+        // switch_679_73X (same source TFM used). Snapped to detents and
+        // announced by the MON_PMDG737_SpeedBrake case in ProcessSimVarUpdate.
+        d["MON_PMDG737_SpeedBrake"] = new SimConnect.SimVarDefinition
+        {
+            Name = "switch_679_73X",
+            DisplayName = "Speed Brake",
+            Type = SimConnect.SimVarType.LVar,
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = true  // custom announcement in ProcessSimVarUpdate
+        };
 
         // =================================================================
         // AFT OVERHEAD — ADIRU (IRS)
@@ -292,11 +484,15 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         // The switch is physically ON ↔ NORMAL on the NG3 cockpit, not OFF ↔ NORMAL.
         d["OXY_SwNormal"]         = Toggle("OXY_SwNormal", "Passenger Oxygen", "ON", "Normal");
         d["OXY_annunPASS_OXY_ON"] = Annun("OXY_annunPASS_OXY_ON", "PASS OXY ON");
-        // Oxygen pressure needle (SDK line 157: `byte OXY_Needle; // Position 0..240`).
-        // Quantity (no auto-announce) — the byte updates on every consumption tick and would
-        // flood the screen reader. Exposed in the Oxygen panel as a readable focus target for
-        // status queries. TFM has this as a Slider readout for parity.
-        d["OXY_Needle"]           = Quantity("OXY_Needle", "Oxygen Pressure Needle");
+        // 3-position spring-loaded crew oxygen TEST / NORMAL / RESET switches —
+        // one per side (L = Captain, R = First Officer). SDK exposes the events
+        // but no state-byte readback, so we surface only the TEST direction as
+        // a single momentary press per side (the standard LEFTSINGLE+LEFTRELEASE
+        // pattern from SendPMDGMomentaryToggle drives the "up" direction, which
+        // on this switch is the TEST detent). RESET is rarely used (only after
+        // a deployment cycle) and is intentionally omitted; revisit if needed.
+        d["OXY_TestL"] = Momentary("OXY_TestL", "Oxygen Test (Captain)");
+        d["OXY_TestR"] = Momentary("OXY_TestR", "Oxygen Test (First Officer)");
 
         // Gear overhead annunciators
         d["GEAR_annunOvhdLEFT"]  = Annun("GEAR_annunOvhdLEFT", "Gear Left");
@@ -324,6 +520,14 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         d["FCTL_AltnFlaps_Sw_ARM"] = Toggle("FCTL_AltnFlaps_Sw_ARM", "Alternate Flaps Arm", "OFF", "ARM");
         d["FCTL_AltnFlaps_Control_Sw"] = Selector("FCTL_AltnFlaps_Control_Sw", "Alternate Flaps Control",
             "UP", "OFF", "DOWN");
+        // LE Devices Test omitted: PMDG NG3 fires the cockpit click sound when
+        // EVT_OH_LE_DEVICES_TEST_SWITCH is sent, but the only LE-related SDK
+        // fields (MAIN_annunLE_FLAPS_TRANSIT / _EXT) don't change state during
+        // the test — the per-device LE position grid lights aren't exposed in
+        // the SDK at all. A blind pilot would have no way to observe the test
+        // result, so the button was removed (verified via simconnect-mcp:
+        // sending the event produced an audible click but zero observable
+        // state delta in any LE-related field).
         d["FCTL_annunFC_LOW_PRESSURE_0"] = Annun("FCTL_annunFC_LOW_PRESSURE_0", "Flight Control A LOW PRESSURE");
         d["FCTL_annunFC_LOW_PRESSURE_1"] = Annun("FCTL_annunFC_LOW_PRESSURE_1", "Flight Control B LOW PRESSURE");
         d["FCTL_annunYAW_DAMPER"]        = Annun("FCTL_annunYAW_DAMPER", "YAW DAMPER");
@@ -391,6 +595,10 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         d["FUEL_QtyCenter"] = Quantity("FUEL_QtyCenter", "Fuel Center Tank");
         d["FUEL_QtyLeft"]   = Quantity("FUEL_QtyLeft",   "Fuel Left Tank");
         d["FUEL_QtyRight"]  = Quantity("FUEL_QtyRight",  "Fuel Right Tank");
+        // Fuel temperature — continuous-numeric readout on the Fuel panel.
+        // Low temps at altitude signal fuel-icing risk (cross-monitor with
+        // anti-ice switches).
+        d["FUEL_FuelTempNeedle"]    = Readout("FUEL_FuelTempNeedle", "Fuel Temperature", "°C", "F0");
 
         // Electrical
         d["ELEC_annunBAT_DISCHARGE"] = Annun("ELEC_annunBAT_DISCHARGE", "Battery Discharge");
@@ -493,6 +701,10 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         d["APU_annunLOW_OIL_PRESSURE"] = Annun("APU_annunLOW_OIL_PRESSURE", "APU LOW OIL PRESSURE");
         d["APU_annunFAULT"]            = Annun("APU_annunFAULT", "APU FAULT");
         d["APU_annunOVERSPEED"]        = Annun("APU_annunOVERSPEED", "APU OVERSPEED");
+        // APU EGT — continuous-numeric readout shown on the Electrical panel
+        // next to APU Selector. Ramps during start; important for hot-start
+        // detection (NG3 APU max EGT during start is ~760°C).
+        d["APU_EGTNeedle"]             = Readout("APU_EGTNeedle", "APU EGT", "°C", "F0");
 
         // Wipers
         d["OH_WiperLSelector"] = Selector("OH_WiperLSelector", "Wiper Left", "PARK", "INT", "LOW", "HIGH");
@@ -610,8 +822,6 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         d["AIR_annunOFFSCHED_DESCENT"]  = Annun("AIR_annunOFFSCHED_DESCENT", "Off Schedule Descent");
         d["AIR_annunALTN"]              = Annun("AIR_annunALTN", "Pressurization ALTN");
         d["AIR_annunMANUAL"]            = Annun("AIR_annunMANUAL", "Pressurization MANUAL");
-        d["AIR_DisplayFltAlt"]          = Display("AIR_DisplayFltAlt", "Flight Altitude Display");
-        d["AIR_DisplayLandAlt"]         = Display("AIR_DisplayLandAlt", "Landing Altitude Display");
         // TFM: `_neutralClosedOrOpenStates` (0:opened, 1:neutral, 2:closed) — REVERSED.
         // SDK line 292: `unsigned int AIR_OutflowValveSwitch; // 0=CLOSE  1=NEUTRAL  2=OPEN`.
         // Resolved with SDK: TFM's dict has byte 0 and byte 2 labelled swapped from the SDK
@@ -621,19 +831,44 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         d["AIR_PressurizationModeSelector"] = Selector("AIR_PressurizationModeSelector",
             "Pressurization Mode", "AUTO", "ALTN", "MAN");
 
+        // Pressurization, duct-pressure, and cabin-temperature readouts —
+        // continuous-numeric SDK fields rendered as read-only TextBoxes on
+        // the Air Systems panel. IsAnnounced=false (no auto-announce every
+        // broadcast); the pilot reads the current value by Tab-focusing the
+        // field and letting the screen reader speak the text.
+        d["AIR_CabinAltNeedle"]      = Readout("AIR_CabinAltNeedle", "Cabin Altitude", "ft", "F0");
+        d["AIR_CabinDPNeedle"]       = Readout("AIR_CabinDPNeedle", "Cabin Differential Pressure", "PSI", "F2");
+        d["AIR_CabinVSNeedle"]       = Readout("AIR_CabinVSNeedle", "Cabin Vertical Speed", "ft/min", "F0");
+        // SDK doc says CabinValveNeedle is 0..1, but PMDG actually returns 0..100
+        // (verified live: outflow valve fully open on the ground reads 100.0, not
+        // 1.0). So format as plain integer percent — using "P0" would multiply
+        // by another ×100 and display 10000 %.
+        d["AIR_CabinValveNeedle"]    = Readout("AIR_CabinValveNeedle", "Outflow Valve Position", "%", "F0");
+        d["AIR_DuctPress_0"]         = Readout("AIR_DuctPress_0", "Duct Pressure Left", "PSI", "F0");
+        d["AIR_DuctPress_1"]         = Readout("AIR_DuctPress_1", "Duct Pressure Right", "PSI", "F0");
+        // SDK doc says TemperatureNeedle is in °C, but PMDG actually returns °F
+        // (verified live: supply duct read 141.11 cold-and-dark, which is
+        // ~60 °C — plausible only as Fahrenheit; 141 °C is structurally
+        // impossible). Apply the F→C transform: C = F·(5/9) + (-160/9).
+        d["AIR_TemperatureNeedle"]   = Readout("AIR_TemperatureNeedle", "Temperature", "°C", "F0",
+                                                scale: 5.0 / 9.0, offset: -160.0 / 9.0);
+        // Bleed-overheat detection self-test. Pure momentary push; SDK exposes
+        // only the event, no state field.
+        d["AIR_BleedOvhtTest"]       = Momentary("AIR_BleedOvhtTest", "Bleed Overheat Test");
+
         // Doors
-        d["DOOR_annunFWD_ENTRY"]          = Annun("DOOR_annunFWD_ENTRY", "Forward Entry Door");
-        d["DOOR_annunFWD_SERVICE"]        = Annun("DOOR_annunFWD_SERVICE", "Forward Service Door");
-        d["DOOR_annunAIRSTAIR"]           = Annun("DOOR_annunAIRSTAIR", "Airstair Door");
-        d["DOOR_annunLEFT_FWD_OVERWING"]  = Annun("DOOR_annunLEFT_FWD_OVERWING", "Left Forward Overwing");
-        d["DOOR_annunRIGHT_FWD_OVERWING"] = Annun("DOOR_annunRIGHT_FWD_OVERWING", "Right Forward Overwing");
-        d["DOOR_annunFWD_CARGO"]          = Annun("DOOR_annunFWD_CARGO", "Forward Cargo");
-        d["DOOR_annunEQUIP"]              = Annun("DOOR_annunEQUIP", "Equipment Hatch");
-        d["DOOR_annunLEFT_AFT_OVERWING"]  = Annun("DOOR_annunLEFT_AFT_OVERWING", "Left Aft Overwing");
-        d["DOOR_annunRIGHT_AFT_OVERWING"] = Annun("DOOR_annunRIGHT_AFT_OVERWING", "Right Aft Overwing");
-        d["DOOR_annunAFT_CARGO"]          = Annun("DOOR_annunAFT_CARGO", "Aft Cargo");
-        d["DOOR_annunAFT_ENTRY"]          = Annun("DOOR_annunAFT_ENTRY", "Aft Entry Door");
-        d["DOOR_annunAFT_SERVICE"]        = Annun("DOOR_annunAFT_SERVICE", "Aft Service Door");
+        d["DOOR_annunFWD_ENTRY"]          = Door("DOOR_annunFWD_ENTRY", "Forward Entry Door");
+        d["DOOR_annunFWD_SERVICE"]        = Door("DOOR_annunFWD_SERVICE", "Forward Service Door");
+        d["DOOR_annunAIRSTAIR"]           = Door("DOOR_annunAIRSTAIR", "Airstair Door");
+        d["DOOR_annunLEFT_FWD_OVERWING"]  = Door("DOOR_annunLEFT_FWD_OVERWING", "Left Forward Overwing");
+        d["DOOR_annunRIGHT_FWD_OVERWING"] = Door("DOOR_annunRIGHT_FWD_OVERWING", "Right Forward Overwing");
+        d["DOOR_annunFWD_CARGO"]          = Door("DOOR_annunFWD_CARGO", "Forward Cargo");
+        d["DOOR_annunEQUIP"]              = Door("DOOR_annunEQUIP", "Equipment Hatch");
+        d["DOOR_annunLEFT_AFT_OVERWING"]  = Door("DOOR_annunLEFT_AFT_OVERWING", "Left Aft Overwing");
+        d["DOOR_annunRIGHT_AFT_OVERWING"] = Door("DOOR_annunRIGHT_AFT_OVERWING", "Right Aft Overwing");
+        d["DOOR_annunAFT_CARGO"]          = Door("DOOR_annunAFT_CARGO", "Aft Cargo");
+        d["DOOR_annunAFT_ENTRY"]          = Door("DOOR_annunAFT_ENTRY", "Aft Entry Door");
+        d["DOOR_annunAFT_SERVICE"]        = Door("DOOR_annunAFT_SERVICE", "Aft Service Door");
 
         // =================================================================
         // BOTTOM OVERHEAD — Landing lights, APU, engine start, ignition, exterior
@@ -707,11 +942,43 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         d["WARN_annunOVERHEAD"]   = Annun("WARN_annunOVERHEAD", "Overhead Warning");
         d["WARN_annunAIR_COND"]   = Annun("WARN_annunAIR_COND", "Air Conditioning Warning");
 
+        // Master Warning / Master Caution recall (momentary). Press once to
+        // silence the corresponding light. PMDG NG3 recalls both sides on
+        // either press, so the LEFT-side events are sufficient.
+        d["WARN_ResetFireWarning"]  = Momentary("WARN_ResetFireWarning",  "Clear Fire Warning");
+        d["WARN_ResetMasterCaution"] = Momentary("WARN_ResetMasterCaution", "Clear Master Caution");
+        // Cabin altitude warning horn cutout — silences the warning horn after
+        // a depressurization event so the crew can use the radios. Pure
+        // momentary push; SDK exposes only the event, no state field.
+        d["WARN_CabAltHornCutout"]   = Momentary("WARN_CabAltHornCutout", "Cabin Altitude Horn Cutout");
+
         // =================================================================
         // GLARESHIELD — EFIS Captain / First Officer
         // =================================================================
         d["EFIS_MinsSelBARO_0"]  = Toggle("EFIS_MinsSelBARO_0", "Captain Mins Mode", "RADIO", "BARO");
         d["EFIS_MinsSelBARO_1"]  = Toggle("EFIS_MinsSelBARO_1", "First Officer Mins Mode", "RADIO", "BARO");
+        // EFIS Minimums altitude input. The PMDG NG3 SDK exposes no readback
+        // for the minimums VALUE (only the RADIO/BARO mode toggle above), so
+        // absolute setting uses a stateless RST-then-rotate-up dispatch in
+        // HandleUIVariableSet. The synthetic Name is non-existent in the SDK
+        // struct, so auto-monitoring will silently skip it; the _SET suffix
+        // routes the var through MainForm's TextBox+Button render branch.
+        d["EFIS_MinsValueFt_0_SET"] = new SimConnect.SimVarDefinition
+        {
+            Name = "_SYNTHETIC_EFIS_MinsValueFt_0",
+            DisplayName = "Captain Minimums (feet)",
+            Type = SimConnect.SimVarType.PMDGVar,
+            UpdateFrequency = SimConnect.UpdateFrequency.Never,
+            IsAnnounced = false,
+        };
+        d["EFIS_MinsValueFt_1_SET"] = new SimConnect.SimVarDefinition
+        {
+            Name = "_SYNTHETIC_EFIS_MinsValueFt_1",
+            DisplayName = "First Officer Minimums (feet)",
+            Type = SimConnect.SimVarType.PMDGVar,
+            UpdateFrequency = SimConnect.UpdateFrequency.Never,
+            IsAnnounced = false,
+        };
         d["EFIS_BaroSelHPA_0"]   = Toggle("EFIS_BaroSelHPA_0", "Captain Baro Units", "inHg", "hPa");
         d["EFIS_BaroSelHPA_1"]   = Toggle("EFIS_BaroSelHPA_1", "First Officer Baro Units", "inHg", "hPa");
         d["EFIS_VORADFSel1_0"]   = Selector("EFIS_VORADFSel1_0", "Captain Bearing Pointer 1",
@@ -765,8 +1032,19 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         d["MCP_annunCWS_A"]  = Annun("MCP_annunCWS_A", "CWS A");
         d["MCP_annunCMD_B"]  = Annun("MCP_annunCMD_B", "CMD B");
         d["MCP_annunCWS_B"]  = Annun("MCP_annunCWS_B", "CWS B");
+        // MCP autopilot push buttons (momentary). Dispatched via LEFTSINGLE+
+        // LEFTRELEASE (see the momentary branch in HandleUIVariableSet) — verified
+        // in-sim 2026-05-25: CDA param=1 does not commit these. The engaged state
+        // is reflected by the MCP_annun* lamps above.
+        d["MCP_CmdA"]    = Momentary("MCP_CmdA",    "CMD A",    "MCP_annunCMD_A");
+        d["MCP_CmdB"]    = Momentary("MCP_CmdB",    "CMD B",    "MCP_annunCMD_B");
+        d["MCP_CwsA"]    = Momentary("MCP_CwsA",    "CWS A",    "MCP_annunCWS_A");
+        d["MCP_CwsB"]    = Momentary("MCP_CwsB",    "CWS B",    "MCP_annunCWS_B");
+        d["MCP_AppBtn"]  = Momentary("MCP_AppBtn",  "Approach", "MCP_annunAPP");
+        d["MCP_VorLoc"]  = Momentary("MCP_VorLoc",  "VOR LOC",  "MCP_annunVOR_LOC");
         // SDK lines 542-593: MCP_IASOverspeedFlash / MCP_IASUnderspeedFlash / MCP_indication_powered
-        // (all bool). Surface as Annun in the MCP panel — matches TFM's MCP-section coverage.
+        // (all bool). These are warning-light / indication STATES, not controls — announced on change
+        // (see ProcessSimVarUpdate) but NOT listed in the MCP panel (mirrors the 777).
         d["MCP_IASOverspeedFlash"]  = Annun("MCP_IASOverspeedFlash",  "MCP Overspeed");
         d["MCP_IASUnderspeedFlash"] = Annun("MCP_IASUnderspeedFlash", "MCP Underspeed");
         d["MCP_indication_powered"] = Annun("MCP_indication_powered", "MCP Powered");
@@ -801,8 +1079,10 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         d["MAIN_annunAT_1"]       = Annun("MAIN_annunAT_1", "AT Disengage First Officer");
         d["MAIN_annunAT_Amber_0"] = Annun("MAIN_annunAT_Amber_0", "AT Disengage Amber Captain");
         d["MAIN_annunAT_Amber_1"] = Annun("MAIN_annunAT_Amber_1", "AT Disengage Amber First Officer");
-        d["MAIN_annunFMC_0"]      = Annun("MAIN_annunFMC_0", "FMC Caution Captain");
-        d["MAIN_annunFMC_1"]      = Annun("MAIN_annunFMC_1", "FMC Caution First Officer");
+        // MAIN_annunFMC_0/_1 (the amber FMC caution light) intentionally NOT registered:
+        // it illuminates whenever the CDU posts a scratchpad message, which is already
+        // announced via CDU_annunMSG_0/_1. Announcing both is redundant. The 777 has no
+        // FMC-caution annunciator either — match that pattern.
         d["MAIN_DisengageTestSelector_0"] = Selector("MAIN_DisengageTestSelector_0",
             "Disengage Test Captain", "1", "OFF", "2");
         d["MAIN_DisengageTestSelector_1"] = Selector("MAIN_DisengageTestSelector_1",
@@ -845,8 +1125,28 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         };
         d["MAIN_annunANTI_SKID_INOP"]    = Annun("MAIN_annunANTI_SKID_INOP", "Anti-Skid Inop");
         d["MAIN_annunAUTO_BRAKE_DISARM"] = Annun("MAIN_annunAUTO_BRAKE_DISARM", "Auto Brake Disarm");
-        d["MAIN_annunLE_FLAPS_TRANSIT"]  = Annun("MAIN_annunLE_FLAPS_TRANSIT", "LE Flaps Transit");
-        d["MAIN_annunLE_FLAPS_EXT"]      = Annun("MAIN_annunLE_FLAPS_EXT", "LE Flaps Ext");
+        // LE Flaps Transit light toggles on/off every time the flaps travel —
+        // announcing it is chatty noise (the flap-position callout already
+        // conveys movement). Keep it defined/monitored but NOT announced.
+        d["MAIN_annunLE_FLAPS_TRANSIT"]  = new SimConnect.SimVarDefinition
+        {
+            Name = "MAIN_annunLE_FLAPS_TRANSIT",
+            DisplayName = "LE Flaps Transit",
+            Type = SimConnect.SimVarType.PMDGVar,
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = false
+        };
+        // LE Flaps Ext light illuminates when the leading-edge devices are fully
+        // extended — redundant with the flap-position callout, so keep it defined/
+        // monitored but NOT announced (mirrors the LE Flaps Transit handling above).
+        d["MAIN_annunLE_FLAPS_EXT"]      = new SimConnect.SimVarDefinition
+        {
+            Name = "MAIN_annunLE_FLAPS_EXT",
+            DisplayName = "LE Flaps Ext",
+            Type = SimConnect.SimVarType.PMDGVar,
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = false
+        };
         // TFM: [0]=nose, [1]=left, [2]=right. SDK lines 400-401: arrays declared without
         // inline comments. Resolved with the [0]=Left, [1]=Nose, [2]=Right convention because
         // the PMDG NG3 struct orders the related overhead annunciators as
@@ -862,6 +1162,17 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         d["MAIN_annunGEAR_locked_1"]     = Annun("MAIN_annunGEAR_locked_1", "Nose Gear Locked Down");
         d["MAIN_annunGEAR_locked_2"]     = Annun("MAIN_annunGEAR_locked_2", "Right Gear Locked Down");
         d["MAIN_GearLever"]              = Selector("MAIN_GearLever", "Gear Lever", "UP", "OFF", "DOWN");
+        // Trailing-edge flap needle (analog, degrees). Monitored only — the
+        // flap-position announcement snaps it to a detent in ProcessSimVarUpdate.
+        // IsAnnounced=false so the generic path doesn't read out the raw float.
+        d["MAIN_TEFlapsNeedle_0"] = new SimConnect.SimVarDefinition
+        {
+            Name = "MAIN_TEFlapsNeedle_0",
+            DisplayName = "Flaps",
+            Type = SimConnect.SimVarType.PMDGVar,
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = false
+        };
         d["MAIN_annunCABIN_ALTITUDE"]    = Annun("MAIN_annunCABIN_ALTITUDE", "Cabin Altitude");
         d["MAIN_annunTAKEOFF_CONFIG"]    = Annun("MAIN_annunTAKEOFF_CONFIG", "Takeoff Config");
 
@@ -884,21 +1195,26 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         d["GPWS_FlapInhibitSw_NORM"]   = Toggle("GPWS_FlapInhibitSw_NORM", "Flap Inhibit", "INHIBIT", "Normal");
         d["GPWS_GearInhibitSw_NORM"]   = Toggle("GPWS_GearInhibitSw_NORM", "Gear Inhibit", "INHIBIT", "Normal");
         d["GPWS_TerrInhibitSw_NORM"]   = Toggle("GPWS_TerrInhibitSw_NORM", "Terrain Inhibit", "INHIBIT", "Normal");
+        // GPWS system test — momentary push; plays the EGPWS self-test sequence
+        // (visual + audible). SDK exposes only the event, no state field.
+        d["GPWS_SysTest"]              = Momentary("GPWS_SysTest", "GPWS System Test");
 
         // =================================================================
         // CONTROL STAND — CDU annunciators, COMM counters, ACP, stab trim, fire, xpdr, etc.
         // =================================================================
-        // CDU annunciators — NG3 SDK has only 2 CDUs (Captain=0, F/O=1)
-        d["CDU_annunEXEC_0"]  = Annun("CDU_annunEXEC_0", "CDU Captain EXEC");
-        d["CDU_annunEXEC_1"]  = Annun("CDU_annunEXEC_1", "CDU First Officer EXEC");
-        d["CDU_annunCALL_0"]  = Annun("CDU_annunCALL_0", "CDU Captain Call");
-        d["CDU_annunCALL_1"]  = Annun("CDU_annunCALL_1", "CDU First Officer Call");
-        d["CDU_annunFAIL_0"]  = Annun("CDU_annunFAIL_0", "CDU Captain Fail");
-        d["CDU_annunFAIL_1"]  = Annun("CDU_annunFAIL_1", "CDU First Officer Fail");
-        d["CDU_annunMSG_0"]   = Annun("CDU_annunMSG_0", "CDU Captain Message");
-        d["CDU_annunMSG_1"]   = Annun("CDU_annunMSG_1", "CDU First Officer Message");
-        d["CDU_annunOFST_0"]  = Annun("CDU_annunOFST_0", "CDU Captain Offset");
-        d["CDU_annunOFST_1"]  = Annun("CDU_annunOFST_1", "CDU First Officer Offset");
+        // CDU annunciators — NG3 SDK has only 2 CDUs (0 = Left/Captain, 1 = Right/F.O.).
+        // DisplayName follows the 777 "CDU <TYPE> <position>" pattern, using Left/Right
+        // (not Capt/F.O.) so announcements read e.g. "CDU EXEC Left: on" like the 777.
+        d["CDU_annunEXEC_0"]  = Annun("CDU_annunEXEC_0", "CDU EXEC Left");
+        d["CDU_annunEXEC_1"]  = Annun("CDU_annunEXEC_1", "CDU EXEC Right");
+        d["CDU_annunCALL_0"]  = Annun("CDU_annunCALL_0", "CDU CALL Left");
+        d["CDU_annunCALL_1"]  = Annun("CDU_annunCALL_1", "CDU CALL Right");
+        d["CDU_annunFAIL_0"]  = Annun("CDU_annunFAIL_0", "CDU FAIL Left");
+        d["CDU_annunFAIL_1"]  = Annun("CDU_annunFAIL_1", "CDU FAIL Right");
+        d["CDU_annunMSG_0"]   = Annun("CDU_annunMSG_0", "CDU MSG Left");
+        d["CDU_annunMSG_1"]   = Annun("CDU_annunMSG_1", "CDU MSG Right");
+        d["CDU_annunOFST_0"]  = Annun("CDU_annunOFST_0", "CDU OFST Left");
+        d["CDU_annunOFST_1"]  = Annun("CDU_annunOFST_1", "CDU OFST Right");
 
         // COMM press counters
         d["COMM_Attend_PressCount"]  = new SimConnect.SimVarDefinition
@@ -1017,6 +1333,17 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         d["FIRE_EngineHandle_1_PressBottom"] = Momentary("FIRE_EngineHandle_1_PressBottom", "Press engine 1 fire handle (bottom)");
         d["FIRE_EngineHandle_2_PressBottom"] = Momentary("FIRE_EngineHandle_2_PressBottom", "Press engine 2 fire handle (bottom)");
         d["FIRE_APUHandle_PressBottom"]      = Momentary("FIRE_APUHandle_PressBottom",      "Press APU fire handle (bottom)");
+
+        // Control stand / pedestal momentary buttons. TO/GA and AT-disengage are
+        // momentary presses (LEFTSINGLE+RELEASE via the momentary dispatch path).
+        // Parking brake is intentionally NOT exposed yet: in-sim the NG3 park-brake
+        // lever event (and the standard PARKING_BRAKES toggle) did not move
+        // PED_annunParkingBrake, likely the real toe-brake-pressure latch gate — a
+        // control would appear inert, so it is deferred pending further investigation.
+        d["CS_TOGA_1"]   = Momentary("CS_TOGA_1",   "TO/GA Left");
+        d["CS_TOGA_2"]   = Momentary("CS_TOGA_2",   "TO/GA Right");
+        d["CS_ATDisc_1"] = Momentary("CS_ATDisc_1", "Autothrottle Disengage Left");
+        d["CS_ATDisc_2"] = Momentary("CS_ATDisc_2", "Autothrottle Disengage Right");
         // Same array convention as FIRE_HandlePos: [0]=Eng1, [1]=APU, [2]=Eng2.
         d["FIRE_HandleIlluminated_0"] = Annun("FIRE_HandleIlluminated_0", "Engine 1 Fire Handle Illuminated");
         d["FIRE_HandleIlluminated_1"] = Annun("FIRE_HandleIlluminated_1", "APU Fire Handle Illuminated");
@@ -1059,12 +1386,37 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         d["XPDR_ModeSel"]         = Selector("XPDR_ModeSel", "Transponder Mode",
             "Stby", "Alt Rptg Off", "Xpndr", "TA Only", "TA/RA");
         d["XPDR_annunFAIL"]       = Annun("XPDR_annunFAIL", "Transponder Fail");
+        // TCAS self-test — momentary push; plays the TCAS test sequence (TA/RA
+        // audio + display callouts). SDK exposes only the event, no state field.
+        d["XPDR_TcasTest"]        = Momentary("XPDR_TcasTest", "TCAS Test");
+        // Transponder IDENT — momentary push; squawks IDENT to make the aircraft
+        // blip flash on ATC radar for ~18 seconds. SDK exposes only the event.
+        d["XPDR_Ident"]           = Momentary("XPDR_Ident", "Ident");
 
         // Flight deck door
         d["PED_annunLOCK_FAIL"]   = Annun("PED_annunLOCK_FAIL", "Door Lock Fail");
         d["PED_annunAUTO_UNLK"]   = Annun("PED_annunAUTO_UNLK", "Door Auto Unlock");
-        d["PED_FltDkDoorSel"]     = Selector("PED_FltDkDoorSel", "Flight Deck Door",
-            "UNLKD", "AUTO Pushed In", "AUTO", "DENY");
+        // PED_FltDkDoorSel: positions 0 (UNLKD), 1 (AUTO Pushed In) and 3 (DENY) are
+        // spring-loaded — only position 2 (AUTO) is stable. A combo selector can't
+        // reach the spring-loaded positions (they immediately return to AUTO), so this
+        // is exposed as a read-only status field. The two synthetic momentary buttons
+        // below dispatch EVT_FLT_DK_DOOR_KNOB with parameter 0 (Unlock) or 3 (Deny)
+        // for the press-and-spring-back cockpit interaction.
+        d["PED_FltDkDoorSel"]     = new SimConnect.SimVarDefinition
+        {
+            Name = "PED_FltDkDoorSel",
+            DisplayName = "Flight Deck Door",
+            Type = SimConnect.SimVarType.PMDGVar,
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = true,
+            RenderAsReadOnlyStatus = true,
+            ValueDescriptions = new Dictionary<double, string>
+            {
+                [0] = "UNLKD", [1] = "AUTO Pushed In", [2] = "AUTO", [3] = "DENY"
+            }
+        };
+        d["PED_FltDkDoor_Unlock"] = Momentary("PED_FltDkDoor_Unlock", "Unlock flight deck door");
+        d["PED_FltDkDoor_Deny"]   = Momentary("PED_FltDkDoor_Deny",   "Deny flight deck entry");
 
         // =================================================================
         // FMS — V-speeds, flaps, cruise / landing alt, transition, perf
@@ -1167,6 +1519,56 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
             HelpText = "Swap COM2 active and standby frequencies"
         };
 
+        // =================================================================
+        // BORIS / xBAW AUDIO WORKS SOUNDPACK (737)
+        // -----------------------------------------------------------------
+        // Mirrors the 777's Boris Audio Works panel, but the 737 xBAW soundset
+        // uses DIFFERENT backing variables (verified against the soundset's
+        // sound.xml and in-sim 2026-05-26):
+        //   Headphone Simulation -> L:ANR_onoff      (RTPC LOCALVAR_A20)
+        //   Hydraulic Pump Model -> L:HydPumpMfg     (RTPC SIMVAR_ON_RUNWAY)
+        //   Passenger Chatter    -> L:switch_277_73X (paxchatter <Requires> <=0)
+        // Unlike the 777's PMDG-owned switch_NNN_a (which revert a raw write and
+        // need K:ROTOR_BRAKE), all three of these are plain L-vars that accept a
+        // direct SetLVar and persist — see the LVar branch in HandleUIVariableSet.
+        // switch_102_73X (Emer Exit Lights, the soundset's other chatter gate) is
+        // deliberately NOT exposed: its normal flight position already satisfies
+        // the <=0 gate and it's a safety system, exactly like the 777's
+        // switch_49_a. switch_277_73X is the safety-neutral audio selector.
+        // =================================================================
+        d["ANR_onoff"] = new SimConnect.SimVarDefinition
+        {
+            Name = "ANR_onoff",
+            DisplayName = "Headphone Simulation",
+            Type = SimConnect.SimVarType.LVar,
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = true,
+            ValueDescriptions = new Dictionary<double, string> { [0] = "Off", [1] = "On" }
+        };
+        d["HydPumpMfg"] = new SimConnect.SimVarDefinition
+        {
+            Name = "HydPumpMfg",
+            DisplayName = "Hydraulic Pump Model",
+            Type = SimConnect.SimVarType.LVar,
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = true,
+            ValueDescriptions = new Dictionary<double, string> { [0] = "Vickers 1", [1] = "Vickers 2" }
+        };
+        // Passenger chatter: the soundset gates paxchatter on switch_277_73X <= 0,
+        // so 0 = chatter audible (On), 100 = muted (Off). ReverseDisplayOrder puts
+        // "Off" at the top of the combo to match every other on/off control,
+        // despite On being the zero value (same treatment as the 777's chatter).
+        d["switch_277_73X"] = new SimConnect.SimVarDefinition
+        {
+            Name = "switch_277_73X",
+            DisplayName = "Passenger Chatter",
+            Type = SimConnect.SimVarType.LVar,
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = true,
+            ReverseDisplayOrder = true,
+            ValueDescriptions = new Dictionary<double, string> { [0] = "On", [100] = "Off" }
+        };
+
         return d;
     }
 
@@ -1190,12 +1592,13 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
                 "ELEC_GrdPwrSw_On", "ELEC_GrdPwrSw_Off",
                 "ELEC_IDGDisconnectSw_0", "ELEC_IDGDisconnectSw_1",
                 "ELEC_CabUtilSw", "ELEC_IFEPassSeatSw",
-                "APU_Selector"
+                "APU_Selector", "APU_EGTNeedle"
             },
             ["ADIRU"] = new List<string>
             {
-                "IRS_DisplaySelector", "IRS_SysDisplay_R",
+                // IRS mode selectors come first, then the ISDU display selectors.
                 "IRS_ModeSelector_0", "IRS_ModeSelector_1",
+                "IRS_DisplaySelector", "IRS_SysDisplay_R",
                 "IRS_DisplayLeft", "IRS_DisplayRight"
             },
             ["Hydraulics"] = new List<string>
@@ -1211,14 +1614,17 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
                 "FUEL_PumpCtrSw_0", "FUEL_PumpCtrSw_1",
                 "FUEL_AuxFwd_0", "FUEL_AuxFwd_1",
                 "FUEL_AuxAft_0", "FUEL_AuxAft_1",
-                "FUEL_FWDBleed", "FUEL_AFTBleed", "FUEL_GNDXfr"
+                "FUEL_FWDBleed", "FUEL_AFTBleed", "FUEL_GNDXfr",
+                "FUEL_FuelTempNeedle"
             },
             ["Engines"] = new List<string>
             {
                 "ENG_EECSwitch_0", "ENG_EECSwitch_1",
-                "ENG_StartSelector_0", "ENG_StartSelector_1",
                 "ENG_IgnitionSelector",
-                "ENG_StartLever_0", "ENG_StartLever_1",
+                // Each engine's fuel lever sits directly after its start switch
+                // (Start 1, Fuel 1, Start 2, Fuel 2) — mirrors the PMDG 777 layout.
+                "ENG_StartSelector_0", "ENG_StartLever_0",
+                "ENG_StartSelector_1", "ENG_StartLever_1",
             },
             ["Anti-Ice"] = new List<string>
             {
@@ -1237,8 +1643,14 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
                 "AIR_BleedAirSwitch_0", "AIR_BleedAirSwitch_1", "AIR_APUBleedAirSwitch",
                 "AIR_IsolationValveSwitch",
                 "AIR_OutflowValveSwitch", "AIR_PressurizationModeSelector",
-                "AIR_DisplayFltAlt", "AIR_DisplayLandAlt",
-                "AIR_EquipCoolingSupplyNORM", "AIR_EquipCoolingExhaustNORM"
+                "AIR_EquipCoolingSupplyNORM", "AIR_EquipCoolingExhaustNORM",
+                // Continuous readouts (pressurization, duct pressure, cabin temp)
+                "AIR_CabinAltNeedle", "AIR_CabinDPNeedle", "AIR_CabinVSNeedle",
+                "AIR_CabinValveNeedle",
+                "AIR_DuctPress_0", "AIR_DuctPress_1",
+                "AIR_TemperatureNeedle",
+                // Bleed overheat self-test
+                "AIR_BleedOvhtTest"
             },
             ["Lights"] = new List<string>
             {
@@ -1257,7 +1669,8 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
             },
             ["Oxygen"] = new List<string>
             {
-                "OXY_SwNormal", "OXY_Needle"
+                "OXY_SwNormal",
+                "OXY_TestL", "OXY_TestR"
             },
             ["Wipers"] = new List<string>
             {
@@ -1279,27 +1692,30 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
             ["Warnings"] = new List<string>
             {
                 "WARN_annunFIRE_WARN_0", "WARN_annunFIRE_WARN_1",
-                "WARN_annunMASTER_CAUTION_0", "WARN_annunMASTER_CAUTION_1"
+                "WARN_annunMASTER_CAUTION_0", "WARN_annunMASTER_CAUTION_1",
+                "WARN_ResetFireWarning", "WARN_ResetMasterCaution",
+                "WARN_CabAltHornCutout"
             },
             ["EFIS Captain"] = new List<string>
             {
-                "EFIS_MinsSelBARO_0", "EFIS_BaroSelHPA_0",
+                "EFIS_MinsSelBARO_0", "EFIS_MinsValueFt_0_SET",
+                "EFIS_BaroSelHPA_0",
                 "EFIS_VORADFSel1_0", "EFIS_VORADFSel2_0",
                 "EFIS_ModeSel_0", "EFIS_RangeSel_0"
             },
             ["EFIS First Officer"] = new List<string>
             {
-                "EFIS_MinsSelBARO_1", "EFIS_BaroSelHPA_1",
+                "EFIS_MinsSelBARO_1", "EFIS_MinsValueFt_1_SET",
+                "EFIS_BaroSelHPA_1",
                 "EFIS_VORADFSel1_1", "EFIS_VORADFSel2_1",
                 "EFIS_ModeSel_1", "EFIS_RangeSel_1"
             },
             ["MCP"] = new List<string>
             {
-                "MCP_Course_0", "MCP_Course_1",
-                "MCP_IASMach", "MCP_Heading", "MCP_Altitude", "MCP_VertSpeed",
                 "MCP_FDSw_0", "MCP_FDSw_1",
                 "MCP_ATArmSw", "MCP_BankLimitSel", "MCP_DisengageBar",
-                "MCP_indication_powered", "MCP_IASOverspeedFlash", "MCP_IASUnderspeedFlash"
+                "MCP_CmdA", "MCP_CmdB", "MCP_CwsA", "MCP_CwsB",
+                "MCP_AppBtn", "MCP_VorLoc"
             },
             ["Display Select"] = new List<string>
             {
@@ -1320,7 +1736,8 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
             },
             ["GPWS"] = new List<string>
             {
-                "GPWS_FlapInhibitSw_NORM", "GPWS_GearInhibitSw_NORM", "GPWS_TerrInhibitSw_NORM"
+                "GPWS_FlapInhibitSw_NORM", "GPWS_GearInhibitSw_NORM", "GPWS_TerrInhibitSw_NORM",
+                "GPWS_SysTest"
             },
             ["Instruments"] = new List<string>
             {
@@ -1332,18 +1749,22 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
             },
 
             // ===== Pedestal =====
+            // Real pedestal controls are added by the Control Stand tasks below.
+            // FMC performance readouts (V-speeds, perf-complete, alts, flight
+            // number) are NOT controls — their SimVarDefinitions remain
+            // IsAnnounced=true so they announce on change; the exact values are
+            // queryable via the CDU (Shift+T).
             ["Control Stand"] = new List<string>
             {
-                "FMC_TakeoffFlaps", "FMC_V1", "FMC_VR", "FMC_V2",
-                "FMC_LandingFlaps", "FMC_LandingVREF",
-                "FMC_CruiseAlt", "FMC_LandingAltitude",
-                "FMC_TransitionAlt", "FMC_TransitionLevel",
-                "FMC_PerfInputComplete", "FMC_flightNumber"
+                "TRIM_StabTrimMainElecSw_NORMAL", "TRIM_StabTrimAutoPilotSw_NORMAL", "TRIM_StabTrimSw_NORMAL",
+                "CS_TOGA_1", "CS_TOGA_2",
+                "CS_ATDisc_1", "CS_ATDisc_2"
             },
-            ["Transponder"] = new List<string>
+            ["Transponder/TCAS"] = new List<string>
             {
                 "XPDR_XpndrSelector_2", "XPDR_AltSourceSel_2", "XPDR_ModeSel",
-                "TRANSPONDER_CODE_SET"
+                "TRANSPONDER_CODE_SET",
+                "XPDR_Ident", "XPDR_TcasTest"
             },
             ["Fire Protection"] = new List<string>
             {
@@ -1359,24 +1780,33 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
                 "CARGO_DetSelect_0", "CARGO_DetSelect_1",
                 "CARGO_ArmedSw_0", "CARGO_ArmedSw_1"
             },
-            ["Communication"] = new List<string>
+            // Radios and crew-call/audio split into "Radio" + "Calls" to mirror the 777.
+            // The dead Attendant/Ground-call press-counters are intentionally NOT listed
+            // (their SimVarDefinitions + auto-announce handler remain).
+            ["Radio"] = new List<string>
             {
                 "COM1_ActiveFreq", "COM_STANDBY_FREQUENCY_SET:1", "COM1_RADIO_SWAP",
-                "COM2_ActiveFreq", "COM_STANDBY_FREQUENCY_SET:2", "COM2_RADIO_SWAP",
-                "COMM_ServiceInterphoneSw",
-                "COMM_Attend_PressCount", "COMM_GrdCall_PressCount",
+                "COM2_ActiveFreq", "COM_STANDBY_FREQUENCY_SET:2", "COM2_RADIO_SWAP"
+            },
+            ["Calls"] = new List<string>
+            {
                 "COMM_SelectedMic_0", "COMM_SelectedMic_1",
-                "COMM_ReceiverSwitches_0", "COMM_ReceiverSwitches_1", "COMM_ReceiverSwitches_2"
+                "COMM_ServiceInterphoneSw"
             },
             ["Flight Deck Door"] = new List<string>
             {
-                "PED_FltDkDoorSel",
+                "PED_FltDkDoorSel",                          // read-only status (AUTO at rest)
+                "PED_FltDkDoor_Unlock", "PED_FltDkDoor_Deny", // momentary press buttons
                 "PED_annunLOCK_FAIL", "PED_annunAUTO_UNLK"
             },
-            ["Trim"] = new List<string>
+            // Stab-trim cutout switches moved to the Control Stand panel (pedestal).
+
+            // Pedestal — Boris Audio Works Soundpack (737 xBAW). Backing L-vars
+            // differ from the 777 (see the GetVariables block); switch_102_73X
+            // (emer exit lights) is intentionally not exposed.
+            ["Boris Audio Works"] = new List<string>
             {
-                "TRIM_StabTrimMainElecSw_NORMAL", "TRIM_StabTrimAutoPilotSw_NORMAL",
-                "TRIM_StabTrimSw_NORMAL"
+                "ANR_onoff", "HydPumpMfg", "switch_277_73X"
             },
         };
     }
@@ -2792,7 +3222,32 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
             ["XPDR_XpndrSelector_2"]       = "EVT_TCAS_XPNDR",
             ["XPDR_AltSourceSel_2"]        = "EVT_TCAS_ALTSOURCE",
             ["XPDR_ModeSel"]               = "EVT_TCAS_MODE",
-            ["PED_FltDkDoorSel"]           = "EVT_FLT_DK_DOOR_KNOB",
+            ["XPDR_TcasTest"]              = "EVT_TCAS_TEST",
+            ["XPDR_Ident"]                 = "EVT_TCAS_IDENT",
+            // Overhead — Oxygen TEST (spring-loaded; release returns to NORMAL)
+            ["OXY_TestL"]                  = "EVT_OH_OXY_TEST_RESET_SWITCH_L",
+            ["OXY_TestR"]                  = "EVT_OH_OXY_TEST_RESET_SWITCH_R",
+            // Lower forward panel — GPWS system test
+            ["GPWS_SysTest"]               = "EVT_GPWS_SYS_TEST_BTN",
+            // Overhead — Air Systems bleed-overheat self-test
+            ["AIR_BleedOvhtTest"]          = "EVT_OH_BLEED_OVHT_TEST_BUTTON",
+            // Glareshield Warnings — cabin altitude warning horn cutout
+            ["WARN_CabAltHornCutout"]      = "EVT_OH_CAB_ALT_HORN_CUTOUT_BUTTON",
+            // MCP autopilot push buttons (momentary)
+            ["MCP_CmdA"]    = "EVT_MCP_CMD_A_SWITCH",
+            ["MCP_CmdB"]    = "EVT_MCP_CMD_B_SWITCH",
+            ["MCP_CwsA"]    = "EVT_MCP_CWS_A_SWITCH",
+            ["MCP_CwsB"]    = "EVT_MCP_CWS_B_SWITCH",
+            ["MCP_AppBtn"]  = "EVT_MCP_APP_SWITCH",
+            ["MCP_VorLoc"]  = "EVT_MCP_VOR_LOC_SWITCH",
+            // Control stand / pedestal
+            ["CS_TOGA_1"]   = "EVT_CONTROL_STAND_TOGA1_SWITCH",
+            ["CS_TOGA_2"]   = "EVT_CONTROL_STAND_TOGA2_SWITCH",
+            ["CS_ATDisc_1"] = "EVT_CONTROL_STAND_AT1_DISENGAGE_SWITCH",
+            ["CS_ATDisc_2"] = "EVT_CONTROL_STAND_AT2_DISENGAGE_SWITCH",
+            // Glareshield — Master Warning / Caution recall
+            ["WARN_ResetFireWarning"]      = "EVT_FIRE_WARN_LIGHT_LEFT",
+            ["WARN_ResetMasterCaution"]    = "EVT_MASTER_CAUTION_LIGHT_LEFT",
         };
 
     // =========================================================================
@@ -2859,16 +3314,45 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
             ["CARGO_ArmedSw_1"]            = ("EVT_CARGO_FIRE_DISC_SWITCH_GUARD", "EVT_CARGO_FIRE_ARM_SWITCH_AFT"),
 
             // --- Fire handle TOP press (UNLOCK + TOP) ---
-            // The fire handle is mechanically locked in the "In" position
-            // until either (a) a fire warning is active for that engine/APU,
-            // which auto-unlocks the handle, or (b) the UNLOCK switch is
-            // pressed first. Outside an active fire scenario the handle won't
-            // move even with this sequence — PMDG enforces realism. Without
-            // an active fire, this press sequence is a no-op.
+            // The fire handle is mechanically locked In. The guard slot holds the
+            // spring-loaded UNLOCK switch — unlike an ordinary cover (which PMDG
+            // NG3 auto-lifts on a click) this is a real momentary control that the
+            // dispatch must press immediately before the TOP pull, or the handle
+            // stays locked. See _fireHandlePressKeys handling in HandleUIVariableSet.
+            // Verified in-sim (PMDG 737, 2026-05-25): UNLOCK then TOP pulls the
+            // handle even with no active fire warning; a bare TOP press is a no-op.
+            // During a real fire the handle also auto-unlocks, so the explicit
+            // UNLOCK is harmless in that case.
             ["FIRE_EngineHandle_1_Press"]  = ("EVT_FIRE_UNLOCK_SWITCH_ENGINE_1", "EVT_FIRE_HANDLE_ENGINE_1_TOP"),
             ["FIRE_EngineHandle_2_Press"]  = ("EVT_FIRE_UNLOCK_SWITCH_ENGINE_2", "EVT_FIRE_HANDLE_ENGINE_2_TOP"),
             ["FIRE_APUHandle_Press"]       = ("EVT_FIRE_UNLOCK_SWITCH_APU",      "EVT_FIRE_HANDLE_APU_TOP"),
         };
+
+    // The three fire-handle "Press" actions whose guard-slot event is the
+    // spring-loaded UNLOCK switch rather than an auto-lifted cover. These are
+    // dispatched as UNLOCK→TOP momentary presses (see HandleUIVariableSet); the
+    // rest of _guardedMap relies on PMDG NG3 lifting the cover internally.
+    private static readonly HashSet<string> _fireHandlePressKeys = new()
+    {
+        "FIRE_EngineHandle_1_Press",
+        "FIRE_EngineHandle_2_Press",
+        "FIRE_APUHandle_Press",
+    };
+
+    /// <summary>
+    /// Pulls a 737 fire handle: presses the spring-loaded UNLOCK switch, then the
+    /// handle TOP. Both are single LEFTSINGLE TransmitClientEvents (the
+    /// WalkPMDGSelector 0→1 shape). The 150 ms gap lets PMDG process the unlock
+    /// before the pull — the unlock is momentary and resets once the handle moves,
+    /// so the ordering, not the exact delay, is what matters. Verified in-sim
+    /// (PMDG 737, 2026-05-25): without the UNLOCK the TOP press is a no-op.
+    /// </summary>
+    private static async Task PullFireHandleAsync(SimConnect.SimConnectManager simConnect, uint unlockId, uint topId)
+    {
+        await simConnect.WalkPMDGSelector(unlockId, 0, 1);
+        await Task.Delay(150);
+        await simConnect.WalkPMDGSelector(topId, 0, 1);
+    }
 
     // =========================================================================
     // Momentary press-to-toggle bool switches — 2-position bool fields whose
@@ -2952,6 +3436,25 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
             ["FIRE_ExtinguisherTestSw"] = "EVT_FIRE_EXTINGUISHER_TEST_SWITCH",
         };
 
+    // Selectors that PMDG NG3 dispatches via TransmitClientEvent with an
+    // ABSOLUTE position parameter (NOT click-walking with LEFTSINGLE/RIGHTSINGLE).
+    // The generic WalkPMDGSelector path inverted the click direction for these
+    // selectors, producing the well-known "step Normal to A lands at B" pattern.
+    // Same fix shape as ENG_StartSelector/ENG_IgnitionSelector at line ~3478.
+    // Verified in user-reported reproductions for FIRE_OvhtDetSw, CARGO_DetSelect,
+    // MAIN_*DUSel, and NAVDIS_*Selector; absolute-position dispatch confirmed
+    // working at the SDK protocol level for these families.
+    private static readonly HashSet<string> _absolutePositionSelectorSet =
+        new HashSet<string>
+        {
+            "FIRE_OvhtDetSw_0", "FIRE_OvhtDetSw_1",
+            "CARGO_DetSelect_0", "CARGO_DetSelect_1",
+            "MAIN_MainPanelDUSel_0", "MAIN_MainPanelDUSel_1",
+            "MAIN_LowerDUSel_0", "MAIN_LowerDUSel_1",
+            "NAVDIS_VHFNavSelector", "NAVDIS_IRSSelector", "NAVDIS_FMCSelector",
+            "NAVDIS_SourceSelector", "NAVDIS_ControlPaneSelector",
+        };
+
     // =========================================================================
     // Behavior overrides — scaffold (populated in Tasks C10–C12)
     // =========================================================================
@@ -3001,6 +3504,17 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         if (varDef.Type == SimConnect.SimVarType.Event)
         {
             simConnect.SendEvent(varDef.Name);
+            return true;
+        }
+
+        // ------------------------------------------------------------------
+        // 0b. Plain L-vars (Boris/xBAW Audio Works soundpack: ANR_onoff,
+        //     HydPumpMfg, switch_277_73X). These accept a direct SetLVar and
+        //     persist — verified in-sim — unlike the PMDG-owned CDA switches.
+        // ------------------------------------------------------------------
+        if (varDef.Type == SimConnect.SimVarType.LVar)
+        {
+            simConnect.SetLVar(varDef.Name, value);
             return true;
         }
 
@@ -3070,6 +3584,63 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         }
 
         // ------------------------------------------------------------------
+        // 0c-mins. EFIS Mins value Set — stateless RST-then-rotate-up. The
+        //     PMDG NG3 SDK exposes no readback for the minimums VALUE, so we
+        //     always reset the knob to zero first via EVT_EFIS_CPT/FO_MINIMUMS_RST,
+        //     then rotate up by N clicks to reach the user's target. Step size
+        //     depends on the current mode (RADIO = 1 ft/click, BARO = 20 ft/click).
+        // ------------------------------------------------------------------
+        if (varKey == "EFIS_MinsValueFt_0_SET" || varKey == "EFIS_MinsValueFt_1_SET")
+        {
+            bool isCaptain = varKey == "EFIS_MinsValueFt_0_SET";
+            string modeVar = isCaptain ? "EFIS_MinsSelBARO_0" : "EFIS_MinsSelBARO_1";
+            string rstEvent = isCaptain ? "EVT_EFIS_CPT_MINIMUMS_RST" : "EVT_EFIS_FO_MINIMUMS_RST";
+            string rotEvent = isCaptain ? "EVT_EFIS_CPT_MINIMUMS"     : "EVT_EFIS_FO_MINIMUMS";
+
+            var dm = simConnect.PMDGDataManager;
+            bool baroMode = dm != null && (int)dm.GetFieldValue(modeVar) == 1;
+            int stepFt = baroMode ? MINS_STEP_FT_BARO : MINS_STEP_FT_RADIO;
+            int maxFt  = baroMode ? 9999 : 1000;
+            int target = (int)value;
+
+            if (target < 0 || target > maxFt)
+            {
+                announcer.AnnounceImmediate(
+                    $"Invalid minimums. Enter 0 to {maxFt} feet.");
+                return true;
+            }
+
+            if (!EventIds.TryGetValue(rstEvent, out int rstEvId) ||
+                !EventIds.TryGetValue(rotEvent, out int rotEvId))
+            {
+                announcer.AnnounceImmediate("Minimums knob event not available.");
+                return true;
+            }
+
+            _ = ResetThenRotateMinsAsync(
+                simConnect, rstEvent, (uint)rstEvId, (uint)rotEvId,
+                target, stepFt, baroMode, announcer);
+            return true;
+        }
+
+        // ------------------------------------------------------------------
+        // 0d. Flight deck door momentary buttons. PED_FltDkDoorSel positions
+        //     0/1/3 are spring-loaded — they momentarily latch and then PMDG
+        //     springs them back to position 2 (AUTO). Single CDA write with
+        //     the target position parameter is the documented PMDG pattern
+        //     for spring-loaded selectors (same as APU_Selector, etc.).
+        // ------------------------------------------------------------------
+        if (varKey == "PED_FltDkDoor_Unlock" || varKey == "PED_FltDkDoor_Deny")
+        {
+            if (EventIds.TryGetValue("EVT_FLT_DK_DOOR_KNOB", out int doorEvId))
+            {
+                int target = varKey == "PED_FltDkDoor_Unlock" ? 0 : 3;
+                simConnect.SendPMDGEvent("EVT_FLT_DK_DOOR_KNOB", (uint)doorEvId, target);
+            }
+            return true;
+        }
+
+        // ------------------------------------------------------------------
         // 1. Guarded switches — dispatched via TFM click-walking convention.
         //    PMDG NG3 handles guard physics transparently when the switch event
         //    receives a mouse-click TransmitClientEvent (ClkL/ClkR). Explicit
@@ -3089,6 +3660,17 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
                     announcer.AnnounceImmediate("Switch not ready, please try again in a moment.");
                     return true;
                 }
+
+                // Fire handles need the UNLOCK switch (guard slot) pressed before
+                // the TOP pull — PMDG does not auto-lift it like a cover. Fire the
+                // UNLOCK→TOP pair instead of click-walking the switch alone.
+                if (_fireHandlePressKeys.Contains(varKey) &&
+                    EventIds.TryGetValue(guardPair.Guard, out int unlockId))
+                {
+                    _ = PullFireHandleAsync(simConnect, (uint)unlockId, (uint)sId);
+                    return true;
+                }
+
                 int currentPosition = (int)dm.GetFieldValue(varDef.Name);
                 if (currentPosition == target) return true; // already at target — no-op
                 _ = simConnect.WalkPMDGSelector((uint)sId, currentPosition, target);
@@ -3296,6 +3878,25 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         }
 
         // ------------------------------------------------------------------
+        // 3b. IRS Mode Selector Unit (left/right rotary). The generic 3+-
+        //     position click-walk does NOT move this selector — verified
+        //     in-sim 2026-05-25: LEFTSINGLE clicks no-op, but a CDA direct-
+        //     position write latches it (OFF→NAV confirmed). Dispatch directly.
+        // ------------------------------------------------------------------
+        if (varKey == "IRS_ModeSelector_0" || varKey == "IRS_ModeSelector_1")
+        {
+            if (_simpleEventMap.TryGetValue(varKey, out string? irsEvent) &&
+                EventIds.TryGetValue(irsEvent, out int irsId))
+            {
+                int target = (int)value;
+                var dm = simConnect.PMDGDataManager;
+                if (dm != null && (int)dm.GetFieldValue(varDef.Name) == target) return true;
+                simConnect.SendPMDGEvent(irsEvent, (uint)irsId, target);
+            }
+            return true;
+        }
+
+        // ------------------------------------------------------------------
         // 4. Fire handles — handled as synthetic momentary press buttons
         //    (FIRE_EngineHandle_1_Press / FIRE_APUHandle_Press / etc.) which
         //    route through _simpleEventMap below. Per the PMDG SDK each
@@ -3303,6 +3904,23 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         //    the handle one state position — the parameter is ignored. The
         //    read-only FIRE_HandlePos_0/1/2 state vars are NOT user-settable.
         // ------------------------------------------------------------------
+
+        // ------------------------------------------------------------------
+        // 4a. Absolute-position selector dispatch — for selector families
+        //     that PMDG NG3 accepts via TransmitClientEvent with the target
+        //     position as the parameter (vs. click-walking). See
+        //     _absolutePositionSelectorSet for the list and rationale.
+        // ------------------------------------------------------------------
+        if (_absolutePositionSelectorSet.Contains(varKey) &&
+            _simpleEventMap.TryGetValue(varKey, out string? absEventName) &&
+            EventIds.TryGetValue(absEventName, out int absEvId))
+        {
+            int target = (int)value;
+            var dm = simConnect.PMDGDataManager;
+            if (dm != null && (int)dm.GetFieldValue(varDef.Name) == target) return true;
+            simConnect.SendPMDGEventViaTransmitWithTarget((uint)absEvId, (uint)target);
+            return true;
+        }
 
         // ------------------------------------------------------------------
         // 5. Generic _simpleEventMap lookup — covers every remaining mapped
@@ -3326,7 +3944,13 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
 
             if (varDef.RenderAsButton && varDef.IsMomentary)
             {
-                simConnect.SendPMDGEvent(eventName, eventId, 1);
+                // Momentary push buttons (MCP modes/engage, fire-handle bottom,
+                // etc.) commit only with a LEFTSINGLE press followed by a
+                // LEFTRELEASE (TransmitClientEvent). A bare CDA param=1 plays the
+                // click sound but the state springs back. Verified in-sim
+                // 2026-05-25: FD switch + HDG SEL committed via LEFTSINGLE+RELEASE
+                // while CDA param=1 did not.
+                _ = simConnect.SendPMDGMomentaryToggle(eventId, 1);
                 return true;
             }
 
@@ -3410,11 +4034,40 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
         switch (varName)
         {
             // -------------------------------------------------------------
-            // Altimeter setting (inHg). 29.92 = "Altimeter standard".
-            // Otherwise announce both hPa and inches. Suppress the initial
-            // baseline value and debounce micro-changes.
+            // Stabilizer trim, in units (~0–17). Sourced from the PMDG L-var
+            // ElevTrimTT (see GetPMDGVariables) because the NG3 does not drive
+            // the stock ELEVATOR TRIM POSITION SimVar. Gated by the shared
+            // Shift+T trim-announcement toggle; baseline absorbed silently on
+            // connect; debounced so sub-0.1-unit electric-trim jitter is quiet.
             // -------------------------------------------------------------
-            case "KOHLSMAN SETTING HG":
+            case "MON_PMDG737_StabTrim":
+            {
+                if (!_trimAnnouncementsEnabled)
+                    return true;
+                double rounded = Math.Round(value, 1);
+                if (double.IsNaN(_lastAnnouncedStabTrim))
+                {
+                    _lastAnnouncedStabTrim = rounded;
+                    return true;
+                }
+                if (Math.Abs(rounded - _lastAnnouncedStabTrim) < 0.05)
+                    return true;
+                _lastAnnouncedStabTrim = rounded;
+                announcer.Announce($"Trim {rounded:F1}");
+                return true;
+            }
+
+            // -------------------------------------------------------------
+            // Altimeter setting (inHg). 29.92 = "Altimeter standard".
+            // Otherwise dual-unit "Altimeter: <hpa>, <inhg>" — same wording
+            // as the ReadAltimeter hotkey (B) so set and read sound alike.
+            // Switch must key off the variable KEY (ALTIMETER_SETTING), not
+            // the SimConnect Name ("KOHLSMAN SETTING HG"); MainForm dispatches
+            // on the dictionary key, so a Name-based case never matches and
+            // the announcement fell through to the generic FormatVariableValue
+            // path ("Altimeter Setting: 29.92" — inches only).
+            // -------------------------------------------------------------
+            case "ALTIMETER_SETTING":
             {
                 if (double.IsNaN(_lastAnnouncedAltimeter))
                 {
@@ -3429,10 +4082,42 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
                 else
                 {
                     int hpa = (int)Math.Round(value * 33.8639);
-                    announcer.Announce($"Altimeter {hpa} hectopascals, {value:0.00} inches");
+                    announcer.Announce($"Altimeter: {hpa}, {value:0.00}");
                 }
                 return true;
             }
+
+            // -------------------------------------------------------------
+            // Speed-brake lever position, from the PMDG L-var switch_679_73X
+            // (see MON_PMDG737_SpeedBrake in GetPMDGVariables) — the NG3 SDK
+            // exposes no lever-position field and PMDG doesn't drive the stock
+            // SPOILERS HANDLE POSITION SimVar, so this is the only source for
+            // the full position (down / armed / 50% / flight / fully deployed).
+            // The L-var sweeps as the lever animates; the resting detent is
+            // announced via the trailing-edge settle timer (OnSpeedBrakeSettle).
+            // Replaces the old 3-state annunciator-derived callout.
+            // -------------------------------------------------------------
+            case "MON_PMDG737_SpeedBrake":
+            {
+                // The L-var sweeps as the lever animates; defer the callout to a
+                // trailing-edge settle timer (restarted on every change) so we
+                // announce only the resting detent, not values swept through.
+                lock (_speedBrakeLock)
+                {
+                    _speedBrakeLatestValue = value;
+                    _speedBrakeAnnouncer = announcer;
+                }
+                (_speedBrakeSettleTimer ??= new System.Threading.Timer(OnSpeedBrakeSettle))
+                    .Change(SpeedBrakeSettleMs, System.Threading.Timeout.Infinite);
+                return true;
+            }
+
+            // Speed-brake position is now announced from the L-var above;
+            // suppress the redundant ARMED / EXTENDED annunciator-light callouts
+            // (the separate DO NOT ARM caution light still announces normally).
+            case "MAIN_annunSPEEDBRAKE_ARMED":
+            case "MAIN_annunSPEEDBRAKE_EXTENDED":
+                return true;
 
             // -------------------------------------------------------------
             // MCP display values. IASBlank/VertSpeedBlank are flags that
@@ -3441,17 +4126,17 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
             // -------------------------------------------------------------
             case "MCP_IASMach":
                 if (value < 10)
-                    announcer.Announce($"Mach {value:F2}");
+                    announcer.Announce($"MCP Mach {value:F2}");
                 else
-                    announcer.Announce($"Speed {(int)Math.Round(value)} knots");
+                    announcer.Announce($"MCP speed {(int)Math.Round(value)} knots");
                 return true;
 
             case "MCP_Heading":
-                announcer.Announce($"Heading {(int)Math.Round(value)}");
+                announcer.Announce($"MCP heading {(int)Math.Round(value)}");
                 return true;
 
             case "MCP_Altitude":
-                announcer.Announce($"{(int)Math.Round(value)} feet");
+                announcer.Announce($"MCP altitude {(int)Math.Round(value)} feet");
                 return true;
 
             case "MCP_VertSpeed":
@@ -3532,6 +4217,44 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
             case "MCP_annunFD_1":
                 announcer.Announce(value > 0 ? "FD First Officer engaged" : "FD First Officer disengaged");
                 return true;
+
+            // -------------------------------------------------------------
+            // Parking brake (control-stand annunciator). Every other 737
+            // annunciator has an explicit case; this one was missing, so a
+            // toggle produced no callout. Announce both edges. The field is
+            // confirmed to track in-sim (false<->true with brakes applied).
+            // -------------------------------------------------------------
+            case "PED_annunParkingBrake":
+                announcer.AnnounceImmediate(value > 0.5 ? "Parking brake on" : "Parking brake off");
+                return true;
+
+            // -------------------------------------------------------------
+            // Flap position (trailing-edge needle, degrees). No commanded-
+            // detent field exists on the 737, so snap the analog needle to the
+            // nearest detent and announce on a settled change. The candidate
+            // must be confirmed on two consecutive settled samples to debounce
+            // the brief sweep past intermediate detents during a multi-step
+            // selection. IsAnnounced=false on the var keeps the generic path
+            // from reading the raw float.
+            // -------------------------------------------------------------
+            case "MAIN_TEFlapsNeedle_0":
+            {
+                int detent = SettledFlapDetent(value);
+                if (detent < 0) { _flapDetentCandidate = int.MinValue; return true; }
+                if (detent == _lastFlapDetentAnnounced) return true;
+                if (detent == _flapDetentCandidate)
+                {
+                    bool first = _lastFlapDetentAnnounced == int.MinValue;
+                    _lastFlapDetentAnnounced = detent;
+                    if (!first)
+                        announcer.Announce(detent == 0 ? "Flaps up" : $"Flaps {detent}");
+                }
+                else
+                {
+                    _flapDetentCandidate = detent;
+                }
+                return true;
+            }
 
             // -------------------------------------------------------------
             // Fire warnings + master caution — these are time-critical and
@@ -3733,8 +4456,6 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
             case "IRS_DisplayRight":
             case "ELEC_MeterDisplayTop":
             case "ELEC_MeterDisplayBottom":
-            case "AIR_DisplayFltAlt":
-            case "AIR_DisplayLandAlt":
             case "FMC_flightNumber":
                 return true;
 
@@ -3906,10 +4627,11 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
 
             case HotkeyAction.ReadFlaps:
             {
-                // No FCTL_Flaps_Lever / TEFlapsNeedle defined in the NG3 PMDG
-                // SDK data block exposed to us — delegate to MainForm's
-                // generic flaps handler which reads the standard SimVar.
-                return false;
+                var dm = simConnect.PMDGDataManager;
+                if (dm == null) { announcer.AnnounceImmediate("Flaps unavailable."); return true; }
+                int detent = NearestFlapDetent(dm.GetFieldValue("MAIN_TEFlapsNeedle_0"));
+                announcer.AnnounceImmediate(detent == 0 ? "Flaps up" : $"Flaps {detent}");
+                return true;
             }
 
             case HotkeyAction.ReadGear:
@@ -3943,7 +4665,8 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
 
             // ------------------------------------------------------------------
             // Altimeter (EFIS baro) — PMDG 737 has no SDK control of the baro
-            // knob, so we read/write the standard MSFS KOHLSMAN simvar. Format
+            // knob, so we READ the standard MSFS KOHLSMAN simvar (the set dialog
+            // rotates the EFIS baro knob, EVT_EFIS_CPT_BARO, to the target). Format
             // mirrors PMDG 777 / Fenix: STD detected at 29.92 inHg, otherwise
             // dual-unit announcement "Altimeter: <hpa>, <inhg>".
             // ------------------------------------------------------------------
@@ -3974,6 +4697,13 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
             {
                 hotkeyManager.ExitInputHotkeyMode();
                 ShowPMDGBaroDialog(simConnect, announcer, parentForm);
+                return true;
+            }
+
+            case HotkeyAction.SetNavRadios:
+            {
+                hotkeyManager.ExitInputHotkeyMode();
+                ShowNavRadiosDialog(simConnect, announcer, parentForm);
                 return true;
             }
 
@@ -4073,13 +4803,26 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
                 return true;
 
             // ------------------------------------------------------------------
-            // Display OCR — out of scope for the 737 in this PR; delegate.
+            // Gemini display capture — Alt+P / Shift+N / Alt+I / Alt+E
             // ------------------------------------------------------------------
 
             case HotkeyAction.ReadDisplayPFD:
+                ReadDisplay(Services.GeminiService.DisplayType.PFD737, "PFD", announcer, parentForm);
+                return true;
+
             case HotkeyAction.ReadDisplayND:
+                ReadDisplay(Services.GeminiService.DisplayType.ND737, "ND", announcer, parentForm);
+                return true;
+
             case HotkeyAction.ReadDisplayISIS:
+                ReadDisplay(Services.GeminiService.DisplayType.ISFD737, "ISFD", announcer, parentForm);
+                return true;
+
             case HotkeyAction.ReadDisplayUpperECAM:
+                ReadDisplay(Services.GeminiService.DisplayType.EICAS737, "EICAS", announcer, parentForm);
+                return true;
+
+            // Lower System Display (DU4) — out of scope for now (matches 777, which doesn't handle this either)
             case HotkeyAction.ReadDisplayLowerECAM:
                 return false;
 
@@ -4143,8 +4886,11 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
 
     private void SendPMDGMomentary(SimConnect.SimConnectManager simConnect, string eventName)
     {
+        // Momentary MCP buttons commit only via LEFTSINGLE+LEFTRELEASE — a bare CDA
+        // param=1 plays the click sound but the state springs back. Verified in-sim
+        // 2026-05-25 (FD switch + HDG SEL committed via LEFTSINGLE+RELEASE; CDA did not).
         if (EventIds.TryGetValue(eventName, out int evId))
-            simConnect.SendPMDGEvent(eventName, (uint)evId, 1);
+            _ = simConnect.SendPMDGMomentaryToggle((uint)evId, 1);
     }
 
     /// <summary>
@@ -4237,16 +4983,6 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
                 if (dm == null) return "?";
                 return (int)dm.GetFieldValue("MCP_annunLNAV") > 0 ? "Engaged" : "Off";
             }, () => SendPMDGMomentary(simConnect, "EVT_MCP_LNAV_SWITCH")),
-            new("&Approach", () =>
-            {
-                if (dm == null) return "?";
-                return (int)dm.GetFieldValue("MCP_annunAPP") > 0 ? "Engaged" : "Off";
-            }, () => SendPMDGMomentary(simConnect, "EVT_MCP_APP_SWITCH")),
-            new("&VOR LOC", () =>
-            {
-                if (dm == null) return "?";
-                return (int)dm.GetFieldValue("MCP_annunVOR_LOC") > 0 ? "Engaged" : "Off";
-            }, () => SendPMDGMomentary(simConnect, "EVT_MCP_VOR_LOC_SWITCH")),
         };
 
         var dialog = new ValueInputForm(
@@ -4284,20 +5020,25 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
 
         var dm = simConnect.PMDGDataManager;
 
+        // The A/T SPEED-mode button was removed here: it only engages with the
+        // autothrottle armed (so it reads "Off" and no-ops on the ground), it
+        // duplicated a mode command rather than helping set a speed, and the
+        // SPEED-mode state is already announced via the MCP_annunSPEED monitor.
+        //
+        // Speed Intervene's engaged state IS observable, but only in VNAV: there
+        // SPD INTV latches the MCP speed window OPEN (MCP_IASBlank=0 → you've
+        // intervened and own the speed) vs BLANK (=1 → the FMC owns the speed) —
+        // verified live in the sim. Outside VNAV the window is always open and
+        // intervene is not applicable, so we show no state. The Task-3 refresh
+        // timer keeps the label live while the dialog is open.
         var toggles = new List<ToggleButtonDef>
         {
-            new("&Level Change", () =>
+            new("Speed &Intervene", () =>
             {
-                if (dm == null) return "?";
-                return (int)dm.GetFieldValue("MCP_annunLVL_CHG") > 0 ? "Engaged" : "Off";
-            }, () => SendPMDGMomentary(simConnect, "EVT_MCP_LVL_CHG_SWITCH")),
-            new("Speed &Intervene", () => "",
-                () => SendPMDGMomentary(simConnect, "EVT_MCP_SPD_INTV_SWITCH")),
-            new("&Speed", () =>
-            {
-                if (dm == null) return "?";
-                return (int)dm.GetFieldValue("MCP_annunSPEED") > 0 ? "Engaged" : "Off";
-            }, () => SendPMDGMomentary(simConnect, "EVT_MCP_SPEED_SWITCH")),
+                if (dm == null) return "";
+                if ((int)dm.GetFieldValue("MCP_annunVNAV") == 0) return "";  // intervene only applies in VNAV
+                return (int)dm.GetFieldValue("MCP_IASBlank") == 0 ? "Engaged" : "Off";
+            }, () => SendPMDGMomentary(simConnect, "EVT_MCP_SPD_INTV_SWITCH")),
         };
 
         var dialog = new ValueInputForm(
@@ -4373,18 +5114,23 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
 
         var toggles = new List<ToggleButtonDef>
         {
+            new("Altitude &Intervene", () => "",
+                () => SendPMDGMomentary(simConnect, "EVT_MCP_ALT_INTV_SWITCH")),
             new("Altitude &Hold", () =>
             {
                 if (dm == null) return "?";
                 return (int)dm.GetFieldValue("MCP_annunALT_HOLD") > 0 ? "Engaged" : "Off";
             }, () => SendPMDGMomentary(simConnect, "EVT_MCP_ALT_HOLD_SWITCH")),
-            new("Altitude &Intervene", () => "",
-                () => SendPMDGMomentary(simConnect, "EVT_MCP_ALT_INTV_SWITCH")),
             new("&VNAV", () =>
             {
                 if (dm == null) return "?";
                 return (int)dm.GetFieldValue("MCP_annunVNAV") > 0 ? "Engaged" : "Off";
             }, () => SendPMDGMomentary(simConnect, "EVT_MCP_VNAV_SWITCH")),
+            new("&Level Change", () =>
+            {
+                if (dm == null) return "?";
+                return (int)dm.GetFieldValue("MCP_annunLVL_CHG") > 0 ? "Engaged" : "Off";
+            }, () => SendPMDGMomentary(simConnect, "EVT_MCP_LVL_CHG_SWITCH")),
         };
 
         var dialog = new ValueInputForm(
@@ -4458,8 +5204,9 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
     }
 
     /// <summary>
-    /// PMDG 737 has no SDK-exposed baro knob control, so this dialog writes the
-    /// standard MSFS KOHLSMAN SETTING HG simvar directly. Accepts either hPa
+    /// PMDG owns the baro and ignores absolute writes (KOHLSMAN_SET event and direct
+    /// SimVar writes get re-asserted every frame), so this dialog sets the altimeter by
+    /// ROTATING the captain EFIS baro knob (EVT_EFIS_CPT_BARO) to the target. Accepts either hPa
     /// (~900–1060) or inHg (~26.50–31.30); the validator picks the unit based on
     /// magnitude (>=100 = hPa, <100 = inHg) — the two ranges don't overlap so the
     /// branch is unambiguous, and magnitude-based branching avoids the de-DE
@@ -4508,18 +5255,216 @@ public class PMDG737Definition : BaseAircraftDefinition, IPMDGAircraft
                     return (true, "");
                 return (false, "Enter inHg between 26.50 and 31.30");
             },
-            new List<ToggleButtonDef>(),
+            new List<ToggleButtonDef>
+            {
+                // Set the altimeter to standard (29.92 inHg / 1013 hPa) via the
+                // EFIS baro knob's STD push (EVT_EFIS_CPT_BARO_STD). That event is
+                // a QNH<->STD toggle and there is no STD-state readback on the NG3,
+                // so we guard on the current setting: only push when the altimeter
+                // is meaningfully off standard (which means we're not already in
+                // STD, since STD always reads 29.92). This avoids toggling STD off.
+                // The push is a momentary button: NG3 commits it only with a
+                // LEFTSINGLE+LEFTRELEASE pair (SendPMDGMomentaryToggle). A bare
+                // dwData transmit — including 0 — plays no click and never commits.
+                // The dialog's button handler announces "Standard" as confirmation.
+                new ToggleButtonDef(
+                    "&Standard",
+                    () => "",
+                    () =>
+                    {
+                        double? curInHg = simConnect.GetCachedVariableValue("ALTIMETER_SETTING");
+                        if (curInHg != null && Math.Abs(curInHg.Value - 29.92) < 0.02)
+                            return;   // already at standard pressure — don't toggle STD off
+                        if (EventIds.TryGetValue("EVT_EFIS_CPT_BARO_STD", out int stdEvId))
+                            _ = simConnect.SendPMDGMomentaryToggle((uint)stdEvId, 1);
+                    })
+            },
             input =>
             {
                 if (!TryParseBaro(input, out double value)) return;
 
-                // Same magnitude-based branch as the validator.
-                double inHg = value >= 100 ? value / 33.8639 : value;
+                // PMDG owns the baro and re-asserts it every frame, so absolute
+                // writes (KOHLSMAN_SET event AND a direct SimVar write) are ignored.
+                // The EFIS baro is set by ROTATING the captain baro knob
+                // (EVT_EFIS_CPT_BARO via TransmitClientEvent). Verified in-sim
+                // 2026-05-25: RIGHTSINGLE = up, LEFTSINGLE = down, ~1 hPa per click
+                // in hPa mode / 0.01 inHg per click in inHg mode. So read the current
+                // baro, compute the difference in the displayed unit, and step the knob.
+                double? curInHg = simConnect.GetCachedVariableValue("ALTIMETER_SETTING");
+                if (curInHg == null) { announcer.AnnounceImmediate("Altimeter not available"); return; }
+                if (!EventIds.TryGetValue("EVT_EFIS_CPT_BARO", out int baroEvId)) return;
 
-                simConnect.SetSimVar("KOHLSMAN SETTING HG", inHg, "inHg");
+                // STD-mode lockout fix: when STD is active, ALTIMETER_SETTING reads
+                // ~29.92 and rotate-clicks fire behind the STD mask with no visible
+                // effect. Detect "STD likely active" via the 29.92 tolerance, and if
+                // the user's target value is meaningfully different from 29.92 inHg,
+                // disengage STD first via EVT_EFIS_CPT_BARO_STD, then re-read the
+                // baro to compute clicks against the post-STD value.
+                double targetInHg = value >= 100 ? value / 33.8639 : value;
+                bool likelyStdActive = Math.Abs(curInHg.Value - 29.92) < 0.005;
+                bool targetIsAtStd   = Math.Abs(targetInHg - 29.92) < 0.005;
+                if (likelyStdActive && !targetIsAtStd)
+                {
+                    if (EventIds.TryGetValue("EVT_EFIS_CPT_BARO_STD", out int stdEvId))
+                    {
+                        _ = DisengageStdThenRotateAsync(
+                            simConnect, (uint)stdEvId, (uint)baroEvId, targetInHg, announcer);
+                        return;
+                    }
+                }
+
+                var dm = simConnect.PMDGDataManager;
+                bool hpaMode = dm != null && (int)dm.GetFieldValue("EFIS_BaroSelHPA_0") == 1;
+
+                int clicks;
+                if (hpaMode)
+                {
+                    int curHpa = (int)Math.Round(curInHg.Value * 33.8639);
+                    int tgtHpa = (int)Math.Round(value >= 100 ? value : value * 33.8639);
+                    clicks = tgtHpa - curHpa;                                  // 1 hPa per click
+                }
+                else
+                {
+                    double tgtInHg = value >= 100 ? value / 33.8639 : value;
+                    clicks = (int)Math.Round((tgtInHg - curInHg.Value) / 0.01); // 0.01 inHg per click
+                }
+
+                if (clicks == 0) return;
+                // RIGHTSINGLE (0x80000000) = up, LEFTSINGLE (0x20000000) = down.
+                uint flag = clicks > 0 ? 0x80000000u : 0x20000000u;
+                _ = RotateBaroKnobAsync(simConnect, (uint)baroEvId, flag, Math.Min(Math.Abs(clicks), 200));
             });
 
         dialog.ShowCancelButton = false;
         dialog.Show(parentForm);
+    }
+
+    // Rotates the captain EFIS baro knob (EVT_EFIS_CPT_BARO) `count` clicks in the
+    // given direction (RIGHTSINGLE=up, LEFTSINGLE=down) via TransmitClientEvent.
+    // PMDG ignores absolute baro writes, so the set dialog reaches a target by
+    // stepping the knob ~1 hPa (or 0.01 inHg) per click. Verified in-sim 2026-05-25.
+    private static async Task RotateBaroKnobAsync(
+        SimConnect.SimConnectManager simConnect, uint eventId, uint flag, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            simConnect.SendPMDGEventViaTransmitWithTarget(eventId, flag);
+            if (i < count - 1) await System.Threading.Tasks.Task.Delay(40);
+        }
+    }
+
+    // STD-mode lockout fix: toggles STD off, awaits sim settle, re-reads the
+    // post-STD altimeter, then rotates the baro knob to the user's target.
+    // Called only when STD appeared active at submit time and the user's
+    // target value is meaningfully different from 29.92 inHg.
+    private static async Task DisengageStdThenRotateAsync(
+        SimConnect.SimConnectManager simConnect, uint stdEventId, uint baroEventId,
+        double targetInHg, ScreenReaderAnnouncer announcer)
+    {
+        // Press EVT_EFIS_CPT_BARO_STD once to toggle STD off.
+        await simConnect.SendPMDGMomentaryToggle(stdEventId, 1);
+        await Task.Delay(200);
+
+        // Re-read the now post-STD altimeter setting.
+        double? curInHg = simConnect.GetCachedVariableValue("ALTIMETER_SETTING");
+        if (curInHg == null) { announcer.AnnounceImmediate("Altimeter not available"); return; }
+
+        var dm = simConnect.PMDGDataManager;
+        bool hpaMode = dm != null && (int)dm.GetFieldValue("EFIS_BaroSelHPA_0") == 1;
+
+        int clicks;
+        if (hpaMode)
+        {
+            int curHpa = (int)Math.Round(curInHg.Value * 33.8639);
+            int tgtHpa = (int)Math.Round(targetInHg * 33.8639);
+            clicks = tgtHpa - curHpa;
+        }
+        else
+        {
+            clicks = (int)Math.Round((targetInHg - curInHg.Value) / 0.01);
+        }
+
+        if (clicks == 0) return;
+        uint flag = clicks > 0 ? 0x80000000u : 0x20000000u;
+        await RotateBaroKnobAsync(simConnect, baroEventId, flag, Math.Min(Math.Abs(clicks), 200));
+    }
+
+    // Stateless mins dispatch: zero the knob via RST, then rotate up by
+    // (target / stepFt) clicks. Always announces the result. Capped at
+    // MINS_MAX_CLICKS_PER_SET for safety (~40 s worst case at 40ms/click).
+    private static async Task ResetThenRotateMinsAsync(
+        SimConnect.SimConnectManager simConnect,
+        string rstEventName, uint rstEventId,
+        uint rotEventId,
+        int targetFt, int stepFt, bool baroMode,
+        ScreenReaderAnnouncer announcer)
+    {
+        // Step 1: Zero the knob via RST.
+        simConnect.SendPMDGEvent(rstEventName, rstEventId, 1);
+        await Task.Delay(200);   // sim settle
+
+        // Step 2: Rotate up by N clicks.
+        int clicks = targetFt > 0
+            ? Math.Min(targetFt / stepFt, MINS_MAX_CLICKS_PER_SET)
+            : 0;
+        const uint MOUSE_FLAG_RIGHTSINGLE = 0x80000000u;
+        for (int i = 0; i < clicks; i++)
+        {
+            simConnect.SendPMDGEventViaTransmitWithTarget(rotEventId, MOUSE_FLAG_RIGHTSINGLE);
+            if (i < clicks - 1) await Task.Delay(40);
+        }
+
+        // Step 3: Announce result (verbalize the actual stepped-to value, not the
+        // raw target — they can differ when target isn't a multiple of stepFt).
+        int reached = clicks * stepFt;
+        string label = baroMode ? "Decision altitude" : "Minimums";
+        announcer.AnnounceImmediate($"{label} set to {reached} feet.");
+    }
+
+    /// <summary>
+    /// Opens the NAV Radios dialog (Ctrl+N). The PMDG 737 honors the standard
+    /// SimConnect radio events, so frequencies/courses are set directly via
+    /// NAV1/2_RADIO_SET_HZ (active frequency, Hz) and VOR1/2_SET (course/OBS,
+    /// degrees) — verified in-sim. The dialog is pre-filled with the current
+    /// values via RequestNavRadioInfo (one-shot); that callback can arrive off
+    /// the UI thread, so the form is opened through parentForm.BeginInvoke.
+    /// </summary>
+    private void ShowNavRadiosDialog(
+        SimConnect.SimConnectManager simConnect,
+        ScreenReaderAnnouncer announcer,
+        Form parentForm)
+    {
+        if (!simConnect.IsConnected)
+        {
+            announcer.AnnounceImmediate("Not connected to simulator.");
+            return;
+        }
+
+        simConnect.RequestNavRadioInfo(navData =>
+        {
+            void Open()
+            {
+                var form = new NavRadiosForm(
+                    announcer,
+                    navData.Nav1Freq, (int)Math.Round(navData.Nav1Obs),
+                    navData.Nav2Freq, (int)Math.Round(navData.Nav2Obs),
+                    settings =>
+                    {
+                        // Active frequency in whole Hz (the form already snapped to a 50 kHz channel).
+                        simConnect.SendEvent("NAV1_RADIO_SET_HZ", (uint)Math.Round(settings.Nav1FreqMHz * 1_000_000.0));
+                        simConnect.SendEvent("VOR1_SET", (uint)settings.Nav1Course);
+                        simConnect.SendEvent("NAV2_RADIO_SET_HZ", (uint)Math.Round(settings.Nav2FreqMHz * 1_000_000.0));
+                        simConnect.SendEvent("VOR2_SET", (uint)settings.Nav2Course);
+                        announcer.AnnounceImmediate(
+                            $"NAV 1 {settings.Nav1FreqMHz:0.00}, course {settings.Nav1Course}. " +
+                            $"NAV 2 {settings.Nav2FreqMHz:0.00}, course {settings.Nav2Course}.");
+                    });
+                form.Show(parentForm);
+            }
+
+            if (parentForm.IsDisposed) return;
+            if (parentForm.InvokeRequired) parentForm.BeginInvoke((Action)Open);
+            else Open();
+        });
     }
 }

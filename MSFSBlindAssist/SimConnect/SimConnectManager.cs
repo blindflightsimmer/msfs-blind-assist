@@ -397,6 +397,7 @@ public class SimConnectManager
         public string Nav1Ident;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
         public string Nav1Name;
+        public double Nav1Obs;
         public double Nav2Freq;
         public double Nav2HasNav;
         public double Nav2HasLocalizer;
@@ -409,6 +410,7 @@ public class SimConnectManager
         public string Nav2Ident;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
         public string Nav2Name;
+        public double Nav2Obs;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi, Pack = 1)]
@@ -679,6 +681,7 @@ public class SimConnectManager
         sc.AddToDataDefinition(DATA_DEFINITIONS.DEF_NAV_RADIO, "NAV RAW GLIDE SLOPE:1", "Degrees", SIMCONNECT_DATATYPE.FLOAT64, 0.0f, SIMCONNECT_UNUSED);
         sc.AddToDataDefinition(DATA_DEFINITIONS.DEF_NAV_RADIO, "NAV IDENT:1", null, SIMCONNECT_DATATYPE.STRING256, 0.0f, SIMCONNECT_UNUSED);
         sc.AddToDataDefinition(DATA_DEFINITIONS.DEF_NAV_RADIO, "NAV NAME:1", null, SIMCONNECT_DATATYPE.STRING256, 0.0f, SIMCONNECT_UNUSED);
+        sc.AddToDataDefinition(DATA_DEFINITIONS.DEF_NAV_RADIO, "NAV OBS:1", "Degrees", SIMCONNECT_DATATYPE.FLOAT64, 0.0f, SIMCONNECT_UNUSED);
         sc.AddToDataDefinition(DATA_DEFINITIONS.DEF_NAV_RADIO, "NAV ACTIVE FREQUENCY:2", "MHz", SIMCONNECT_DATATYPE.FLOAT64, 0.0f, SIMCONNECT_UNUSED);
         sc.AddToDataDefinition(DATA_DEFINITIONS.DEF_NAV_RADIO, "NAV HAS NAV:2", "Bool", SIMCONNECT_DATATYPE.FLOAT64, 0.0f, SIMCONNECT_UNUSED);
         sc.AddToDataDefinition(DATA_DEFINITIONS.DEF_NAV_RADIO, "NAV HAS LOCALIZER:2", "Bool", SIMCONNECT_DATATYPE.FLOAT64, 0.0f, SIMCONNECT_UNUSED);
@@ -689,6 +692,7 @@ public class SimConnectManager
         sc.AddToDataDefinition(DATA_DEFINITIONS.DEF_NAV_RADIO, "NAV RAW GLIDE SLOPE:2", "Degrees", SIMCONNECT_DATATYPE.FLOAT64, 0.0f, SIMCONNECT_UNUSED);
         sc.AddToDataDefinition(DATA_DEFINITIONS.DEF_NAV_RADIO, "NAV IDENT:2", null, SIMCONNECT_DATATYPE.STRING256, 0.0f, SIMCONNECT_UNUSED);
         sc.AddToDataDefinition(DATA_DEFINITIONS.DEF_NAV_RADIO, "NAV NAME:2", null, SIMCONNECT_DATATYPE.STRING256, 0.0f, SIMCONNECT_UNUSED);
+        sc.AddToDataDefinition(DATA_DEFINITIONS.DEF_NAV_RADIO, "NAV OBS:2", "Degrees", SIMCONNECT_DATATYPE.FLOAT64, 0.0f, SIMCONNECT_UNUSED);
         sc.RegisterDataDefineStruct<NavRadioData>(DATA_DEFINITIONS.DEF_NAV_RADIO);
     }
 
@@ -3049,20 +3053,6 @@ public class SimConnectManager
         }
 
         System.Diagnostics.Debug.WriteLine($"SimConnect Exception: {data.dwException} ({exceptionName}) - SendID: {data.dwSendID}, Index: {data.dwIndex}");
-
-        // Mirror to PMDG NG3 diagnostic log so the user can see exceptions related to
-        // their loaded aircraft without needing a debugger attached.
-        try
-        {
-            var logPath = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "MSFSBlindAssist", "pmdg_ng3_diag.log");
-            var dir = System.IO.Path.GetDirectoryName(logPath);
-            if (dir != null) System.IO.Directory.CreateDirectory(dir);
-            System.IO.File.AppendAllText(logPath,
-                $"{DateTime.Now:HH:mm:ss.fff}  SimConnect EXCEPTION: {data.dwException} ({exceptionName}) - SendID: {data.dwSendID}, Index: {data.dwIndex}\n");
-        }
-        catch { /* never throw from logging */ }
     }
 
     private void SimConnect_OnRecvClientData(Microsoft.FlightSimulator.SimConnect.SimConnect sender, SIMCONNECT_RECV_CLIENT_DATA data)
@@ -4100,20 +4090,6 @@ public class SimConnectManager
 
     public void InitializePMDG(IAircraftDefinition aircraft)
     {
-        // Always log entry — covers the "PMDGNG3DataManager.Initialize never fires"
-        // diagnosis where we need to know if we even GOT to the factory.
-        try
-        {
-            var logPath = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "MSFSBlindAssist", "pmdg_ng3_diag.log");
-            var dir = System.IO.Path.GetDirectoryName(logPath);
-            if (dir != null) System.IO.Directory.CreateDirectory(dir);
-            System.IO.File.AppendAllText(logPath,
-                $"{DateTime.Now:HH:mm:ss.fff}  SimConnectManager.InitializePMDG called: aircraftCode='{aircraft?.AircraftCode}', simConnect={(simConnect == null ? "null" : "non-null")}, IsConnected={IsConnected}\n");
-        }
-        catch { /* never throw from logging */ }
-
         if (simConnect == null || !IsConnected) return;
         DisposePMDG();
         pmdgDataManager = aircraft.AircraftCode switch
@@ -4122,16 +4098,6 @@ public class SimConnectManager
             "PMDG_737" => new PMDGNG3DataManager(),
             _ => null
         };
-
-        try
-        {
-            var logPath = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "MSFSBlindAssist", "pmdg_ng3_diag.log");
-            System.IO.File.AppendAllText(logPath,
-                $"{DateTime.Now:HH:mm:ss.fff}  Factory result: pmdgDataManager={(pmdgDataManager == null ? "null" : pmdgDataManager.GetType().Name)}\n");
-        }
-        catch { }
 
         pmdgDataManager?.Initialize(simConnect, mobiFlightWasm);
     }

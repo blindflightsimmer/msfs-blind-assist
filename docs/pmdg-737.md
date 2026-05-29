@@ -34,6 +34,26 @@ sensible merge target (Landing Gear, Autobrake, Oxygen, Flight Recorder).
 
 All CDU-side arrays are `[2]` (Captain = 0, F/O = 1). No observer CDU. `PMDG737CDUForm` uses the raw 0/1 ordering — no L/C/R dropdown swap like the 777 form has.
 
+## CDU keys must use TransmitClientEvent, not the CDA write
+
+`PMDG737CDUForm.SendCDUKey` dispatches every CDU key (letters, LSKs, function
+keys, CLR/DEL/EXEC) via `SendEventViaTransmitWithTarget(eventId,
+MOUSE_FLAG_LEFTSINGLE = 0x20000000)` — a self-contained press+release click.
+
+Do **not** use the CDA path (`SendEvent(name, id, 1)`) the 777 form uses for most
+keys. The NG3 FMC ignores the CDA `{eventId, 1}` write for CDU keypad events —
+the click sound plays but nothing registers (same momentary-button behavior
+proven for the MCP buttons). This is the documented PMDG convention (the SDK's
+flight-director sample uses `MOUSE_FLAG_LEFTSINGLE`/`LEFTRELEASE`, and TFM uses
+TransmitClientEvent for every CDU key) and matches the 777's own FMCCOMM/HOLD
+path. A single `LEFTSINGLE` is a complete click — no separate `LEFTRELEASE` is
+needed for CDU keys. Live-verified against the NG3 (CLR + letter entry) with
+`tools/CDUTest` (`CDUTest 737 transmit <eventId> 536870912`).
+
+`tools/CDUTest` is a standalone single-shot probe: it maps the chosen Control
+CDA (`PMDG_NG3_Control` / `PMDG_777X_Control`) and fires one event via either
+`cda` or `transmit`, for confirming which dispatch shape a given switch accepts.
+
 ## No FPA mode
 
 NG3 has no `MCP_FPA` field, no `MCP_annunVS_FPA`, and the VS dialog drops the FPA toggle the 777 dialog has. The VS dialog gates input on `MCP_annunVS` (not `MCP_annunVS_FPA`).
@@ -133,12 +153,30 @@ PMDG NG3 mechanically locks fire handles in the "In" position unless a fire warn
 
 ## EFB support
 
-The 737 does not yet have an EFB tablet bridge wired up — it's planned as a follow-up once the panels are stable. The gating mechanism: `IPMDGAircraft.HasEFBSupport` (default `false`). `PMDG777Definition` overrides it to `true`; `PMDG737Definition` leaves it at the default.
+The PMDG 737-600 / -700 / -800 / -900 EFB has full parity with the PMDG 777. The 737 ships the
+**byte-identical** EFB application bundle as the 777 (MD5-confirmed for `PMDGTablet.js` across all
+five aircraft variants), so the bridge JS, the shared `zzz-pmdg-efb-accessibility` Community
+package, the `EFBBridgeServer`, and every EFB app panel are reused unchanged. The only per-variant
+data is the path string inside `PMDGTabletCA.html` (`pmdg-737-800`, `pmdg-737-600`, etc.) —
+`EFBModPackageManager.Variants` enumerates all four 737 entries and creates a tablet override
+folder for each.
 
-`MainForm` gates three sites on `HasEFBSupport`: the startup EFB plumbing (constructor), the `ShowPMDGEFB` hotkey dispatch (Shift+T), and the aircraft-change EFB plumbing. With the gate at default, the 737 user never sees the 777's EFB mod-package prompt and Shift+T is a no-op.
+- Enabled via `IPMDGAircraft.HasEFBSupport => true` in `PMDG737Definition` — this single flag turns
+  on the startup/aircraft-change EFB plumbing (bridge-server start + mod-package install prompt) and
+  the Shift+T dispatch (`MainForm` gates those sites on `HasEFBSupport`).
+- `Forms/PMDGEFB/PMDGEFBForm.cs` is the **shared** accessible form for both 737 and 777. The
+  constructor takes `currentAircraft.AircraftCode`; the form title reads `"PMDG 737 EFB"` for
+  `PMDG_737` and `"PMDG 777 EFB"` otherwise. All seven EFB app panels are hosted:
+  Dashboard / Preferences / Navdata / Performance / Ground Ops / Weights & Balance / Manuals
+  (plus a Display debug tab and Ctrl+Shift+{R,C,D,E} diagnostic hotkeys).
+- `MainForm.ShowPMDGEFBDialog` constructs `PMDGEFBForm(efbBridgeServer, announcer, AircraftCode)`
+  unconditionally — no per-aircraft switch.
+- `EFBModPackageManager.Variants` includes the four 737 entries (`pmdg-aircraft-736 / 737 / 738 / 739`
+  with tablet subfolders `pmdg-737-600 / -700 / -800 / -900`). Existing installs pick up newly
+  installed variants via `UpdateModPackage`'s `HasMissingVariantOverride` check; the same path
+  also re-runs after a `BridgeVersion` bump.
 
-When the 737 EFB lands:
-1. Build `PMDG737EFBForm` (companion to `PMDG777EFBForm`).
-2. Override `HasEFBSupport => true` in `PMDG737Definition`.
-3. Make `MainForm.ShowPMDGEFBDialog` polymorphic — pick the right form based on `currentAircraft` type.
-4. Extend `EFBModPackageManager.Variants` to include `pmdg-aircraft-738`.
+First-time install needs **one sim restart** for MSFS to load the override HTML (the bridge then
+injects when the tablet opens). The 738's Flight Attendant Panel (`PMDGFlightAttendantPanel.*`)
+is a separate VCockpit instrument with its own DOM and is NOT part of the EFB bridge — making it
+accessible would need its own bridge package and is out of scope.
