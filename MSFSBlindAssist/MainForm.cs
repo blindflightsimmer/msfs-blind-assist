@@ -278,7 +278,8 @@ public partial class MainForm : Form
         // because it lives outside this poll loop.
         groundTrafficMonitor.SuppressCheck = () =>
             takeoffAssistManager.IsActive
-            || taxiGuidanceManager.State == TaxiGuidanceState.Inactive;
+            || taxiGuidanceManager.State == TaxiGuidanceState.Inactive
+            || taxiGuidanceManager.State == TaxiGuidanceState.LandingRollout;
 
         // Initialize airport database provider (optional - can be null if database not built yet)
         airportDataProvider = DatabaseSelector.SelectProvider();
