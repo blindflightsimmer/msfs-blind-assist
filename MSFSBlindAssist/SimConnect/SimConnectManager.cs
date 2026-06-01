@@ -863,14 +863,16 @@ public class SimConnectManager
             return;
         }
 
-        if (continuousVariables.Count > 500)
+        if (continuousVariables.Count > 1500)
         {
-            System.Diagnostics.Debug.WriteLine($"[SimConnectManager] WARNING: {continuousVariables.Count} continuous variables exceeds multi-batch capacity of 500 (5 batches × 100)!");
+            System.Diagnostics.Debug.WriteLine($"[SimConnectManager] WARNING: {continuousVariables.Count} continuous variables exceeds multi-batch capacity of 1500 (5 batches × 300)! Variables past the cap (alphabetically last) will NOT auto-announce.");
             // Continue anyway - we'll use as many batches as needed
         }
 
-        // Split variables into 5 batches (up to 100 variables per batch).
-        const int BATCH_SIZE = 100;
+        // Split variables into 5 batches (up to 300 variables per batch = 1500 total).
+        // The GenericBatch1-5 structs each hold 300 doubles to match BATCH_SIZE.
+        // (Headroom: the A380 currently uses ~700 continuous+announced vars.)
+        const int BATCH_SIZE = 300;
         const int NUM_BATCHES = 5;
 
         // Batch configuration: (batchNum, dataDefinition, dataRequest, structType)
@@ -1388,7 +1390,7 @@ public class SimConnectManager
                 }
                 break;
 
-            // Multi-batch continuous variable monitoring (5 batches of ~100 variables each)
+            // Multi-batch continuous variable monitoring (5 batches of up to 200 variables each)
             case DATA_REQUESTS.REQUEST_CONTINUOUS_BATCH_1:
                 GenericBatch1 batch1Data = (GenericBatch1)data.dwData[0];
                 ProcessContinuousBatch(1, in batch1Data);
@@ -2517,10 +2519,10 @@ public class SimConnectManager
                         if (varBatchNum != batchNum) continue;
 
                         // SAFETY: Validate index is within bounds
-                        // Each batch struct has 100 doubles (V0-V99)
-                        if (index < 0 || index >= 100)
+                        // Each batch struct has 300 doubles (matches BATCH_SIZE = 300)
+                        if (index < 0 || index >= 300)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[ProcessContinuousBatch] ERROR: Batch {batchNum} index {index} out of bounds [0-99] for variable '{varKey}'");
+                            System.Diagnostics.Debug.WriteLine($"[ProcessContinuousBatch] ERROR: Batch {batchNum} index {index} out of bounds [0-299] for variable '{varKey}'");
                             invalidIndexCount++;
                             continue;
                         }
@@ -3798,9 +3800,31 @@ public class SimConnectManager
     public void SendEvent(string eventName, uint data = 0)
     {
         if (!IsConnected || simConnect == null) return;
-        
+
         System.Diagnostics.Debug.WriteLine($"Sending event: {eventName} with data: {data}");
-        
+
+        // Two FlyByWire event classes are NOT dispatchable via
+        // MapClientEventToSimEvent + TransmitClientEvent — that path silently
+        // no-ops (verified live: SimConnect returns "event not found"). They MUST
+        // be fired as calculator code via the MobiFlight WASM bridge:
+        //   1. "H:" gauge/HTML events (e.g. H:A380X_EFIS_CP_BARO_PUSH_1) — the
+        //      EFIS baro STD/QNH push-pull and similar.
+        //   2. Dotted custom input events (e.g. A32NX.FCU_HDG_SET,
+        //      A32NX.FCU_AP_1_PUSH) — the whole A380/A320 FCU/AP/ATHR.
+        if (mobiFlightWasm != null)
+        {
+            if (eventName.StartsWith("H:", StringComparison.Ordinal))
+            {
+                ExecuteCalculatorCode($"(>{eventName})");   // momentary; no param
+                return;
+            }
+            if (eventName.Contains('.'))
+            {
+                ExecuteCalculatorCode($"{data} (>K:{eventName})");
+                return;
+            }
+        }
+
         // Map the event name to an ID if not already mapped
         if (!eventIds.ContainsKey(eventName))
         {
@@ -3996,6 +4020,23 @@ public class SimConnectManager
             var variables = CurrentAircraft?.GetVariables() ?? new Dictionary<string, SimVarDefinition>();
             var varDef = variables.Values.FirstOrDefault(v =>
                 v.LedVariable == e.LedVariable);
+
+            // Fallback: route a one-shot MobiFlight read by var KEY when no def
+            // declares it as a LedVariable. Used for FCU readouts (e.g. the VS
+            // selected target) whose SimConnect data-def read is unreliable, so
+            // ReadLedVariable(key) can deliver the correct MobiFlight value under
+            // the var's own name without setting LedVariable (which would make
+            // MainForm re-request it over the unreliable SimConnect path).
+            if (varDef == null && variables.TryGetValue(e.LedVariable, out var byKey))
+            {
+                SimVarUpdated?.Invoke(this, new SimVarUpdateEventArgs
+                {
+                    VarName = e.LedVariable,
+                    Value = e.Value,
+                    Description = byKey.DisplayName
+                });
+                return;
+            }
 
             if (varDef != null)
             {

@@ -1779,14 +1779,16 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
             IsAnnounced = true,
             Units = "number",
+            // Enum from the FBW EWD N1Limit component: ['', CLB, MCT, FLX, TOGA, MREV].
+            // Read as "Autothrust Thrust Limit Type: CLB" (no redundant "Thrust:" prefix).
             ValueDescriptions = new Dictionary<double, string>
             {
-                [0] = "Thrust: NONE",
-                [1] = "Thrust: CLB",
-                [2] = "Thrust: MCT",
-                [3] = "Thrust: FLEX",
-                [4] = "Thrust: TOGA",
-                [5] = "Thrust: REVERSE"
+                [0] = "None",
+                [1] = "CLB",
+                [2] = "MCT",
+                [3] = "FLEX",
+                [4] = "TOGA",
+                [5] = "Max Reverse"
             }
         },
         ["A32NX_AUTOTHRUST_THRUST_LIMIT_FLX"] = new SimConnect.SimVarDefinition
@@ -2253,6 +2255,23 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
             IsAnnounced = true,
             Units = "number"
+        },
+        // MSFSBA-internal System Display page selector (the A32NX SD index is read-only,
+        // so this drives the accessible status box, not the real SD). Selecting a page
+        // scrapes (E/WD) or reads decoded SimVars (system pages) into the status box.
+        ["A32NX_MSFSBA_SD_PAGE"] = new SimConnect.SimVarDefinition
+        {
+            Name = "A32NX_MSFSBA_SD_PAGE",
+            DisplayName = "System Display Page",
+            Type = SimConnect.SimVarType.LVar,
+            UpdateFrequency = SimConnect.UpdateFrequency.OnRequest,
+            Units = "number",
+            ValueDescriptions = new Dictionary<double, string>
+            {
+                [0] = "Upper E/WD", [1] = "Electrical", [2] = "Hydraulics", [3] = "Pressurization",
+                [4] = "APU", [5] = "Air Conditioning", [6] = "Wheel / Brakes", [7] = "Bleed",
+                [8] = "Fuel", [9] = "Doors"
+            }
         },
         ["A32NX_FM1_MINIMUM_DESCENT_ALTITUDE"] = new SimConnect.SimVarDefinition
         {
@@ -3476,6 +3495,12 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
         ["ECAM"] = new List<string>
         {
             "A32NX_ECAM_SFAIL"
+        },
+        // System Display: the status box shows the selected page's content (E/WD scrape
+        // or decoded SD-system SimVars), via TryGetDisplayOverride on the page var.
+        ["System Display"] = new List<string>
+        {
+            "A32NX_MSFSBA_SD_PAGE"
         }
         // Add more panels and their display variables here as needed
         };
@@ -3487,7 +3512,7 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
         {
 ["Overhead Forward"] = new List<string> { "ELEC", "ADIRS", "APU", "Oxygen", "Fire", "Hydraulic", "Fuel", "Air Con", "Anti Ice", "Signs", "Exterior Lighting", "Calls", "GPWS", "Cockpit Door", "Evacuation", "Cargo Smoke", "Engine" },
         ["Glareshield"] = new List<string> { "FCU", "EFIS Control Panel", "Warnings" },
-        ["Instrument"] = new List<string> { "Autobrake and Gear", "ISIS" },
+        ["Instrument"] = new List<string> { "Autobrake and Gear", "ISIS", "System Display" },
         ["Pedestal"] = new List<string> { "Flight Controls", "Speed Brake", "Parking Brake", "Engines", "ECAM", "WX", "ATC-TCAS", "RMP" }
         };
     }
@@ -3717,6 +3742,10 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             "ECAM_EMER_CANC",
             "ECAM_CLR_1",
             "ECAM_CLR_2"
+        },
+        ["System Display"] = new List<string>
+        {
+            "A32NX_MSFSBA_SD_PAGE"
         },
         ["WX"] = new List<string>
         {
@@ -4235,9 +4264,235 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
     /// Called from MainForm.OnSimVarUpdated for every variable update to allow aircraft-specific processing.
     /// Returns true if the variable was fully processed and no further generic processing is needed.
     /// </summary>
+    // FMA armed-mode decode (legacy A32NX_FMA_*_ARMED bitmasks; bit 0 = ALT). Decodes
+    // to mode names so arming a mode speaks "Altitude armed" / "NAV armed" instead of
+    // the old raw bitmask number. Matches the A380.
+    private int _prevVertArmed = -1, _prevLatArmed = -1;
+    private static readonly (int bit, string name)[] _vertArmedBits =
+        { (1, "Altitude"), (2, "Altitude constraint"), (4, "Climb"), (8, "Descent"), (16, "Glideslope"), (32, "Final"), (64, "TCAS") };
+    private static readonly (int bit, string name)[] _latArmedBits = { (1, "NAV"), (2, "Localizer") };
+    private static string DecodeArmedModes(int v, (int bit, string name)[] bits)
+    {
+        var names = new List<string>();
+        foreach (var b in bits) if ((v & b.bit) != 0) names.Add(b.name);
+        return string.Join(", ", names);
+    }
+
+    // ---- A320 System Display (SD) + E/WD accessible read-out -------------------
+    // The A32NX SD page index is system-written/read-only (verified PagesContainer.tsx:111),
+    // so — unlike the A380 — we cannot force a page to scrape it. The "System Display"
+    // panel combo selects a page: the E/WD is SCRAPED (single page, no switching needed);
+    // the SD system pages (ELEC/HYD/... added one at a time) read decoded SimVars. The
+    // status box shows the selected page's content, populated on selection — no
+    // auto-speech, no manual refresh. Combo backed by an MSFSBA-internal L:var.
+    public const string SdPageVar = "A32NX_MSFSBA_SD_PAGE";
+    private SimConnect.CoherentDisplayClient? _ewdScrapeClient;
+    private string _sdBoxContent = "";
+    private static readonly Dictionary<double, string> SdPageNames = new()
+    {
+        [0] = "Upper E/WD", [1] = "Electrical", [2] = "Hydraulics", [3] = "Pressurization",
+        [4] = "APU", [5] = "Air Conditioning", [6] = "Wheel / Brakes", [7] = "Bleed",
+        [8] = "Fuel", [9] = "Doors"
+    };
+
+    // Per-system SD readout rows (decoded SimVars). Added one system at a time.
+    private static List<(string label, string var, Func<double, string> fmt)> SdSystemRows(int page)
+    {
+        // Decode an ARINC429 word when present (raw value >= 2^32 carries an SSM),
+        // else use the plain value — several FBW SD vars (e.g. APU N/EGT) are ARINC.
+        static double Dec(double v) => v >= 4294967296.0 ? new SimConnect.Arinc429Word(v).ValueOr(0f) : v;
+        string V(double v) => $"{v:0} V";
+        string Pct(double v) => $"{v:0} %";
+        string Psi(double v) => $"{v:0} psi";
+        string PsiD(double v) => $"{Dec(v):0.0} psi";
+        string C(double v) => $"{Dec(v):0} degrees";
+        string PctD(double v) => $"{Dec(v):0} %";
+        string Ft(double v) => $"{v:0} feet";
+        string Fpm(double v) => $"{v:0} feet per minute";
+        string Lvl(double v) => $"{v:0.0}";
+        string OnOff(double v) => v > 0.5 ? "powered" : "not powered";
+        string OpenShut(double v) => v > 0.5 ? "open" : "closed";
+        string YesNo(double v) => v > 0.5 ? "yes" : "no";
+        var r = new List<(string, string, Func<double, string>)>();
+        if (page == 2) // HYDRAULICS
+        {
+            r.Add(("Green pressure", "A32NX_HYD_GREEN_SYSTEM_1_SECTION_PRESSURE", Psi));
+            r.Add(("Green reservoir", "A32NX_HYD_GREEN_RESERVOIR_LEVEL", Lvl));
+            r.Add(("Yellow pressure", "A32NX_HYD_YELLOW_SYSTEM_1_SECTION_PRESSURE", Psi));
+            r.Add(("Yellow reservoir", "A32NX_HYD_YELLOW_RESERVOIR_LEVEL", Lvl));
+            r.Add(("Yellow elec pump", "A32NX_HYD_YELLOW_EPUMP_ACTIVE", v => v > 0.5 ? "running" : "off"));
+            r.Add(("Blue pressure", "A32NX_HYD_BLUE_SYSTEM_1_SECTION_PRESSURE", Psi));
+            r.Add(("Blue reservoir", "A32NX_HYD_BLUE_RESERVOIR_LEVEL", Lvl));
+            r.Add(("Blue elec pump", "A32NX_HYD_BLUE_EPUMP_ACTIVE", v => v > 0.5 ? "running" : "off"));
+            r.Add(("PTU valve", "A32NX_HYD_PTU_VALVE_OPENED", OpenShut));
+            r.Add(("RAT stowed", "A32NX_RAT_STOW_POSITION", v => v < 0.05 ? "stowed" : $"deployed {v * 100:0}%"));
+        }
+        else if (page == 3) // PRESSURIZATION
+        {
+            r.Add(("Cabin altitude", "A32NX_PRESS_CABIN_ALTITUDE", Ft));
+            r.Add(("Cabin vertical speed", "A32NX_PRESS_CABIN_VS", Fpm));
+            r.Add(("Differential pressure", "A32NX_PRESS_CABIN_DELTA_PRESSURE", v => $"{v:0.0} psi"));
+            r.Add(("Outflow valve", "A32NX_PRESS_MAN_OUTFLOW_VALVE_OPEN_PERCENTAGE", Pct));
+            r.Add(("Safety valve", "A32NX_PRESS_SAFETY_VALVE_OPEN_PERCENTAGE", Pct));
+            r.Add(("Landing elevation", "A32NX_FM1_LANDING_ELEVATION", Ft));
+        }
+        else if (page == 4) // APU
+        {
+            r.Add(("APU N", "A32NX_APU_N", PctD));
+            r.Add(("APU EGT", "A32NX_APU_EGT", C));
+            r.Add(("Inlet flap", "A32NX_APU_FLAP_OPEN_PERCENTAGE", PctD));
+            r.Add(("Bleed valve", "A32NX_APU_BLEED_AIR_VALVE_OPEN", OpenShut));
+            r.Add(("Low fuel pressure", "A32NX_APU_LOW_FUEL_PRESSURE_FAULT", YesNo));
+            r.Add(("Gen voltage", "A32NX_ELEC_APU_GEN_1_POTENTIAL", V));
+            r.Add(("Gen load", "A32NX_ELEC_APU_GEN_1_LOAD", Pct));
+        }
+        else if (page == 5) // AIR CONDITIONING (COND)
+        {
+            r.Add(("Cockpit temp", "A32NX_COND_CKPT_TEMP", C));
+            r.Add(("Forward cabin temp", "A32NX_COND_FWD_TEMP", C));
+            r.Add(("Aft cabin temp", "A32NX_COND_AFT_TEMP", C));
+            r.Add(("Cockpit duct temp", "A32NX_COND_CKPT_DUCT_TEMP", C));
+            r.Add(("Forward duct temp", "A32NX_COND_FWD_DUCT_TEMP", C));
+            r.Add(("Aft duct temp", "A32NX_COND_AFT_DUCT_TEMP", C));
+        }
+        else if (page == 6) // WHEEL / BRAKES
+        {
+            r.Add(("Brake 1 temp", "A32NX_REPORTED_BRAKE_TEMPERATURE_1", C));
+            r.Add(("Brake 2 temp", "A32NX_REPORTED_BRAKE_TEMPERATURE_2", C));
+            r.Add(("Brake 3 temp", "A32NX_REPORTED_BRAKE_TEMPERATURE_3", C));
+            r.Add(("Brake 4 temp", "A32NX_REPORTED_BRAKE_TEMPERATURE_4", C));
+            r.Add(("Autobrake mode", "A32NX_AUTOBRAKES_ARMED_MODE",
+                v => v < 0.5 ? "Off" : v < 1.5 ? "Low" : v < 2.5 ? "Medium" : "Max"));
+            r.Add(("Autobrake active", "A32NX_AUTOBRAKES_ACTIVE", YesNo));
+        }
+        else if (page == 7) // BLEED
+        {
+            r.Add(("Eng 1 precooler temp", "A32NX_PNEU_ENG_1_PRECOOLER_OUTLET_TEMPERATURE", C));
+            r.Add(("Eng 1 bleed pressure", "A32NX_PNEU_ENG_1_REGULATED_TRANSDUCER_PRESSURE", Psi));
+            r.Add(("Eng 1 bleed valve", "A32NX_PNEU_ENG_1_PR_VALVE_OPEN", OpenShut));
+            r.Add(("Eng 2 precooler temp", "A32NX_PNEU_ENG_2_PRECOOLER_OUTLET_TEMPERATURE", C));
+            r.Add(("Eng 2 bleed pressure", "A32NX_PNEU_ENG_2_REGULATED_TRANSDUCER_PRESSURE", Psi));
+            r.Add(("Eng 2 bleed valve", "A32NX_PNEU_ENG_2_PR_VALVE_OPEN", OpenShut));
+            r.Add(("Cross-bleed valve", "A32NX_PNEU_XBLEED_VALVE_FULLY_OPEN", OpenShut));
+            r.Add(("APU bleed valve", "A32NX_APU_BLEED_AIR_VALVE_OPEN", OpenShut));
+            r.Add(("Wing anti-ice", "A32NX_PNEU_WING_ANTI_ICE_SYSTEM_ON", v => v > 0.5 ? "on" : "off"));
+        }
+        else if (page == 8) // FUEL
+        {
+            r.Add(("Fuel flow eng 1", "A32NX_ENGINE_FF:1", v => $"{v:0} kg per hour"));
+            r.Add(("Fuel flow eng 2", "A32NX_ENGINE_FF:2", v => $"{v:0} kg per hour"));
+            r.Add(("Fuel used eng 1", "A32NX_FUEL_USED:1", v => $"{v:0} kg"));
+            r.Add(("Fuel used eng 2", "A32NX_FUEL_USED:2", v => $"{v:0} kg"));
+            r.Add(("Total fuel on board", "A32NX_TOTAL_FUEL_QUANTITY", v => $"{v:0} kg"));
+        }
+        else if (page == 9) // DOORS
+        {
+            r.Add(("Forward cargo door", "A32NX_FWD_DOOR_CARGO_LOCKED", v => v > 0.5 ? "locked" : "unlocked"));
+            r.Add(("Escape slides", "A32NX_SLIDES_ARMED", v => v > 0.5 ? "armed" : "disarmed"));
+        }
+        else if (page == 1) // ELEC
+        {
+            r.Add(("Gen 1", "A32NX_ELEC_ENG_GEN_1_POTENTIAL", V));
+            r.Add(("Gen 1 load", "A32NX_ELEC_ENG_GEN_1_LOAD", Pct));
+            r.Add(("Gen 2", "A32NX_ELEC_ENG_GEN_2_POTENTIAL", V));
+            r.Add(("Gen 2 load", "A32NX_ELEC_ENG_GEN_2_LOAD", Pct));
+            r.Add(("APU gen", "A32NX_ELEC_APU_GEN_1_POTENTIAL", V));
+            r.Add(("APU gen load", "A32NX_ELEC_APU_GEN_1_LOAD", Pct));
+            r.Add(("Battery 1", "A32NX_ELEC_BAT_1_POTENTIAL", V));
+            r.Add(("Battery 2", "A32NX_ELEC_BAT_2_POTENTIAL", V));
+            r.Add(("Emergency gen", "A32NX_ELEC_EMER_GEN_POTENTIAL", V));
+            r.Add(("AC bus 1", "A32NX_ELEC_AC_1_BUS_IS_POWERED", OnOff));
+            r.Add(("AC bus 2", "A32NX_ELEC_AC_2_BUS_IS_POWERED", OnOff));
+            r.Add(("AC ESS bus", "A32NX_ELEC_AC_ESS_BUS_IS_POWERED", OnOff));
+            r.Add(("DC bus 1", "A32NX_ELEC_DC_1_BUS_IS_POWERED", OnOff));
+            r.Add(("DC bus 2", "A32NX_ELEC_DC_2_BUS_IS_POWERED", OnOff));
+            r.Add(("DC bat bus", "A32NX_ELEC_DC_BAT_BUS_IS_POWERED", OnOff));
+        }
+        return r;
+    }
+
+    // Populate the System Display status box for the selected page, then force the box
+    // to re-render (RequestVariable → ProcessSimVarUpdate → UpdateDisplayText →
+    // TryGetDisplayOverride). No speech; the box just fills in on selection.
+    private async void RefreshDisplayBoxAsync(int page, SimConnect.SimConnectManager sim)
+    {
+        try
+        {
+            string content;
+            if (page == 0)   // E/WD — scrape the live display (engine row + memos/warnings)
+            {
+                if (_ewdScrapeClient == null)
+                {
+                    _ewdScrapeClient = new SimConnect.CoherentDisplayClient("A32NX_EWD_1");
+                    _ewdScrapeClient.Start();
+                    _ewdScrapeClient.SetActive(false);   // on-demand only
+                }
+                await System.Threading.Tasks.Task.Delay(700);
+                var rows = await _ewdScrapeClient.ScrapeNowAsync();
+                content = (rows == null || rows.Count == 0)
+                    ? "(content not available — power up the displays / try again)"
+                    : string.Join("\r\n", rows);
+            }
+            else
+            {
+                // SD system page — request its L:vars, let them arrive, then format.
+                var rows = SdSystemRows(page);
+                if (rows.Count == 0) { content = "(this SD page is not wired yet)"; }
+                else
+                {
+                    foreach (var row in rows) sim.RequestVariable(row.var, forceUpdate: true);
+                    await System.Threading.Tasks.Task.Delay(600);
+                    var sb = new System.Text.StringBuilder();
+                    foreach (var row in rows)
+                    {
+                        double? cv = sim.GetCachedVariableValue(row.var);
+                        sb.AppendLine(cv.HasValue ? $"{row.label}: {row.fmt(cv.Value)}" : $"{row.label}: --");
+                    }
+                    content = sb.ToString().TrimEnd();
+                }
+            }
+            _sdBoxContent = content;
+            sim.RequestVariable(SdPageVar, forceUpdate: true);
+        }
+        catch { /* best-effort; the combo still recorded the selection */ }
+    }
+
+    public override bool TryGetDisplayOverride(string varKey, double value, out string displayText)
+    {
+        displayText = "";
+        if (varKey == SdPageVar)
+        {
+            int p = (int)Math.Round(value);
+            string nm = SdPageNames.TryGetValue(p, out var n) ? n : $"Page {p}";
+            displayText = string.IsNullOrEmpty(_sdBoxContent)
+                ? $"{nm} — select this page to load its content"
+                : $"{nm}\r\n{_sdBoxContent}";
+            return true;
+        }
+        return base.TryGetDisplayOverride(varKey, value, out displayText);
+    }
+
     public override bool ProcessSimVarUpdate(string varName, double value, Accessibility.ScreenReaderAnnouncer announcer)
     {
         lastAnnouncer = announcer; // Store for when we announce
+
+        // FMA armed modes — decode the bitmask and announce NEWLY-armed modes on change
+        // (suppresses the old raw "Armed Vertical Mode 1" generic announce).
+        if (varName == "A32NX_FMA_VERTICAL_ARMED" || varName == "A32NX_FMA_LATERAL_ARMED")
+        {
+            bool vert = varName == "A32NX_FMA_VERTICAL_ARMED";
+            int iv = (int)Math.Round(value);
+            int prev = vert ? _prevVertArmed : _prevLatArmed;
+            if (vert) _prevVertArmed = iv; else _prevLatArmed = iv;
+            if (prev >= 0 && (iv & ~prev) != 0)
+            {
+                string nm = DecodeArmedModes(iv & ~prev, vert ? _vertArmedBits : _latArmedBits);
+                if (!string.IsNullOrEmpty(nm))
+                    foreach (var one in nm.Split(new[] { ", " }, StringSplitOptions.None))
+                        announcer.Announce($"{one} armed");
+            }
+            return true;
+        }
 
         // Flight phase tracking (A32NX-specific)
         if (varName == "A32NX_FMGC_FLIGHT_PHASE")
@@ -4427,6 +4682,17 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
     public override bool HandleUIVariableSet(string varKey, double value, SimConnect.SimVarDefinition varDef,
         SimConnect.SimConnectManager simConnect, Accessibility.ScreenReaderAnnouncer announcer)
     {
+        // System Display page combo (MSFSBA-internal selector). Record the selection
+        // and populate the status box — scrape the E/WD or read decoded SD-system
+        // SimVars. The real A32NX SD index is read-only, so no real SD var is touched.
+        if (varKey == "A32NX_MSFSBA_SD_PAGE")
+        {
+            int page = (int)Math.Round(value);
+            simConnect.ExecuteCalculatorCode($"{page} (>L:A32NX_MSFSBA_SD_PAGE)");
+            RefreshDisplayBoxAsync(page, simConnect);
+            return true;
+        }
+
         // Special handling for autobrake mode - sends to multiple locations
         if (varKey == "AUTOBRAKE_MODE")
         {

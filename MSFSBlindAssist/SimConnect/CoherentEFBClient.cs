@@ -1,419 +1,429 @@
-using System.Collections.Concurrent;
-using System.Net.Sockets;
-using System.Security.Cryptography;
+using System.Net.Http;
+using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 
-namespace MSFSBlindAssist.SimConnect;
-
-/// <summary>
-/// Owns the single Coherent GT devtools (CDP) connection to the FBW A32NX EFB
-/// page. Installs the generic agent (window.__MSFSBA_FLYPAD) once per connection,
-/// then drives it via Runtime.evaluate request/response correlated by message id.
-///
-/// Coherent GT accepts only ONE devtools connection at a time, so this client is
-/// the sole CDP consumer for the EFB page; its lifecycle is tied to the EFB form.
-/// .NET's ClientWebSocket rejects Coherent GT's non-standard upgrade response, so
-/// the WebSocket handshake and framing are done manually.
-/// </summary>
-public sealed class CoherentEFBClient : IDisposable
+namespace MSFSBlindAssist.SimConnect
 {
-    private const string PageListUrl = "http://127.0.0.1:19999/pagelist.json";
-    private const int Port = 19999;
-    private const int HttpTimeoutMs = 2000;
-    private const int WsConnectTimeoutMs = 3000;
-    private const int EvalTimeoutMs = 4000;
-    private const int HeartbeatMs = 4000;
-    private const int ReconnectDelayMs = 1500;
-
-    private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromMilliseconds(HttpTimeoutMs) };
-
-    private readonly string _agentJsPath;
-    private readonly SynchronizationContext? _sync;
-    private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pending = new();
-    private readonly SemaphoreSlim _writeLock = new(1, 1);
-
-    private CancellationTokenSource? _cts;
-    private TcpClient? _tcp;
-    private NetworkStream? _stream;
-    private int _nextId;
-    private volatile bool _ready;
-    private bool _disposed;
-    private readonly object _lifecycleLock = new();
-
-    public bool IsReady => _ready;
-    public event EventHandler? Connected;
-    public event EventHandler? Disconnected;
-
-    public CoherentEFBClient(string agentJsPath)
+    /// <summary>
+    /// Reads (and drives) the FlyByWire A380X flyPad EFB through the MSFS
+    /// Coherent GT debugger — the same no-injection WebKit-Inspector endpoint
+    /// (127.0.0.1:19999) the MFD client uses, but resolved to the flyPad's own
+    /// Coherent view (title contains "- EFB", e.g. "VCockpitNN - EFB"). We run
+    /// coherent-flypad-agent.js (window.__MSFSBA_FLYPAD) via Runtime.evaluate
+    /// inside the React app's JS context, where its DOM is directly reachable.
+    ///
+    /// Page ids shift between sim restarts, so the flyPad view is resolved BY
+    /// TITLE every (re)connect — never hardcoded (the VCockpit index is load
+    /// order dependent; only the title/coui:// path is stable).
+    ///
+    /// Implements IMcduBridge so FbwEfbForm can consume it exactly like the
+    /// old injection-based EFBBridgeServer: it raises the same
+    /// fbw_efb_connected / fbw_efb_elements state pushes and accepts the
+    /// same command vocabulary (get_display_elements / set_element_value /
+    /// click_display_element), translating each into an agent call.
+    /// </summary>
+    public sealed class CoherentEFBClient : IMcduBridge, IDisposable
     {
-        _agentJsPath = agentJsPath;
-        _sync = SynchronizationContext.Current;
-    }
+        private const string DebuggerBase = "http://127.0.0.1:19999";
+        private const string EfbTitleNeedle = "- EFB";
+        // Background scrape cadence. Kept moderate: a user click forces an immediate
+        // re-scrape (the form posts get_display_elements), so this only governs how
+        // fast AMBIENT changes (clock, live values) are picked up. 600ms eases the
+        // WebSocket/JSON load vs the old 400ms without feeling sluggish, and the form
+        // coalesces renders so polls can never pile up overlapping WebView2 updates.
+        private const int PollIntervalMs = 600;
+        private const int ReconnectDelayMs = 2000;
+        private const int EvalTimeoutMs = 5000;
+        // Unit-separator used to join a <select>'s option labels into one state value.
+        private const char OptionSeparator = (char)0x1f;
 
-    // ── lifecycle ───────────────────────────────────────────────────────────
+        public event EventHandler<EFBStateUpdateEventArgs>? StateUpdated;
+        public event Action<string>? Error;
 
-    public void Start()
-    {
-        lock (_lifecycleLock)
+        private readonly SynchronizationContext? _syncContext;
+        private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(4) };
+        private readonly SemaphoreSlim _sendLock = new(1, 1);
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pending = new();
+
+        private CancellationTokenSource? _cts;
+        private ClientWebSocket? _ws;
+        private string _agentJs = "";
+        private int _msgId;
+        private volatile bool _connected;
+        private volatile bool _agentInstalled;
+        private DateTime _lastGoodScrapeUtc = DateTime.MinValue;
+        private bool _connectedPushSent;
+        private string _lastElementsHash = "";
+        private bool _disposed;
+
+        public bool IsBridgeConnected =>
+            _connected && (DateTime.UtcNow - _lastGoodScrapeUtc).TotalSeconds < 5;
+
+        public CoherentEFBClient()
+        {
+            _syncContext = SynchronizationContext.Current;
+        }
+
+        public void Start()
         {
             if (_cts != null) return;
             _cts = new CancellationTokenSource();
-            Task.Run(() => RunAsync(_cts.Token));
-        }
-    }
-
-    public void Stop()
-    {
-        lock (_lifecycleLock)
-        {
-            _cts?.Cancel();
-            _cts?.Dispose();
-            _cts = null;
-        }
-        TearDown();
-        SetReady(false);
-    }
-
-    private async Task RunAsync(CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
             try
             {
-                if (!_ready)
-                {
-                    if (await ConnectAndInstallAsync(ct)) SetReady(true);
-                    else { await Delay(ReconnectDelayMs, ct); continue; }
-                }
-
-                // Heartbeat: ping; if the agent global is gone or the socket died, reconnect.
-                await Delay(HeartbeatMs, ct);
-                string pong = await PingAsync(ct);
-                if (pong != "MSFSBA_FLYPAD_OK")
-                {
-                    SetReady(false);
-                    TearDown();
-                }
+                string path = Path.Combine(AppContext.BaseDirectory, "Resources", "coherent-flypad-agent.js");
+                _agentJs = File.ReadAllText(path);
             }
-            catch (OperationCanceledException) { break; }
-            catch
+            catch (Exception ex)
             {
-                SetReady(false);
-                TearDown();
-                await Delay(ReconnectDelayMs, ct);
+                RaiseError($"Could not load flyPad agent script: {ex.Message}");
             }
+            _ = Task.Run(() => RunLoop(_cts.Token));
         }
-    }
 
-    private async Task<bool> ConnectAndInstallAsync(CancellationToken ct)
-    {
-        string? pageId = await FindEfbPageIdAsync(ct);
-        if (pageId == null) return false;
-        if (!File.Exists(_agentJsPath)) return false;
-
-        if (!await OpenSocketAsync(pageId, ct)) return false;
-
-        // Start the receive pump before sending anything.
-        _ = Task.Run(() => ReceivePumpAsync(_stream!, ct));
-
-        string agentJs = await File.ReadAllTextAsync(_agentJsPath, ct);
-        await EvalRawAsync(agentJs, returnByValue: false, ct);          // install
-        string pong = await PingAsync(ct);
-        if (pong != "MSFSBA_FLYPAD_OK") return false;
-        await PowerOnAsync(ct);
-        return true;
-    }
-
-    private async Task<bool> OpenSocketAsync(string pageId, CancellationToken ct)
-    {
-        try
+        public void Stop()
         {
-            _tcp = new TcpClient();
-            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            connectCts.CancelAfter(WsConnectTimeoutMs);
-            await _tcp.ConnectAsync("127.0.0.1", Port, connectCts.Token);
-            _stream = _tcp.GetStream();
-
-            string wsKey = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
-            string handshake =
-                $"GET /devtools/page/{pageId} HTTP/1.1\r\n" +
-                "Host: 127.0.0.1:19999\r\n" +
-                "Upgrade: websocket\r\n" +
-                "Connection: Upgrade\r\n" +
-                $"Sec-WebSocket-Key: {wsKey}\r\n" +
-                "Sec-WebSocket-Version: 13\r\n\r\n";
-            await _stream.WriteAsync(Encoding.ASCII.GetBytes(handshake), ct);
-
-            // Read until end-of-headers; confirm 101.
-            var buf = new byte[4096];
-            int total = 0;
-            var deadline = DateTime.UtcNow.AddSeconds(3);
-            while (DateTime.UtcNow < deadline)
-            {
-                if (_stream.DataAvailable)
-                {
-                    if (total >= buf.Length) break;
-                    int n = await _stream.ReadAsync(buf.AsMemory(total), ct);
-                    if (n == 0) break;
-                    total += n;
-                    if (Encoding.ASCII.GetString(buf, 0, total).Contains("\r\n\r\n")) break;
-                }
-                else await Task.Delay(20, ct);
-            }
-            return Encoding.ASCII.GetString(buf, 0, total).Contains("101");
+            _cts?.Cancel();
+            try { _ws?.Abort(); } catch { }
+            _ws = null;
+            _connected = false;
+            _agentInstalled = false;
         }
-        catch { return false; }
-    }
 
-    private void TearDown()
-    {
-        try { _stream?.Dispose(); } catch { }
-        try { _tcp?.Dispose(); } catch { }
-        _stream = null;
-        _tcp = null;
-        foreach (var kv in _pending)
-            kv.Value.TrySetException(new IOException("connection torn down"));
-        _pending.Clear();
-    }
+        // ---- IMcduBridge command surface --------------------------------
 
-    // ── receive pump: reassemble server→client (unmasked) frames ─────────────
+        public void EnqueueCommand(string command, Dictionary<string, string>? payload = null)
+        {
+            string? expr = BuildCommandExpression(command, payload);
+            if (expr == null) return;
+            _ = Task.Run(async () =>
+            {
+                try { await EvalAsync(expr); }
+                catch { /* a dropped command self-heals on the next poll */ }
+            });
+        }
 
-    private async Task ReceivePumpAsync(NetworkStream stream, CancellationToken ct)
-    {
-        var acc = new List<byte>(8192);
-        var tmp = new byte[8192];
-        try
+        private string? BuildCommandExpression(string command, Dictionary<string, string>? payload)
+        {
+            string Idx() => payload != null && payload.TryGetValue("index", out var i) ? i : "0";
+            string Val() => payload != null && payload.TryGetValue("value", out var v) ? v : "";
+
+            switch (command)
+            {
+                case "get_display_elements":
+                    // Force the next poll to re-push the current elements even if
+                    // nothing changed, so a form opened mid-session fills in.
+                    _lastElementsHash = "";
+                    return null;
+                case "click_display_element":
+                    return $"window.__MSFSBA_FLYPAD && __MSFSBA_FLYPAD.clickElement({JsInt(Idx())})";
+                case "set_element_value":
+                    return $"window.__MSFSBA_FLYPAD && __MSFSBA_FLYPAD.setValue({JsInt(Idx())},{JsStr(Val())})";
+                default:
+                    return null;
+            }
+        }
+
+        private static string JsStr(string s) => JsonSerializer.Serialize(s);
+        private static string JsInt(string s) => int.TryParse(s, out var n) ? n.ToString() : "0";
+
+        // ---- connection + poll loop -------------------------------------
+
+        private async Task RunLoop(CancellationToken ct)
         {
             while (!ct.IsCancellationRequested)
             {
-                int n = await stream.ReadAsync(tmp, ct);
-                if (n == 0) break;
-                acc.AddRange(tmp.AsSpan(0, n).ToArray());
-                DrainFrames(acc);
+                try
+                {
+                    if (!await EnsureConnected(ct))
+                    {
+                        await Task.Delay(ReconnectDelayMs, ct);
+                        continue;
+                    }
+                    await PollOnce(ct);
+                    await Task.Delay(PollIntervalMs, ct);
+                }
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"CoherentEFBClient loop: {ex.Message}");
+                    _connected = false;
+                    _agentInstalled = false;
+                    try { _ws?.Abort(); } catch { }
+                    _ws = null;
+                    try { await Task.Delay(ReconnectDelayMs, ct); } catch { break; }
+                }
             }
         }
-        catch { /* socket closed; RunAsync heartbeat triggers reconnect */ }
-    }
 
-    /// <summary>
-    /// Extracts every complete WebSocket frame currently buffered. Server→client
-    /// frames are unmasked. Handles 7-bit, 16-bit (126) and 64-bit (127) lengths
-    /// and leaves partial frames in the buffer for the next read.
-    /// </summary>
-    private void DrainFrames(List<byte> acc)
-    {
-        while (true)
+        private async Task<bool> EnsureConnected(CancellationToken ct)
         {
-            if (acc.Count < 2) return;
-            int b1 = acc[1];
-            bool masked = (b1 & 0x80) != 0;        // server frames are not masked
-            long len = b1 & 0x7F;
-            int headerLen = 2;
-            if (len == 126)
+            if (_ws != null && _ws.State == WebSocketState.Open && _agentInstalled) return true;
+
+            int? pageId = await ResolveEfbPageId(ct);
+            if (pageId == null) { _connected = false; return false; }
+
+            var ws = new ClientWebSocket();
+            var url = new Uri($"ws://127.0.0.1:19999/devtools/inspector/{pageId.Value}");
+            await ws.ConnectAsync(url, ct);
+            _ws = ws;
+            _pending.Clear();
+            _ = Task.Run(() => ReceiveLoop(ws, ct));
+
+            string install = await EvalAsync(_agentJs, ct);
+            _agentInstalled = install.IndexOf("MSFSBA_FLYPAD_INSTALLED", StringComparison.Ordinal) >= 0;
+            _connected = _agentInstalled;
+
+            if (_agentInstalled)
             {
-                if (acc.Count < 4) return;
-                len = (acc[2] << 8) | acc[3];
-                headerLen = 4;
+                // The flyPad screen is usually powered off; turn it on so the form
+                // shows content instead of a blank tablet. Idempotent — sets
+                // L:A32NX_EFB_TURNED_ON = 1 (the same state a cockpit tap sets).
+                try { await EvalAsync("window.__MSFSBA_FLYPAD && __MSFSBA_FLYPAD.powerOn && __MSFSBA_FLYPAD.powerOn()", ct); }
+                catch { /* best-effort; the form still works once the user wakes it */ }
             }
-            else if (len == 127)
+            return _agentInstalled;
+        }
+
+        private async Task<int?> ResolveEfbPageId(CancellationToken ct)
+        {
+            try
             {
-                if (acc.Count < 10) return;
-                len = 0;
-                for (int i = 0; i < 8; i++) len = (len << 8) | acc[2 + i];
-                headerLen = 10;
+                string json = await _http.GetStringAsync($"{DebuggerBase}/pagelist.json", ct);
+                using var doc = JsonDocument.Parse(json);
+                foreach (var view in doc.RootElement.EnumerateArray())
+                {
+                    if (!view.TryGetProperty("title", out var titleEl)) continue;
+                    string title = titleEl.GetString() ?? "";
+                    if (title.IndexOf(EfbTitleNeedle, StringComparison.OrdinalIgnoreCase) >= 0
+                        && view.TryGetProperty("id", out var idEl))
+                    {
+                        if (idEl.ValueKind == JsonValueKind.Number) return idEl.GetInt32();
+                        if (int.TryParse(idEl.GetString(), out var n)) return n;
+                    }
+                }
             }
-            int maskLen = masked ? 4 : 0;
-            long frameLen = headerLen + maskLen + len;
-            if (acc.Count < frameLen) return;       // incomplete; wait for more
-
-            int opcode = acc[0] & 0x0F;
-            int payloadStart = headerLen + maskLen;
-            var payload = new byte[len];
-            for (long i = 0; i < len; i++)
+            catch (Exception ex)
             {
-                byte v = acc[(int)(payloadStart + i)];
-                if (masked) v = (byte)(v ^ acc[headerLen + (int)(i % 4)]);
-                payload[i] = v;
+                System.Diagnostics.Debug.WriteLine($"ResolveEfbPageId: {ex.Message}");
             }
-            acc.RemoveRange(0, (int)frameLen);
-
-            if (opcode == 0x1 || opcode == 0x2) // text / binary
-                DispatchResponse(Encoding.UTF8.GetString(payload));
-            // opcode 0x8 close / 0x9 ping / 0xA pong: ignore (heartbeat handles liveness)
+            return null;
         }
-    }
 
-    private void DispatchResponse(string json)
-    {
-        try
+        private async Task PollOnce(CancellationToken ct)
         {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("id", out var idEl)) return; // CDP event, not a response
-            int id = idEl.GetInt32();
-            if (_pending.TryRemove(id, out var tcs))
-                tcs.TrySetResult(root.Clone());
-        }
-        catch { /* ignore malformed frame */ }
-    }
-
-    // ── request/response ──────────────────────────────────────────────────────
-
-    /// <summary>Runs an expression and returns the CDP response root element.</summary>
-    private async Task<JsonElement> EvalRawAsync(string expression, bool returnByValue, CancellationToken ct)
-    {
-        var stream = _stream ?? throw new IOException("not connected");
-        int id = Interlocked.Increment(ref _nextId);
-        var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pending[id] = tcs;
-
-        string cdp = JsonSerializer.Serialize(new
-        {
-            id,
-            method = "Runtime.evaluate",
-            @params = new { expression, returnByValue, awaitPromise = false }
-        });
-        var frame = BuildWebSocketTextFrame(Encoding.UTF8.GetBytes(cdp));
-        await _writeLock.WaitAsync(ct);
-        try { await stream.WriteAsync(frame, ct); }
-        finally { _writeLock.Release(); }
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(EvalTimeoutMs);
-        await using var reg = timeoutCts.Token.Register(() =>
-        {
-            if (_pending.TryRemove(id, out var t)) t.TrySetException(new TimeoutException("CDP eval timed out"));
-        });
-        return await tcs.Task;
-    }
-
-    /// <summary>Returns result.result.value as a string (for agent calls that return strings).</summary>
-    private async Task<string> EvalStringAsync(string expression, CancellationToken ct)
-    {
-        var root = await EvalRawAsync(expression, returnByValue: true, ct);
-        if (root.TryGetProperty("result", out var r1) &&
-            r1.TryGetProperty("result", out var r2) &&
-            r2.TryGetProperty("value", out var val) &&
-            val.ValueKind == JsonValueKind.String)
-            return val.GetString() ?? "";
-        return "";
-    }
-
-    // ── public agent API ──────────────────────────────────────────────────────
-
-    private const string AgentGuard = "window.__MSFSBA_FLYPAD ? ";
-
-    public async Task<string> PingAsync(CancellationToken ct = default)
-    {
-        try { return await EvalStringAsync(AgentGuard + "__MSFSBA_FLYPAD.ping() : 'NO_AGENT'", ct); }
-        catch { return ""; }
-    }
-
-    public async Task PowerOnAsync(CancellationToken ct = default)
-    {
-        try { await EvalStringAsync(AgentGuard + "__MSFSBA_FLYPAD.powerOn() : 'NO_AGENT'", ct); }
-        catch { /* best effort */ }
-    }
-
-    public async Task<FlypadScrape> ScrapeAsync(CancellationToken ct = default)
-    {
-        try
-        {
-            string json = await EvalStringAsync(
-                AgentGuard + "__MSFSBA_FLYPAD.scrape() : '{\"ok\":false,\"error\":\"agent not installed\"}'", ct);
-            if (string.IsNullOrEmpty(json))
-                return new FlypadScrape { Ok = false, Error = "no response" };
-            var scrape = JsonSerializer.Deserialize<FlypadScrape>(json);
-            return scrape ?? new FlypadScrape { Ok = false, Error = "parse failed" };
-        }
-        catch (Exception ex) { return new FlypadScrape { Ok = false, Error = ex.Message }; }
-    }
-
-    public async Task<bool> ClickAsync(int idx, CancellationToken ct = default)
-    {
-        try
-        {
-            string r = await EvalStringAsync(
-                AgentGuard + "__MSFSBA_FLYPAD.clickElement(" + idx + ") : 'NO_AGENT'", ct);
-            return r == "ok";
-        }
-        catch { return false; }
-    }
-
-    public async Task<bool> SetValueAsync(int idx, string text, CancellationToken ct = default)
-    {
-        string js = JsonSerializer.Serialize(text); // safely-quoted JS string literal
-        try
-        {
-            string r = await EvalStringAsync(
-                AgentGuard + "__MSFSBA_FLYPAD.setValue(" + idx + ", " + js + ") : 'NO_AGENT'", ct);
-            return r == "ok";
-        }
-        catch { return false; }
-    }
-
-    // ── helpers (lifted from CoherentGTInjector) ───────────────────────────────
-
-    private static async Task<string?> FindEfbPageIdAsync(CancellationToken ct)
-    {
-        try
-        {
-            using var resp = await _http.GetAsync(PageListUrl, ct);
-            if (!resp.IsSuccessStatusCode) return null;
-            string json = await resp.Content.ReadAsStringAsync(ct);
-            using var doc = JsonDocument.Parse(json);
-            foreach (var page in doc.RootElement.EnumerateArray())
+            string raw = await EvalAsync("window.__MSFSBA_FLYPAD ? __MSFSBA_FLYPAD.scrape() : ''", ct);
+            if (string.IsNullOrEmpty(raw))
             {
-                string? title = page.TryGetProperty("title", out var t) ? t.GetString() : null;
-                string? id = null;
-                if (page.TryGetProperty("id", out var idProp))
-                    id = idProp.ValueKind == JsonValueKind.Number ? idProp.GetRawText() : idProp.GetString();
-                if (title == null || id == null) continue;
-                if (title.EndsWith("- EFB", StringComparison.OrdinalIgnoreCase)) return id;
+                _agentInstalled = false; // agent gone (page reloaded) — reinstall next round
+                return;
+            }
+
+            ScrapeResult? result;
+            try { result = JsonSerializer.Deserialize<ScrapeResult>(raw); }
+            catch { return; }
+            if (result == null || !result.ok) return;
+
+            _lastGoodScrapeUtc = DateTime.UtcNow;
+            if (!_connectedPushSent)
+            {
+                _connectedPushSent = true;
+                Raise("fbw_efb_connected", new Dictionary<string, string>());
+            }
+
+            var elements = result.elements ?? new List<ScrapeElement>();
+            var sb = new StringBuilder((result.page ?? "") + "|" + elements.Count + "|");
+            foreach (var e in elements)
+                // e.idx (stamped) is part of the signature: if a reorder changes
+                // which element carries which idx, the form must re-render so its
+                // click/set targets stay correct even when text/value are unchanged.
+                sb.Append(e.idx).Append(':').Append(e.text).Append('/').Append(e.value)
+                  .Append('/').Append(e.controlType).Append('/').Append(e.clickable ? '1' : '0')
+                  .Append('/').Append(e.kind).Append('/').Append(e.level)
+                  .Append('/').Append(e.disabled ? '1' : '0').Append('|');
+            string elHash = sb.ToString();
+            if (elHash != _lastElementsHash)
+            {
+                _lastElementsHash = elHash;
+                var data = new Dictionary<string, string>
+                {
+                    ["count"] = elements.Count.ToString(),
+                    ["page"] = result.page ?? ""
+                };
+                for (int i = 0; i < elements.Count; i++)
+                {
+                    // The agent's STAMPED idx (data-fbw-efb-idx) — this, not the
+                    // list position i, is what clickElement/setValue look up. They
+                    // diverge because the list is sorted+deduped after stamping.
+                    data[$"items.{i}.aidx"] = elements[i].idx.ToString();
+                    data[$"items.{i}.text"] = elements[i].text ?? "";
+                    data[$"items.{i}.tag"] = elements[i].tag ?? "";
+                    data[$"items.{i}.role"] = elements[i].role ?? "";
+                    data[$"items.{i}.value"] = elements[i].value ?? "";
+                    data[$"items.{i}.type"] = elements[i].controlType ?? "";
+                    data[$"items.{i}.clickable"] = elements[i].clickable ? "true" : "false";
+                    data[$"items.{i}.kind"] = elements[i].kind ?? "";
+                    data[$"items.{i}.level"] = elements[i].level.ToString();
+                    data[$"items.{i}.live"] = elements[i].live ?? "";
+                    data[$"items.{i}.disabled"] = elements[i].disabled ? "true" : "false";
+                    // Options for a real <select>; unit-separator joined (rare on the flyPad).
+                    if (elements[i].options is { Count: > 0 })
+                        data[$"items.{i}.options"] = string.Join(OptionSeparator, elements[i].options!);
+                }
+                Raise("fbw_efb_elements", data);
             }
         }
-        catch { }
-        return null;
-    }
 
-    private static byte[] BuildWebSocketTextFrame(byte[] payload)
-    {
-        int len = payload.Length;
-        byte[] mask = new byte[4];
-        RandomNumberGenerator.Fill(mask);
-        var header = new List<byte> { 0x81 };
-        if (len <= 125) header.Add((byte)(0x80 | len));
-        else if (len <= 65535) { header.Add(0xFE); header.Add((byte)(len >> 8)); header.Add((byte)(len & 0xFF)); }
-        else { header.Add(0xFF); for (int i = 7; i >= 0; i--) header.Add((byte)((len >> (8 * i)) & 0xFF)); }
-        header.AddRange(mask);
-        var masked = new byte[len];
-        for (int i = 0; i < len; i++) masked[i] = (byte)(payload[i] ^ mask[i % 4]);
-        var frame = new byte[header.Count + len];
-        header.ToArray().CopyTo(frame, 0);
-        masked.CopyTo(frame, header.Count);
-        return frame;
-    }
+        // ---- Runtime.evaluate over the inspector socket -----------------
 
-    private static async Task Delay(int ms, CancellationToken ct)
-    {
-        try { await Task.Delay(ms, ct); } catch (OperationCanceledException) { }
-    }
+        private Task<string> EvalAsync(string expression) => EvalAsync(expression, _cts?.Token ?? CancellationToken.None);
 
-    private void SetReady(bool value)
-    {
-        if (_ready == value) return;
-        _ready = value;
-        var evt = value ? Connected : Disconnected;
-        if (_sync != null) _sync.Post(_ => evt?.Invoke(this, EventArgs.Empty), null);
-        else evt?.Invoke(this, EventArgs.Empty);
-    }
+        private async Task<string> EvalAsync(string expression, CancellationToken ct)
+        {
+            var ws = _ws;
+            if (ws == null || ws.State != WebSocketState.Open) return "";
 
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        Stop();
-        _writeLock.Dispose();
+            int id = Interlocked.Increment(ref _msgId);
+            var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _pending[id] = tcs;
+
+            var msg = JsonSerializer.Serialize(new
+            {
+                id,
+                method = "Runtime.evaluate",
+                @params = new { expression, returnByValue = true }
+            });
+
+            byte[] bytes = Encoding.UTF8.GetBytes(msg);
+            await _sendLock.WaitAsync(ct);
+            try
+            {
+                await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, ct);
+            }
+            finally { _sendLock.Release(); }
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(EvalTimeoutMs);
+            using (timeout.Token.Register(() => tcs.TrySetCanceled()))
+            {
+                try
+                {
+                    JsonElement root = await tcs.Task;
+                    return ExtractValue(root);
+                }
+                catch (OperationCanceledException) { return ""; }
+                finally { _pending.TryRemove(id, out _); }
+            }
+        }
+
+        private static string ExtractValue(JsonElement root)
+        {
+            if (root.TryGetProperty("result", out var outer)
+                && outer.TryGetProperty("result", out var inner)
+                && inner.TryGetProperty("value", out var val))
+            {
+                return val.ValueKind == JsonValueKind.String ? (val.GetString() ?? "") : val.ToString();
+            }
+            return "";
+        }
+
+        private async Task ReceiveLoop(ClientWebSocket ws, CancellationToken ct)
+        {
+            var buf = new byte[131072];
+            var sb = new StringBuilder();
+            try
+            {
+                while (!ct.IsCancellationRequested && ws.State == WebSocketState.Open)
+                {
+                    sb.Clear();
+                    WebSocketReceiveResult res;
+                    do
+                    {
+                        res = await ws.ReceiveAsync(new ArraySegment<byte>(buf), ct);
+                        if (res.MessageType == WebSocketMessageType.Close)
+                        {
+                            _connected = false; _agentInstalled = false;
+                            return;
+                        }
+                        sb.Append(Encoding.UTF8.GetString(buf, 0, res.Count));
+                    } while (!res.EndOfMessage);
+
+                    DispatchMessage(sb.ToString());
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"CoherentEFBClient receive: {ex.Message}");
+            }
+            finally
+            {
+                _connected = false; _agentInstalled = false;
+            }
+        }
+
+        private void DispatchMessage(string text)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(text);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("id", out var idEl) && idEl.TryGetInt32(out int id))
+                {
+                    if (_pending.TryGetValue(id, out var tcs))
+                        tcs.TrySetResult(root.Clone());
+                }
+            }
+            catch { /* malformed frame — ignore */ }
+        }
+
+        private void Raise(string type, Dictionary<string, string> data)
+        {
+            var args = new EFBStateUpdateEventArgs { Type = type, Data = data };
+            if (_syncContext != null) _syncContext.Post(_ => StateUpdated?.Invoke(this, args), null);
+            else StateUpdated?.Invoke(this, args);
+        }
+
+        private void RaiseError(string message)
+        {
+            if (_syncContext != null) _syncContext.Post(_ => Error?.Invoke(message), null);
+            else Error?.Invoke(message);
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            Stop();
+            _cts?.Dispose();
+            _http.Dispose();
+            _sendLock.Dispose();
+        }
+
+        // ---- scrape DTOs -------------------------------------------------
+
+        private sealed class ScrapeResult
+        {
+            public bool ok { get; set; }
+            public string? page { get; set; }
+            public string? error { get; set; }
+            public List<ScrapeElement>? elements { get; set; }
+        }
+
+        private sealed class ScrapeElement
+        {
+            public int idx { get; set; }
+            public string? kind { get; set; }
+            public string? tag { get; set; }
+            public string? role { get; set; }
+            public string? text { get; set; }
+            public string? value { get; set; }
+            public string? controlType { get; set; }
+            public bool clickable { get; set; }
+            public int level { get; set; }
+            public string? live { get; set; }
+            public bool disabled { get; set; }
+            public List<string>? options { get; set; }
+        }
     }
 }

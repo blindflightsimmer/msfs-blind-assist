@@ -149,6 +149,21 @@ public partial class PFDForm : Form
             Close();
         }
 
+        // F6 on the A380 opens the live DOM-scrape of the real PFD Coherent view
+        // (FMA text, baro, THS, RWY-AHEAD / TCAS flags as rendered). Gated to the
+        // A380X — the shared SimVar FMA readout above stays primary for all
+        // aircraft, and the graphical speed/altitude tapes are positional so the
+        // scrape only adds the text fields. No-op (and no button) on the A320.
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.F6 && CurrentAircraft?.AircraftCode == "FBW_A380")
+            {
+                new FBWA380.FBWA380LiveDisplayForm(_announcer, "A380X_PFD_1", "Primary Flight Display").Show();
+                return true;
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
         private async void RefreshPFDData()
         {
             try
@@ -289,8 +304,12 @@ public partial class PFDForm : Form
         {
             try
             {
+                // A320 exposes FCU AP light vars; the A380 does not (no FCU light
+                // vars) — fall back to the shared A32NX_AUTOPILOT_n_ACTIVE state.
                 double ap1 = GetVariableRawValue("A32NX_FCU_AP_1_LIGHT_ON");
                 double ap2 = GetVariableRawValue("A32NX_FCU_AP_2_LIGHT_ON");
+                if (ap1 == 0) ap1 = GetVariableRawValue("A32NX_AUTOPILOT_1_ACTIVE");
+                if (ap2 == 0) ap2 = GetVariableRawValue("A32NX_AUTOPILOT_2_ACTIVE");
 
                 if (ap1 > 0 && ap2 > 0)
                     return "AP1+2: Both Autopilots are active";

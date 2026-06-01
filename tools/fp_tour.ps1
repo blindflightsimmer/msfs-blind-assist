@@ -1,20 +1,10 @@
 param(
   [string]$Title = "- EFB",
-  [string]$AgentFile = "$PSScriptRoot/../MSFSBlindAssist/Resources/coherent-a32nx-flypad-agent.js",
+  [string]$AgentFile = "C:/Users/franc/Documents/development/MSFSBA/msfs-blind-assist/MSFSBlindAssist/Resources/coherent-flypad-agent.js",
   [string[]]$Pages = @("Dashboard","Dispatch","Ground","Performance","Navigation","Atc","Failures","Checklists","Presets","Settings")
 )
-# Drives the live FBW A32NX flyPad: injects the generic agent once, then for each
-# nav page clicks the nav-rail link BY TEXT (no hardcoded ids) and scrapes it,
-# dumping a readable element list. Reuses one WebSocket for the whole tour.
-#
-# Vendored from the A380 dev tools (D:\Documents\tools\fp_tour.ps1); the only
-# change is the -AgentFile default, which now points at the A32NX agent.
-#
-# Single-connection rule: close the MSFSBlindAssist EFB form before running this
-# (Coherent GT allows only one devtools connection at a time).
-#
-# Usage:  pwsh tools/fp_tour.ps1
-#         pwsh tools/fp_tour.ps1 -Pages Ground,Settings
+# Drives the live flyPad: injects the agent once, then for each nav page clicks
+# the nav-rail link BY TEXT (no hardcoded ids) and scrapes it. Reuses one WS.
 $ErrorActionPreference = "Stop"
 $base = "http://127.0.0.1:19999"
 $pl = (Invoke-WebRequest "$base/pagelist.json" -TimeoutSec 6 -UseBasicParsing).Content | ConvertFrom-Json

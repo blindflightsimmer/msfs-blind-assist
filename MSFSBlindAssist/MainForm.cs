@@ -32,6 +32,7 @@ public partial class MainForm : Form
     private IAirportDataProvider? airportDataProvider;
     private ChecklistForm? checklistForm;
     private FenixMonitorManagerForm? fenixMonitorManagerForm;
+    private Forms.FBWA380.FBWA380MonitorManagerForm? fbwA380MonitorManagerForm;
     private PMDGAnnouncementMonitorForm? pmdgAnnouncementMonitorForm;
     private MSFSBlindAssist.Services.PMDGProgPageMonitor? pmdgProgPageMonitor;
     private FenixMCDUForm? fenixMCDUForm;
@@ -40,9 +41,29 @@ public partial class MainForm : Form
     private MSFSBlindAssist.Services.FlyByWireMCDUService? flyByWireMCDUService;
     private System.Windows.Forms.Form? pmdgCDUForm;
     private System.Windows.Forms.Form? pmdgEFBForm;
+    private Forms.FBWA380.FBWA380MCDUForm? fbwA380MCDUForm;
+    private Forms.FBWA380.FbwEfbForm? fbwEfbForm;
     private EFBBridgeServer? efbBridgeServer;
+    // No-injection A380X transport: reads/drives the MFD live through the
+    // MSFS Coherent GT debugger (127.0.0.1:19999). Created when the A380X
+    // loads; replaces the injection bridge for the MCDU.
+    private CoherentDebuggerClient? coherentClient;
+    // No-injection A380X flyPad transport: reads/drives the EFB live through the
+    // same Coherent GT debugger, resolved to the flyPad view ("- EFB" title).
+    // Replaces the injection bridge for the flyPad.
+    private CoherentEFBClient? coherentEFBClient;
+    // No-injection A380X ND OANS transport (BTV exit selection / airport map),
+    // resolved to the Captain ND view ("A380X_ND_1"). Reuses FbwEfbForm.
+    private CoherentNDClient? coherentNDClient;
+    // Background A380X E/WD failure monitor: scrapes the abnormal/warning
+    // procedures (which have no SimVar) from the E/WD Coherent view and announces
+    // new failures. Runs whenever the A380X is active — no window needed.
+    private CoherentEWDClient? coherentEWDClient;
+    private Forms.FBWA380.FbwEfbForm? fbwA380OansForm;
+    // Live A380X Electronic Checklist window (normal checklists + ECP controls),
+    // read from the E/WD Coherent view. Opened by the Checklist hotkey on the A380.
+    private Forms.FBWA380.FBWA380ChecklistForm? fbwA380ChecklistForm;
     private EFBBridgeServer? hs787BridgeServer;
-    private A32NXEFBForm? a32nxEFBForm;
     private HS787FMCForm? hs787FMCForm;
     private HS787SimBriefForm? hs787SimBriefForm;
     private HS787EFBForm? hs787EFBForm;
@@ -154,6 +175,7 @@ public partial class MainForm : Form
             "A320" => new FlyByWireA320Definition(),
             "FENIX_A320CEO" => new FenixA320Definition(),
             "PMDG_777" => new PMDG777Definition(),
+            "FBW_A380" => new FlyByWireA380Definition(),
             "PMDG_737" => new PMDG737Definition(),
             "HS_787" => new HorizonSim787Definition(),
             // Future aircraft will be added here
@@ -189,6 +211,16 @@ public partial class MainForm : Form
         {
             CheckAndOfferEFBModPackage();
             StartEFBBridgeServer();
+        }
+        // The FBW A380X MFD/MCDU, flyPad and ND OANS are read live through the
+        // MSFS Coherent GT debugger (127.0.0.1:19999). Start the MFD client now so
+        // it is connected by the time the user opens the MCDU.
+        else if (currentAircraft?.AircraftCode == "FBW_A380")
+        {
+            coherentClient = new CoherentDebuggerClient();
+            coherentClient.Start();
+            StartEFBBridgeServer();
+            StartA380EWDMonitor();
         }
 
         // FBW flyPad: the EFB form owns its CDP client; nothing to pre-start here.
@@ -427,13 +459,21 @@ public partial class MainForm : Form
 
             // Start a grace period before enabling continuous variable announcements
             // This prevents initial ECAM messages and other variables from being announced
-            // when connecting to a cold and dark aircraft
+            // when connecting to a cold and dark aircraft. Also mute the announcer's
+            // automatic paths so aircraft-specific ProcessSimVarUpdate branches (which
+            // announce directly, bypassing simVarMonitor) stay silent on first detect —
+            // e.g. the A380 altimeter setting. User hotkeys (AnnounceImmediate) still talk.
+            // GATED TO THE A380: this extra announcer-level mute was added for the A380's
+            // direct-announce branches; other aircraft keep their prior behaviour (the
+            // simVarMonitor + ECAM grace below already applies to every aircraft).
+            if (announcer != null && currentAircraft?.AircraftCode == "FBW_A380") announcer.Suppressed = true;
             System.Windows.Forms.Timer announcementGracePeriodTimer = new System.Windows.Forms.Timer();
             announcementGracePeriodTimer.Interval = 5000; // 5 second grace period
             announcementGracePeriodTimer.Tick += (s, e) =>
             {
                 announcementGracePeriodTimer.Stop();
                 announcementGracePeriodTimer.Dispose();
+                if (announcer != null) announcer.Suppressed = false;
                 simVarMonitor.EnableAnnouncements();
                 simConnectManager.EnableECAMAnnouncements();
             };
@@ -614,6 +654,13 @@ public partial class MainForm : Form
                 // sharing the same disabled-variables list.
                 if (currentAircraft.AircraftCode.StartsWith("PMDG_", StringComparison.Ordinal) &&
                     Settings.SettingsManager.Current.PMDGDisabledMonitorVariables.Contains(e.VarName))
+                {
+                    return; // Skip announcement for disabled variable
+                }
+
+                // Check if disabled in the A380 Monitor Manager.
+                if (currentAircraft.AircraftCode == "FBW_A380" &&
+                    Settings.SettingsManager.Current.A380DisabledMonitorVariables.Contains(e.VarName))
                 {
                     return; // Skip announcement for disabled variable
                 }
@@ -994,6 +1041,18 @@ public partial class MainForm : Form
         }
 
         // Handle aircraft variable hotkey announcements
+        // A380 metric-altitude mode (FCU MTRS / A32NX_METRIC_ALT_TOGGLE): when active, the
+        // current-altitude readouts (A = MSL, Q = AGL) speak metres instead of feet. Gated to
+        // the A380 by both the aircraft-type check and the MetricAlt flag — no other aircraft
+        // and no non-metric A380 state reach this branch, so feet behaviour is unchanged.
+        if ((e.VarName == "ALTITUDE_MSL" || e.VarName == "ALTITUDE_AGL")
+            && currentAircraft is Aircraft.FlyByWireA380Definition a380Alt && a380Alt.MetricAlt)
+        {
+            double metres = e.Value * 0.3048;
+            announcer.AnnounceImmediate($"{metres:0} meters");
+            return true;
+        }
+
         if (e.VarName == "ALTITUDE_AGL" || e.VarName == "ALTITUDE_MSL" || e.VarName == "AIRSPEED_INDICATED" ||
             e.VarName == "AIRSPEED_TRUE" || e.VarName == "GROUND_SPEED" || e.VarName == "MACH_SPEED" ||
             e.VarName == "VERTICAL_SPEED" || e.VarName == "HEADING_MAGNETIC" || e.VarName == "HEADING_TRUE" ||
@@ -1291,8 +1350,15 @@ public partial class MainForm : Form
                         double value = displayValues[varKey];
                         string displayValue;
 
+                        // Aircraft-specific decode for non-presentable raw values
+                        // (e.g. ARINC429 baro/minimums words on the A380, which would
+                        // otherwise render as a ~14-billion raw double).
+                        if (currentAircraft.TryGetDisplayOverride(varKey, value, out string overrideText))
+                        {
+                            displayValue = overrideText;
+                        }
                         // Check if we have value descriptions (like Off/Aligning/Aligned)
-                        if (varDef.ValueDescriptions != null && varDef.ValueDescriptions.ContainsKey(value))
+                        else if (varDef.ValueDescriptions != null && varDef.ValueDescriptions.ContainsKey(value))
                         {
                             displayValue = varDef.ValueDescriptions[value];
                         }
@@ -1392,8 +1458,14 @@ public partial class MainForm : Form
         // For PMDG aircraft, IsInitialValue is always true on first change because the
         // simVarMonitor has never seen the variable before. But PMDG data manager already
         // suppresses the initial snapshot, so any change that reaches here IS a real change.
+        // The FBW A380 has the SAME behaviour: its L:vars are monitored changed-only, so a
+        // var's first sample only arrives WHEN it first changes (no startup baseline) — which
+        // made the first switch/flap movement after load silent (only the 2nd worked). The
+        // 5-second announcement grace period (EnableAnnouncements) already suppresses the
+        // cold-and-dark startup snapshot, so treating the A380 like PMDG here is safe.
         bool isPMDG = currentAircraft is IPMDGAircraft;
-        bool shouldAnnounce = isPMDG ? !updatingFromSim : (!e.IsInitialValue && !updatingFromSim);
+        bool announceInitialChange = isPMDG || currentAircraft?.AircraftCode == "FBW_A380";
+        bool shouldAnnounce = announceInitialChange ? !updatingFromSim : (!e.IsInitialValue && !updatingFromSim);
 
         if (shouldAnnounce && !string.IsNullOrEmpty(e.Description))
         {
@@ -1469,6 +1541,7 @@ public partial class MainForm : Form
             HotkeyAction.SimBriefBriefing,
             HotkeyAction.ShowElectronicFlightBag,
             HotkeyAction.ShowFenixMCDU,
+            HotkeyAction.ShowPMDGEFB,
             HotkeyAction.TaxiStatus
         };
 
@@ -1594,6 +1667,9 @@ public partial class MainForm : Form
             case HotkeyAction.ShowMETARReport:
                 ShowMETARReportDialog();
                 break;
+            case HotkeyAction.ShowChecklistECL:
+                ShowChecklistECLDialog();
+                break;
             case HotkeyAction.ShowChecklist:
                 ShowChecklistDialog();
                 break;
@@ -1601,9 +1677,16 @@ public partial class MainForm : Form
                 ShowElectronicFlightBagDialog();
                 break;
             case HotkeyAction.ShowFenixMCDU:
+                // Single "show MCDU" hotkey routed by the currently-selected
+                // aircraft. The action's enum name is historical (it was added
+                // for Fenix first); FBW A380 reuses the same chord.
                 if (currentAircraft is IPMDGAircraft && simConnectManager.PMDGDataManager != null)
                 {
                     ShowPMDGCDUDialog();
+                }
+                else if (currentAircraft?.AircraftCode == "FBW_A380")
+                {
+                    ShowFBWA380MCDUDialog();
                 }
                 else if (currentAircraft?.AircraftCode == "HS_787")
                 {
@@ -1623,13 +1706,30 @@ public partial class MainForm : Form
                 {
                     ShowPMDGEFBDialog();
                 }
+                else if (currentAircraft?.AircraftCode == "FBW_A380")
+                {
+                    ShowFbwEfbDialog();
+                }
                 else if (currentAircraft?.AircraftCode == "HS_787")
                 {
                     ShowHS787EFBFormDialog();
                 }
                 else if (currentAircraft?.AircraftCode == "A320")
                 {
-                    ShowA32NXEFBDialog();
+                    // Unified flyPad: the A320 uses the SAME generic WebView2 form +
+                    // CoherentEFBClient as the A380 (both drive the one shared
+                    // coherent-flypad-agent.js over the "- EFB" Coherent view).
+                    ShowFbwEfbDialog();
+                }
+                break;
+            case HotkeyAction.ShowOANS:
+                if (currentAircraft?.AircraftCode == "FBW_A380")
+                {
+                    ShowFBWA380OansDialog();
+                }
+                else
+                {
+                    announcer.Announce("OANS airport map is only available on the A380.");
                 }
                 break;
             case HotkeyAction.ShowTrackFixWindow:
@@ -2050,7 +2150,9 @@ public partial class MainForm : Form
         // Ensure output hotkey mode is deactivated before showing dialog
         hotkeyManager.ExitOutputHotkeyMode();
 
-        // Create form if it doesn't exist or has been disposed
+        // Shift+C opens the static text checklist (same for every aircraft, including
+        // the A380). The A380's LIVE Electronic Checklist is on its own key,
+        // Ctrl+Shift+C (ShowChecklistECLDialog).
         if (checklistForm == null || checklistForm.IsDisposed)
         {
             checklistForm = new ChecklistForm(announcer, currentAircraft.AircraftCode);
@@ -2058,6 +2160,28 @@ public partial class MainForm : Form
 
         // Show the form (reuses same instance to preserve checkbox states)
         checklistForm.ShowForm();
+    }
+
+    // Ctrl+Shift+C on the A380: the LIVE Electronic Checklist (ECL) read from the
+    // E/WD — the real normal checklists + active ECAM procedures, with sensed
+    // auto-completion. A380-only; other aircraft have no ECL to drive.
+    private void ShowChecklistECLDialog()
+    {
+        hotkeyManager.ExitOutputHotkeyMode();
+
+        if (currentAircraft?.AircraftCode != "FBW_A380")
+        {
+            announcer.AnnounceImmediate("The live Electronic Checklist is only on the A380. Use Shift+C for the text checklist.");
+            return;
+        }
+        // The live ECL reads through the SHARED A380X_EWD monitor connection (only
+        // one Coherent inspector socket per page is allowed). Ensure it's running.
+        if (coherentEWDClient == null) StartA380EWDMonitor();
+        if (fbwA380ChecklistForm == null || fbwA380ChecklistForm.IsDisposed)
+            fbwA380ChecklistForm = new Forms.FBWA380.FBWA380ChecklistForm(announcer, simConnectManager, coherentEWDClient);
+        fbwA380ChecklistForm.Show();
+        fbwA380ChecklistForm.BringToFront();
+        fbwA380ChecklistForm.Activate();
     }
 
     public void ShowFenixMonitorManagerDialog()
@@ -2073,6 +2197,17 @@ public partial class MainForm : Form
 
         // Show the form (reuses same instance to preserve state)
         fenixMonitorManagerForm.ShowForm();
+    }
+
+    public void ShowA380MonitorManagerDialog()
+    {
+        hotkeyManager.ExitOutputHotkeyMode();
+        if (fbwA380MonitorManagerForm == null || fbwA380MonitorManagerForm.IsDisposed)
+        {
+            fbwA380MonitorManagerForm = new Forms.FBWA380.FBWA380MonitorManagerForm(
+                announcer, currentAircraft.GetVariables());
+        }
+        fbwA380MonitorManagerForm.ShowForm();
     }
 
     /// <summary>
@@ -2228,6 +2363,150 @@ public partial class MainForm : Form
         ((PMDGEFBForm)pmdgEFBForm).ShowForm();
     }
 
+    /// <summary>
+    /// Speaks FMS flight progress for the A380 D / Shift+D hotkeys. The numbers come
+    /// from the FMS guidance controller in the MFD page (no stock SimVar exposes
+    /// them), read via the Coherent debugger. <paramref name="tod"/> selects Top of
+    /// Descent (Shift+D) vs distance to destination (D). Async fire-and-forget; the
+    /// announcement lands when the eval returns.
+    /// </summary>
+    public async void AnnounceA380FlightInfo(bool tod)
+    {
+        try
+        {
+            if (coherentClient == null) { announcer.AnnounceImmediate("A380 flight info unavailable."); return; }
+            string raw = await coherentClient.EvalForResultAsync(
+                "window.__MSFSBA_A380 ? __MSFSBA_A380.flightInfo() : ''");
+            if (string.IsNullOrEmpty(raw)) { announcer.AnnounceImmediate("Flight management not ready."); return; }
+
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            var r = doc.RootElement;
+            if (!r.TryGetProperty("ok", out var okEl) || okEl.ValueKind != System.Text.Json.JsonValueKind.True)
+            {
+                announcer.AnnounceImmediate("Flight management not ready.");
+                return;
+            }
+
+            double? Num(string key) =>
+                r.TryGetProperty(key, out var e) && e.ValueKind == System.Text.Json.JsonValueKind.Number
+                    ? e.GetDouble() : (double?)null;
+
+            if (tod)
+            {
+                double? td = Num("distToTD");
+                double? tc = Num("distToTC");
+                if (td.HasValue)
+                    announcer.AnnounceImmediate(td.Value <= 0.5
+                        ? "Past top of descent"
+                        : $"{Math.Round(td.Value)} miles to top of descent");
+                else if (tc.HasValue && tc.Value > 0.5)
+                    announcer.AnnounceImmediate($"{Math.Round(tc.Value)} miles to top of climb");
+                else
+                    announcer.AnnounceImmediate("Top of descent not yet computed");
+            }
+            else
+            {
+                double? dd = Num("distToDest");
+                if (dd.HasValue && dd.Value >= 0)
+                    announcer.AnnounceImmediate($"{Math.Round(dd.Value)} miles to destination");
+                else
+                    announcer.AnnounceImmediate("Destination distance not available");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[A380 flightInfo] {ex.Message}");
+            announcer.AnnounceImmediate("Flight info error.");
+        }
+    }
+
+    private void ShowFBWA380MCDUDialog()
+    {
+        hotkeyManager.ExitInputHotkeyMode();
+
+        if (coherentClient == null) { coherentClient = new CoherentDebuggerClient(); coherentClient.Start(); }
+        IMcduBridge bridge = coherentClient;
+
+        if (fbwA380MCDUForm == null || fbwA380MCDUForm.IsDisposed)
+        {
+            fbwA380MCDUForm = new Forms.FBWA380.FBWA380MCDUForm(
+                bridge, announcer,
+                currentAircraft as Aircraft.FlyByWireA380Definition);
+        }
+        fbwA380MCDUForm.ShowForm();
+    }
+
+    private void ShowFbwEfbDialog()
+    {
+        hotkeyManager.ExitInputHotkeyMode();
+
+        if (coherentEFBClient == null) { coherentEFBClient = new CoherentEFBClient(); coherentEFBClient.Start(); }
+        IMcduBridge bridge = coherentEFBClient;
+
+        if (fbwEfbForm == null || fbwEfbForm.IsDisposed)
+        {
+            // One generic flyPad form serves both FBW aircraft; only the window
+            // title differs. The form is disposed on aircraft swap (see the swap
+            // handler), so it is always recreated with the correct title.
+            string title = currentAircraft?.AircraftCode == "A320"
+                ? "A320 flyPad EFB" : "A380X flyPad EFB";
+            fbwEfbForm = new Forms.FBWA380.FbwEfbForm(bridge, announcer, title, "flyPad");
+        }
+        fbwEfbForm.ShowForm();
+    }
+
+    // A380 ND OANS / BTV control panel — reuses the WebView2 EFB form, but driven
+    // by the ND Coherent view through CoherentNDClient. Used for BTV (Brake-To-
+    // Vacate) exit selection and airport/runway/exit search.
+    private void ShowFBWA380OansDialog()
+    {
+        hotkeyManager.ExitOutputHotkeyMode();
+
+        if (coherentNDClient == null) { coherentNDClient = new CoherentNDClient(); coherentNDClient.Start(); }
+        IMcduBridge bridge = coherentNDClient;
+
+        if (fbwA380OansForm == null || fbwA380OansForm.IsDisposed)
+        {
+            fbwA380OansForm = new Forms.FBWA380.FbwEfbForm(
+                bridge, announcer,
+                "A380 Airport Map and BTV (OANS)", "OANS");
+        }
+        fbwA380OansForm.ShowForm();
+    }
+
+    // Start the background A380X E/WD failure monitor. The sensed abnormal/warning
+    // PROCEDURES (failure titles + ECAM action items) have NO SimVar — the FwsCore
+    // publishes them on an in-process EventBus and only the E/WD instrument renders
+    // them — so they are scraped from the E/WD Coherent view and announced here.
+    // Memos (PARK BRK, etc.) are NOT announced by this client; the SimVar EWD_LOWER
+    // path already covers them.
+    private void StartA380EWDMonitor()
+    {
+        if (coherentEWDClient != null) return;
+        // Hand E/WD call-outs to the scrape: suppress the SimVar EWD_LOWER memo
+        // auto-announce so failures AND memos come from the one DOM source.
+        if (currentAircraft is FlyByWireA380Definition a380def) a380def.EwdScrapeHandlesAnnounce = true;
+        coherentEWDClient = new CoherentEWDClient();
+        coherentEWDClient.LineAnnounced += line =>
+        {
+            // Honour the Ctrl+M / Ctrl+E ECAM-monitor mute (same sentinel the
+            // SimVar EWD memo path consults), so the user can silence E/WD chatter.
+            if (Settings.SettingsManager.Current.A380DisabledMonitorVariables.Contains(
+                    Forms.FBWA380.FBWA380MonitorManagerForm.EcamMemosKey))
+                return;
+            announcer.Announce(line);
+        };
+        coherentEWDClient.Start();
+    }
+
+    private void StopA380EWDMonitor()
+    {
+        if (currentAircraft is FlyByWireA380Definition a380def) a380def.EwdScrapeHandlesAnnounce = false;
+        if (coherentEWDClient == null) return;
+        coherentEWDClient.Dispose();
+        coherentEWDClient = null;
+    }
+
     private void ShowHS787EFBFormDialog()
     {
         hotkeyManager.ExitInputHotkeyMode();
@@ -2260,25 +2539,6 @@ public partial class MainForm : Form
         }
 
         hs787FMCForm.ShowForm();
-    }
-
-    private void ShowA32NXEFBDialog()
-    {
-        hotkeyManager.ExitInputHotkeyMode();
-
-        if (a32nxEFBForm == null || a32nxEFBForm.IsDisposed)
-            a32nxEFBForm = new A32NXEFBForm(announcer);
-
-        a32nxEFBForm.ShowForm();
-    }
-
-    private void CleanupA32NXEFBForm()
-    {
-        if (a32nxEFBForm != null && !a32nxEFBForm.IsDisposed)
-        {
-            a32nxEFBForm.Dispose();
-            a32nxEFBForm = null;
-        }
     }
 
     /// <summary>
@@ -2612,6 +2872,7 @@ public partial class MainForm : Form
         }
     }
 
+
     private void StartEFBBridgeServer()
     {
         if (efbBridgeServer == null)
@@ -2631,6 +2892,17 @@ public partial class MainForm : Form
         {
             pmdgEFBForm.Dispose();
             pmdgEFBForm = null;
+        }
+
+        if (fbwA380MCDUForm != null && !fbwA380MCDUForm.IsDisposed)
+        {
+            fbwA380MCDUForm.Dispose();
+            fbwA380MCDUForm = null;
+        }
+        if (fbwEfbForm != null && !fbwEfbForm.IsDisposed)
+        {
+            fbwEfbForm.Dispose();
+            fbwEfbForm = null;
         }
 
         efbBridgeServer?.Stop();
@@ -3711,6 +3983,7 @@ public partial class MainForm : Form
         }
     }
 
+
     private void SuspendHotkeysMenuItem_Click(object? sender, EventArgs e)
     {
         if (suspendHotkeysMenuItem.Checked)
@@ -3744,6 +4017,11 @@ public partial class MainForm : Form
     private void PMDG777MenuItem_Click(object? sender, EventArgs e)
     {
         SwitchAircraft(new PMDG777Definition());
+    }
+
+    private void FlyByWireA380MenuItem_Click(object? sender, EventArgs e)
+    {
+        SwitchAircraft(new FlyByWireA380Definition());
     }
 
     private void PMDG737MenuItem_Click(object? sender, EventArgs e)
@@ -3824,6 +4102,12 @@ public partial class MainForm : Form
             checklistForm = null;
         }
 
+        // Dispose A380 monitor manager when switching aircraft
+        if (fbwA380MonitorManagerForm != null && !fbwA380MonitorManagerForm.IsDisposed)
+        {
+            fbwA380MonitorManagerForm.Dispose();
+            fbwA380MonitorManagerForm = null;
+        }
         // Dispose fenixMonitorManagerForm when switching aircraft
         if (fenixMonitorManagerForm != null && !fenixMonitorManagerForm.IsDisposed)
         {
@@ -3878,6 +4162,39 @@ public partial class MainForm : Form
             pmdgEFBForm = null;
         }
 
+        // Dispose FBW A380 MCDU + EFB forms on swap. The EFBBridgeServer is
+        // kept running by the block below when the new aircraft also uses
+        // it; disposing the forms just clears their state-update wiring so
+        // the next aircraft doesn't get cross-talk.
+        if (fbwA380MCDUForm != null && !fbwA380MCDUForm.IsDisposed)
+        {
+            fbwA380MCDUForm.Dispose();
+            fbwA380MCDUForm = null;
+        }
+        if (fbwEfbForm != null && !fbwEfbForm.IsDisposed)
+        {
+            fbwEfbForm.Dispose();
+            fbwEfbForm = null;
+        }
+        // Tear down the Coherent debugger client on every swap; it is
+        // recreated below only when the new aircraft is the A380X.
+        if (coherentClient != null)
+        {
+            coherentClient.Dispose();
+            coherentClient = null;
+        }
+        if (coherentEFBClient != null)
+        {
+            coherentEFBClient.Dispose();
+            coherentEFBClient = null;
+        }
+        if (coherentNDClient != null)
+        {
+            coherentNDClient.Dispose();
+            coherentNDClient = null;
+        }
+        StopA380EWDMonitor();
+
         // Dispose HS 787 forms when switching aircraft
         if (hs787FMCForm != null && !hs787FMCForm.IsDisposed)
         {
@@ -3928,16 +4245,27 @@ public partial class MainForm : Form
         {
             CheckAndOfferEFBModPackage();
             StartEFBBridgeServer();
-            CleanupA32NXEFBForm();   // release the FBW CDP connection if it was open
         }
         else if (newAircraft.AircraftCode == "A320")
         {
-            // FBW flyPad: the EFB form owns its CDP client; nothing to pre-start here.
+            // FBW A320 flyPad: uses the shared CoherentEFBClient + generic EFB form
+            // (same as the A380). The client is created lazily when the user opens
+            // the flyPad, and is disposed by the unconditional swap cleanup above.
+        }
+        else if (newAircraft.AircraftCode == "FBW_A380")
+        {
+            // The A380X MCDU is read live through the Coherent GT debugger. Start
+            // the client now so it is connected by the time the user opens the MCDU.
+            coherentClient = new CoherentDebuggerClient();
+            coherentClient.Start();
+            // EFB form still uses the legacy bridge server until it moves to a
+            // served accessible page; keep it running for now.
+            StartEFBBridgeServer();
+            StartA380EWDMonitor();
         }
         else
         {
             StopEFBBridgeServer();
-            CleanupA32NXEFBForm();
         }
 
         // 787 FMC bridge: mod package check and server start
@@ -4002,6 +4330,7 @@ public partial class MainForm : Form
         flyByWireA320MenuItem.Checked = false;
         fenixA320MenuItem.Checked = false;
         pmdg777MenuItem.Checked = false;
+        flyByWireA380MenuItem.Checked = false;
         pmdg737MenuItem.Checked = false;
         horizonSim787MenuItem.Checked = false;
 
@@ -4017,6 +4346,10 @@ public partial class MainForm : Form
         else if (currentAircraft is PMDG777Definition)
         {
             pmdg777MenuItem.Checked = true;
+        }
+        else if (currentAircraft is FlyByWireA380Definition)
+        {
+            flyByWireA380MenuItem.Checked = true;
         }
         else if (currentAircraft is PMDG737Definition)
         {
@@ -4308,6 +4641,15 @@ public partial class MainForm : Form
             panelsListBox.Focus();
             return true;
         }
+        // F5 refreshes the current panel's Status Display without leaving the
+        // edit field/combo you're on (easier than tabbing to the Refresh button).
+        else if (keyData == Keys.F5 &&
+                 currentControls.TryGetValue("_REFRESH_", out var refreshCtrl) &&
+                 refreshCtrl is Button refreshBtn && refreshBtn.Enabled)
+        {
+            refreshBtn.PerformClick();
+            return true;
+        }
 
         // Let hotkey manager process other hotkeys
         if (hotkeyManager.ProcessKeyDown(keyData))
@@ -4463,6 +4805,11 @@ public partial class MainForm : Form
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 250));
         layout.AutoSize = true;
         layout.Location = new Point(10, 10);
+        // PERF: build the whole panel with layout suspended. This TableLayoutPanel
+        // is AutoSize, so every Controls.Add otherwise forces a full re-layout — an
+        // O(N^2) thrash that lagged large panels (the A380 overhead has dozens of
+        // controls). Suspend now, resume once after all rows are added (below).
+        layout.SuspendLayout();
 
         foreach (var varKey in currentAircraft.GetPanelControls()[currentPanel])
         {
@@ -4754,6 +5101,18 @@ public partial class MainForm : Form
                         {
                             var selectedValue = sortedValues[combo.SelectedIndex].Key;
 
+                            // Let the aircraft handle this SimVar-backed combo first
+                            // (e.g. an A380 valve/exit combo whose STATE is a SimVar
+                            // but whose CONTROL is a K-event — engine masters,
+                            // crossfeed, doors, jetway). Mirrors the LVar-combo path.
+                            if (currentAircraft.HandleUIVariableSet(capturedVarKey, selectedValue, varDef, simConnectManager!, announcer))
+                            {
+                                currentSimVarValues[capturedVarKey] = selectedValue;
+                                return;
+                            }
+
+                            // Send the main LVar
+                            simConnectManager?.SetLVar(capturedVarKey, selectedValue);
                             currentSimVarValues[capturedVarKey] = selectedValue;
 
                             // Landing lights: ASOBO_LIGHTING_Switch_Light_Landing_Template reads
@@ -4988,7 +5347,7 @@ public partial class MainForm : Form
                         else
                         {
                             simConnectManager?.SendEvent("XPNDR_SET", bcdValue);
-                            // Announcement handled by aircraft's ProcessSimVarUpdate when the SimVar changes
+                            announcer.Announce($"Squawk set to {squawkCode}");
                         }
                     }
                     else if (double.TryParse(textBox.Text, out double value))
@@ -5118,6 +5477,9 @@ public partial class MainForm : Form
 
                         // Handle button state announcements for all panels
                         HandleButtonStateAnnouncement(varKey);
+                        // Aircraft-specific post-press read-out (e.g. FCU push/pull
+                        // buttons speak the resulting value like their hotkeys do).
+                        currentAircraft.OnPanelButtonFired(varKey, simConnectManager, announcer);
                     }
                     else if (varDef.Type == SimVarType.HVar)
                     {
@@ -5282,11 +5644,17 @@ public partial class MainForm : Form
             displayPanel.Controls.Add(refreshButton);
             layout.Controls.Add(displayPanel, 1, displayRow);
 
-            // Store reference to display textbox
+            // Store reference to display textbox + refresh button (F5 in ProcessCmdKey
+            // performs the refresh from anywhere in the panel).
             currentControls["_DISPLAY_"] = displayTextBox;
+            currentControls["_REFRESH_"] = refreshButton;
         }
 
+            // Resume + lay out ONCE now that every row exists, then attach.
+            layout.ResumeLayout(true);
+            controlsContainer.SuspendLayout();
             controlsContainer.Controls.Add(layout);
+            controlsContainer.ResumeLayout(true);
 
             // For PMDG aircraft, populate controls with current data from the data manager
             if (currentAircraft is IPMDGAircraft && simConnectManager?.PMDGDataManager != null)
@@ -5650,15 +6018,18 @@ public partial class MainForm : Form
         efbBridgeServer?.Dispose();
         efbBridgeServer = null;
 
+        // Clean up A380X Coherent clients
+        coherentClient?.Dispose();
+        coherentEFBClient?.Dispose();
+        coherentNDClient?.Dispose();
+        coherentEWDClient?.Dispose();
+
         // Clean up 787 bridge and forms
         hs787FMCForm?.Dispose();
         hs787SimBriefForm?.Dispose();
         hs787EFBForm?.Dispose();
         hs787BridgeServer?.Dispose();
         hs787BridgeServer = null;
-
-        // Clean up A32NX EFB form (owns its CDP client)
-        CleanupA32NXEFBForm();
 
         // Clean up managers and resources
         hotkeyManager?.Cleanup();

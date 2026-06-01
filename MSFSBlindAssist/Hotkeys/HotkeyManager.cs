@@ -73,6 +73,7 @@ public class HotkeyManager : IDisposable
         private const int HOTKEY_SPEED_VLS = 9050;
         private const int HOTKEY_SPEED_VS = 9051;
         private const int HOTKEY_CHECKLIST = 9052;
+        private const int HOTKEY_CHECKLIST_ECL = 9213;   // Ctrl+Shift+C (A380 live ECL)
         private const int HOTKEY_FUEL_QUANTITY = 9053;
         private const int HOTKEY_NAV_DISPLAY = 9054;
         private const int HOTKEY_WAYPOINT_INFO = 9055;
@@ -109,6 +110,7 @@ public class HotkeyManager : IDisposable
         private const int HOTKEY_READ_DISPLAY_ND = 9072;
         private const int HOTKEY_READ_DISPLAY_ISIS = 9073;
         private const int HOTKEY_DESCRIBE_SCENE = 9074;
+        private const int HOTKEY_SHOW_OANS = 9099; // A380 ND OANS / BTV control panel
 
         // Hand fly mode global hotkey IDs (separate from output mode)
         private const int HOTKEY_HANDFLY_HEADING = 9077;
@@ -357,6 +359,9 @@ public class HotkeyManager : IDisposable
                         case HOTKEY_CHECKLIST:
                             TriggerHotkey(HotkeyAction.ShowChecklist);
                             break;
+                        case HOTKEY_CHECKLIST_ECL:
+                            TriggerHotkey(HotkeyAction.ShowChecklistECL);
+                            break;
                         case HOTKEY_FUEL_QUANTITY:
                             TriggerHotkey(HotkeyAction.ReadFuelQuantity);
                             break;
@@ -392,6 +397,9 @@ public class HotkeyManager : IDisposable
                             break;
                         case HOTKEY_TOGGLE_ECAM_MONITORING:
                             TriggerHotkey(HotkeyAction.ToggleECAMMonitoring);
+                            break;
+                        case HOTKEY_SHOW_OANS:
+                            TriggerHotkey(HotkeyAction.ShowOANS);
                             break;
                         case HOTKEY_MONITOR_MANAGER:
                             TriggerHotkey(HotkeyAction.MonitorManager);
@@ -676,7 +684,8 @@ public class HotkeyManager : IDisposable
             RegisterHotKey(windowHandle, HOTKEY_SPEED_VLS, MOD_SHIFT, 0x34);     // Shift+4 (Minimum Selectable Speed)
             RegisterHotKey(windowHandle, HOTKEY_SPEED_VS, MOD_SHIFT, 0x35);      // Shift+5 (Stall Speed)
             RegisterHotKey(windowHandle, HOTKEY_SPEED_VFE, MOD_SHIFT, 0x36);     // Shift+6 (V FE Speed)
-            RegisterHotKey(windowHandle, HOTKEY_CHECKLIST, MOD_SHIFT, 0x43);     // Shift+C (Checklist Window)
+            RegisterHotKey(windowHandle, HOTKEY_CHECKLIST, MOD_SHIFT, 0x43);     // Shift+C (static text checklist)
+            RegisterHotKey(windowHandle, HOTKEY_CHECKLIST_ECL, MOD_CONTROL | MOD_SHIFT, 0x43); // Ctrl+Shift+C (A380 live ECL)
             RegisterHotKey(windowHandle, HOTKEY_FUEL_QUANTITY, MOD_NONE, 0x46);  // F (Fuel Quantity)
             RegisterHotKey(windowHandle, HOTKEY_FLAPS, MOD_NONE, 0x4C);          // L (Flaps)
             RegisterHotKey(windowHandle, HOTKEY_GEAR, MOD_SHIFT, 0x47);          // Shift+G (Gear)
@@ -689,6 +698,7 @@ public class HotkeyManager : IDisposable
             RegisterHotKey(windowHandle, HOTKEY_TOGGLE_TRIM, MOD_SHIFT, 0x54);   // Shift+T (Toggle Trim Announcements)
             RegisterHotKey(windowHandle, HOTKEY_TAKEOFF_ASSIST, MOD_CONTROL, 0x54); // Ctrl+T (Takeoff Assist)
             RegisterHotKey(windowHandle, HOTKEY_TOGGLE_ECAM_MONITORING, MOD_CONTROL, 0x45); // Ctrl+E (Toggle ECAM Monitoring)
+            RegisterHotKey(windowHandle, HOTKEY_SHOW_OANS, MOD_CONTROL | MOD_SHIFT, 0x42);  // Ctrl+Shift+B (A380 OANS / BTV)
             RegisterHotKey(windowHandle, HOTKEY_MONITOR_MANAGER, MOD_CONTROL, 0x4D); // Ctrl+M (Monitor Manager - per-aircraft)
             RegisterHotKey(windowHandle, HOTKEY_HAND_FLY_MODE, MOD_CONTROL, 0x48); // Ctrl+H (Hand Fly Mode)
             RegisterHotKey(windowHandle, HOTKEY_VISUAL_GUIDANCE, MOD_CONTROL, 0x56); // Ctrl+V (Visual Guidance)
@@ -784,6 +794,7 @@ public class HotkeyManager : IDisposable
             UnregisterHotKey(windowHandle, HOTKEY_SPEED_VS);
             UnregisterHotKey(windowHandle, HOTKEY_SPEED_VFE);
             UnregisterHotKey(windowHandle, HOTKEY_CHECKLIST);
+            UnregisterHotKey(windowHandle, HOTKEY_CHECKLIST_ECL);
             UnregisterHotKey(windowHandle, HOTKEY_FUEL_QUANTITY);
             UnregisterHotKey(windowHandle, HOTKEY_FLAPS);
             UnregisterHotKey(windowHandle, HOTKEY_GEAR);
@@ -796,6 +807,7 @@ public class HotkeyManager : IDisposable
             UnregisterHotKey(windowHandle, HOTKEY_TOGGLE_TRIM);
             UnregisterHotKey(windowHandle, HOTKEY_TAKEOFF_ASSIST);
             UnregisterHotKey(windowHandle, HOTKEY_TOGGLE_ECAM_MONITORING);
+            UnregisterHotKey(windowHandle, HOTKEY_SHOW_OANS);
             UnregisterHotKey(windowHandle, HOTKEY_MONITOR_MANAGER);
             UnregisterHotKey(windowHandle, HOTKEY_HAND_FLY_MODE);
             UnregisterHotKey(windowHandle, HOTKEY_VISUAL_GUIDANCE);
@@ -1223,6 +1235,7 @@ public class HotkeyManager : IDisposable
         ReadSpeedVLS,
         ReadSpeedVS,
         ShowChecklist,
+        ShowChecklistECL,
         ReadFuelQuantity,
         ReadFlaps,
         ReadGear,
@@ -1258,6 +1271,7 @@ public class HotkeyManager : IDisposable
         ReadTargetFPM,
         ShowFenixMCDU,
         ShowPMDGEFB,
+        ShowOANS,
         ReadNearestCity,
         ReadDistanceToTOD,
         ReadDistanceToDest,

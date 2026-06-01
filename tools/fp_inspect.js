@@ -1,12 +1,3 @@
-// fp_inspect.js — debug helper for divergent flyPad input-field labels.
-// Eval this AFTER the agent is installed (it reads window.__MSFSBA_FLYPAD helpers).
-// For each visible <input>/<textarea>/contenteditable it prints what the agent's
-// labelFor() returns plus the parent chain and previous-sibling chain, so you can
-// see why a field is mislabeled and fix fieldName()/fieldUnitLabel() in the agent.
-//
-//   pwsh tools/coherent-eval.ps1 -Title "- EFB" `
-//        -PreFile MSFSBlindAssist/Resources/coherent-a32nx-flypad-agent.js `
-//        -ExprFile tools/fp_inspect.js
 (function () {
   var A = window.__MSFSBA_FLYPAD;
   function cls(n){ try { return (n.className && n.className.toString) ? n.className.toString() : ""; } catch(e){ return ""; } }

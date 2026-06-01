@@ -1,6 +1,6 @@
-// coherent-a32nx-flypad-agent.js
+// coherent-flypad-agent.js
 //
-// Persistent in-page agent for the FlyByWire A32NX flyPad EFB (flyPadOS 3),
+// Persistent in-page agent for the FlyByWire flyPad EFB (A32NX + A380X — one shared agent) (flyPadOS 3),
 // installed via the Coherent GT debugger's Runtime.evaluate (NO injection, NO
 // Community-folder patching). Runs inside the live EFB view's own JS context,
 // so the React flyPad DOM is directly reachable.
@@ -119,11 +119,15 @@
     if (role === "button" || c.indexOf("button") >= 0 || c.indexOf("btn") >= 0 || tag === "button") return "button";
     if (n.getAttribute && n.getAttribute("contenteditable") === "true") return "input";
     // Electronic-checklist item row: a "flex-row ... space-x-4" row that wraps a
-    // small "checkbox box" (.border-4.border-current). Clicking the row toggles
-    // the item complete; a check icon (svg) appears in the box when done. Gate the
-    // querySelector on the cheap class signature so it only runs on candidate rows.
+    // small "checkbox box" (.border-4). Clicking the row toggles the item complete;
+    // a check icon (svg) appears in the box when done. Match the box in ANY border
+    // state — pending/current/completed/sensed items can use different border colors
+    // (e.g. border-current vs a muted/completed token), and gating on
+    // ".border-4.border-current" silently DROPPED every item that wasn't the current
+    // colour, which could leave a multi-item checklist showing only one row. Gate on
+    // the cheap class signature so the querySelector only runs on candidate rows.
     if (c.indexOf("space-x-4") >= 0 && c.indexOf("flex-row") >= 0) {
-      try { if (n.querySelector(".border-4.border-current")) return "checkitem"; } catch (e) {}
+      try { if (n.querySelector(".border-4")) return "checkitem"; } catch (e) {}
     }
     // flyPad action buttons are frequently styled <div>s with NO button/btn
     // token and no role — e.g. the modal "Cancel"/"Confirm" buttons and the
@@ -471,7 +475,7 @@
   A.isInsideStamped = function (n) {
     var cur = n;
     while (cur) {
-      if (cur.getAttribute && cur.getAttribute("data-fbwa32nx-efb-idx")) return true;
+      if (cur.getAttribute && cur.getAttribute("data-fbw-efb-idx")) return true;
       cur = cur.parentElement;
     }
     return false;
@@ -482,24 +486,153 @@
   // Real" sync setting). The bare bg-theme-highlight token is AMBIGUOUS: FBW's
   // primary Button component also uses it as its base background, so every
   // action button (Back, Apply, Reset, Set from Throttle, ...) would otherwise
-  // read "(selected)". A genuine segmented control has sibling options styled
-  // with the UNSELECTED-segment token bg-theme-accent; a standalone button does
-  // not. Require an accent-styled peer to disambiguate.
+  // read "(selected)". A genuine segmented control has UNSELECTED sibling options;
+  // a standalone button does not. Two unselected-peer signatures exist:
+  //   (A) accent-styled peer — bg-theme-accent (the throttle axis selector, and
+  //       generic FBW segmented controls).
+  //   (B) cursor-pointer option that drops its background to bg-opacity-0 and only
+  //       paints it on hover — the throttle-calibration DETENT selector
+  //       (TO/GA…Reverse Full) and the independent-axis-count selector (1/2/4).
+  //       Here the selected option keeps bg-theme-highlight + bg-opacity-100 while
+  //       its peers are bg-opacity-0. Standalone action buttons (Apply / Back /
+  //       Set from Throttle / the bottom button row) have no such peer, so they
+  //       stay unmarked.
+  // Require at least one such peer to disambiguate.
   A.isSelectedSegment = function (n) {
     if (!A.hasClassToken(n, "bg-theme-highlight")) return false;
+    // A genuine segmented OPTION is an FBW SelectItem — a cursor-pointer leaf.
+    // ACTION buttons (the bottom Reset/Load/Apply/Save row, modal Confirm/Cancel)
+    // are <button>s / styled divs WITHOUT cursor-pointer; when a disabled peer is
+    // styled bg-theme-accent (invalid-config Apply/Save, or a modal's secondary
+    // button) they would otherwise satisfy the peer test below and read a bogus
+    // "(selected)". Gate on the option itself being cursor-pointer to exclude them.
+    if (!A.hasClassToken(n, "cursor-pointer")) return false;
     var p = n.parentElement;
     if (!p) return false;
     var sibs = p.children;
     for (var i = 0; i < sibs.length; i++) {
-      if (sibs[i] !== n && A.hasClassToken(sibs[i], "bg-theme-accent")) return true;
+      if (sibs[i] === n) continue;
+      if (A.hasClassToken(sibs[i], "bg-theme-accent")) return true;                 // (A)
+      if (A.hasClassToken(sibs[i], "cursor-pointer") &&
+          A.hasClassToken(sibs[i], "bg-opacity-0")) return true;                    // (B)
     }
     return false;
+  };
+
+  // Throttle-calibration page relabel. The two axis panels (Axis 1 = Throttle
+  // 1+2, Axis 2 = Throttle 3+4) are shown SIDE BY SIDE around a shared centre
+  // detent-selector column, so several controls/values are DUPLICATED with
+  // identical labels — "Current Value: …", the low/high range numbers (rendered
+  // as two bare numbers like 0.95 / 1.00 with NO Low/High label in the DOM),
+  // "Deadband +/-", and "Set from Throttle". A blind pilot then can't tell which
+  // axis a "Set from Throttle" / value belongs to, and the range numbers are
+  // meaningless. This pass qualifies each ambiguous control/value with the axis
+  // whose heading it sits nearest to (by horizontal position — the DOM nests the
+  // shared detent column inside one axis's subtree, so ancestry is unreliable),
+  // and labels the two range numbers Low/High by their x order within the axis.
+  // The shared detent selector (TO/GA…Reverse Full) is intentionally left alone:
+  // it is shared and already reads with "(selected)". Gated on an "Axis N for
+  // Throttle" heading so it only fires on this page (A320 + A380 both use it).
+  A.relabelThrottleCalib = function (items) {
+    var any = false;
+    for (var z = 0; z < items.length; z++) if (items[z]._axis) { any = true; break; }
+    if (!any) return items;   // not the throttle calibration page
+
+    // Tag the per-axis range numbers low/high (within an axis, left number = low
+    // bound). Grouping by the DOM-derived axis tag — never by x-proximity — is
+    // what keeps a column's high value from leaking into the adjacent axis.
+    var byAxis = {};
+    for (var r = 0; r < items.length; r++) {
+      var ri = items[r];
+      if (ri._axis && ri.kind === "text" && /^-?\d\.\d{2}$/.test(ri.text || ""))
+        (byAxis[ri._axis] = byAxis[ri._axis] || []).push(ri);
+    }
+    for (var key in byAxis) {
+      if (!byAxis.hasOwnProperty(key)) continue;
+      var grp = byAxis[key].sort(function (x, y) { return x.left - y.left; });
+      for (var g = 0; g < grp.length; g++) grp[g]._rangeRole = (g === 0 ? "low" : "high");
+    }
+
+    for (var j = 0; j < items.length; j++) {
+      var it = items[j], t = it.text || "";
+      if (!it._axis) continue;   // shared detent selector / header / footer — left alone
+      if (it._rangeRole) { it.text = "Axis " + it._axis + " detent " + it._rangeRole + " " + t; continue; }
+      if (t === "Set from Throttle" || t === "Deadband +/-" || t.indexOf("Current Value") === 0)
+        it.text = "Axis " + it._axis + " " + t;
+    }
+    return items;
+  };
+
+  // Throttle-calibration page READ ORDER. The page is genuinely THREE columns —
+  // Axis 1 panel │ shared detent selector │ Axis 2 panel (BaseThrottleConfig ×2
+  // around the VerticalSelectGroup, per FBW ThrottleConfig.tsx) — plus a
+  // full-width header bar (status bar + TOGA / Reverser / Independent-Axes
+  // toggles + the axis-count selector) above and a full-width action bar (Back /
+  // Reset / Load / Apply / Save) below. The generic two-column splitter can't
+  // model three columns, so it zippers the two axes' values together ("Axis 1
+  // current, Axis 2 current, Axis 1 low, Axis 2 low, …"). This pass assigns each
+  // item a band and sorts (navRail-last, band, top, left) so each block reads
+  // intact in logical order: header → Axis 1 → detents → Axis 2 → warnings →
+  // action bar → nav rail. Returns true when it handled (and re-sorted) the page.
+  // Generalises to the 1/2/4-axis variants: axis columns are ranked left→right,
+  // and the shared detent selector reads right after the axis column to its left.
+  A.orderThrottleCalib = function (items) {
+    // Axis headings carry the DOM-derived _axis tag + their left position. Order
+    // the axis columns left→right and map each axis number to a band.
+    var headings = [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].kind === "heading" && items[i]._axis &&
+          /^Axis\s+\d+\s+for\s+Throttle/i.test(items[i].text || "")) headings.push(items[i]);
+    }
+    if (!headings.length) return false;             // not the throttle calibration page
+    headings.sort(function (a, b) { return a.left - b.left; });   // left → right
+    var bandOfAxis = {}, minHeadTop = 1e9;
+    for (var h = 0; h < headings.length; h++) {
+      bandOfAxis[headings[h]._axis] = (h + 1) * 100;
+      if (headings[h].top < minHeadTop) minHeadTop = headings[h].top;
+    }
+
+    var detentNames = { "TO/GA": 1, "FLX": 1, "CLB": 1, "Idle": 1, "Reverse Idle": 1, "Reverse Full": 1 };
+    var footer = { "Back": 1, "Reset to Defaults": 1, "Load from File": 1, "Apply": 1, "Save and Apply": 1 };
+    function bare(t) { return (t || "").replace(/\s+\(selected\)$/, ""); }
+    function detentBand(left) {                      // shared selector reads after the axis column left of it
+      var b = 50;
+      for (var k = 0; k < headings.length; k++) if (headings[k].left < left) b = (k + 1) * 100 + 50;
+      return b;
+    }
+
+    for (var j = 0; j < items.length; j++) {
+      var it = items[j], t = it.text || "";
+      if (it.navRail) { it._band = 1e7; continue; }
+      if (it.top < minHeadTop - 6) { it._band = 0; continue; }        // status bar + header globals
+      if (footer[bare(t)]) { it._band = 1e6; continue; }              // bottom action bar
+      if (detentNames[bare(t)]) { it._band = detentBand(it.left); continue; }  // shared detent selector
+      // Group BOTH "Set from Throttle" buttons together (after the axis value
+      // blocks, before the warning/action bar) so they read consecutively — they
+      // are otherwise split across the two axis columns. The relabel pass has
+      // already prefixed them "Axis N Set from Throttle", so match on the suffix.
+      if (bare(t).indexOf("Set from Throttle") >= 0) { it._band = 850; continue; }
+      if (it._axis && bandOfAxis[it._axis]) { it._band = bandOfAxis[it._axis]; continue; }  // axis column
+      it._band = 900;                                                 // validation/config note (full-width)
+    }
+
+    // Tie-break within a band by the contiguous ROW index the enumerate pass
+    // already assigned (tolerance-based, so items a few px apart in top — the
+    // low/high range numbers, and the header toggle row vs the axis-count
+    // selector 8 px above it — share a row) then left, so each visual row reads
+    // left-to-right rather than splitting on a raw-top boundary.
+    items.sort(function (a, b) {
+      return ((a.navRail ? 1 : 0) - (b.navRail ? 1 : 0)) ||
+             ((a._band || 0) - (b._band || 0)) ||
+             ((a._row || 0) - (b._row || 0)) || (a.left - b.left);
+    });
+    return true;
   };
 
   // Builds the flat, screen-reader-friendly element list for the current
   // flyPad page: every visible interactive control PLUS visible headings/text,
   // one per line, in reading order, de-duplicated. Interactive/clickable items
-  // get a stable index stamped on the node (data-fbwa32nx-efb-idx) so clicks and
+  // get a stable index stamped on the node (data-fbw-efb-idx) so clicks and
   // value sets can find them again.
   // True on the EFB Dashboard ("Your Flight" + "Important Information" two-column
   // layout). Detected by the FlightWidget's heading so it survives the user
@@ -516,14 +649,75 @@
     return false;
   };
 
+  // General two-column detector. Many flyPad pages are a LEFT control column beside
+  // a RIGHT control column (the Checklist phase-menu beside its item list; a
+  // two-column input form like Performance). A plain row-by-row, left-to-right read
+  // ZIPPERS them ("menu1, item1, menu2, item2, …") — the reported "checklist items
+  // interspersed between checklists". If the interactive items (excluding the nav
+  // rail) split across ONE clear horizontal gap into a left group and a right group,
+  // each substantial, return the x boundary so enumerate() reads each column fully
+  // top-to-bottom. A single-column page (or a label+control settings page, whose
+  // left side is non-interactive TEXT and so isn't counted here) has no such gap and
+  // keeps the row-wise order. NOTE: position-based, NOT a fixed fraction of width —
+  // both checklist columns sit in the left half, so a midline split misses them.
+  A.splitColumns = function (items) {
+    var pts = [];
+    for (var i = 0; i < items.length; i++)
+      if (items[i].idx > 0 && !items[i].navRail) pts.push(items[i]);
+    if (pts.length < 6) return -1;
+    var xs = pts.map(function (p) { return p.left; }).sort(function (a, b) { return a - b; });
+    var gi = -1, gv = 0;
+    for (var k = 1; k < xs.length; k++) { var g = xs[k] - xs[k - 1]; if (g > gv) { gv = g; gi = k; } }
+    if (gv < 150) return -1;                       // no clear column gutter
+    var boundary = (xs[gi - 1] + xs[gi]) / 2;
+    // Both columns must be substantial AND vertically OVERLAP. The overlap test is
+    // what separates a true side-by-side layout (checklist menu beside its items —
+    // each menu row sits at the same height as an item row, so a row-wise read
+    // zippers them) from a STACKED layout (Ground's sub-tab strip ABOVE its payload
+    // form — row-wise already reads the tabs row, then the form rows, correctly).
+    // Only the side-by-side case needs column-first; reordering a stacked page would
+    // wrongly bury its top toolbar at the end.
+    var lMin = 1e9, lMax = -1e9, rMin = 1e9, rMax = -1e9, nl = 0, nr = 0;
+    for (var j = 0; j < pts.length; j++) {
+      if (pts[j].left < boundary) { nl++; if (pts[j].top < lMin) lMin = pts[j].top; if (pts[j].top > lMax) lMax = pts[j].top; }
+      else { nr++; if (pts[j].top < rMin) rMin = pts[j].top; if (pts[j].top > rMax) rMax = pts[j].top; }
+    }
+    if (nl < 3 || nr < 3) return -1;
+    var overlap = Math.min(lMax, rMax) - Math.max(lMin, rMin);
+    var minRange = Math.min(lMax - lMin, rMax - rMin);
+    if (overlap < 0.3 * minRange) return -1;       // stacked, not side-by-side → row-wise
+    return boundary;
+  };
+
   A.enumerate = function (root) {
-    var stale = root.querySelectorAll("[data-fbwa32nx-efb-idx]");
-    for (var s = 0; s < stale.length; s++) stale[s].removeAttribute("data-fbwa32nx-efb-idx");
+    var stale = root.querySelectorAll("[data-fbw-efb-idx]");
+    for (var s = 0; s < stale.length; s++) stale[s].removeAttribute("data-fbw-efb-idx");
 
     var rootRect = root.getBoundingClientRect();
     var all = root.getElementsByTagName("*");
     var items = [];
     var idx = 1;
+
+    // Throttle-calibration: precompute each axis PANEL (the BaseThrottleConfig
+    // root = the "Axis N for Throttle …" heading's parent element). Every value /
+    // control is then tied to its axis by DOM containment, which is robust where
+    // x-position fails — the 4-axis layout packs columns so tightly that an
+    // axis's HIGH-bound value sits closer to the NEXT axis's heading and would be
+    // mis-assigned. The shared detent selector is a SIBLING of the panels (not
+    // inside any), so it correctly tags as axis 0. Empty on non-throttle pages.
+    var axisPanels = [];
+    for (var ap = 0; ap < all.length; ap++) {
+      var an = all[ap];
+      if (!/^h[1-6]$/i.test(an.tagName)) continue;
+      var am = /^Axis\s+(\d+)\s+for\s+Throttle/i.exec(clean(an.textContent));
+      if (am && an.parentElement) axisPanels.push({ num: parseInt(am[1], 10), panel: an.parentElement });
+    }
+    function axisOfNode(n) {
+      for (var k = 0; k < axisPanels.length; k++) {
+        try { if (axisPanels[k].panel.contains(n)) return axisPanels[k].num; } catch (e) {}
+      }
+      return 0;
+    }
 
     for (var i = 0; i < all.length && idx <= 400; i++) {
       var n = all[i];
@@ -561,7 +755,7 @@
       if (!text && ctype !== "text" && ctype !== "select" && ctype !== "checkbox") continue;
 
       var thisIdx = 0;
-      if (interactive) { thisIdx = idx; n.setAttribute("data-fbwa32nx-efb-idx", String(idx)); idx++; }
+      if (interactive) { thisIdx = idx; n.setAttribute("data-fbw-efb-idx", String(idx)); idx++; }
 
       var r = n.getBoundingClientRect();
       var topRel = r.top - rootRect.top, leftRel = r.left - rootRect.left;
@@ -573,6 +767,8 @@
         controlType: ctype, clickable: clickable,
         level: A.headingLevel(n), live: A.liveFor(n),
         disabled: A.disabledFor(n), options: A.optionsFor(n),
+        // Throttle-calibration axis tag (0 = not on this page / shared detent column).
+        _axis: axisPanels.length ? axisOfNode(n) : 0,
         // The left nav rail (page links in the far-left column) is grouped at the
         // END so it stops interleaving with the page content row-by-row.
         navRail: (kind === "link" && leftRel < 100 && topRel > 40)
@@ -604,7 +800,8 @@
         top: tTop, left: tLeft,
         idx: 0, kind: "text", tag: tn.tagName.toLowerCase(), role: "",
         text: own, value: "", controlType: "", clickable: false,
-        level: 0, live: A.liveFor(tn), disabled: false, options: [], navRail: false
+        level: 0, live: A.liveFor(tn), disabled: false, options: [],
+        _axis: axisPanels.length ? axisOfNode(tn) : 0, navRail: false
       });
     }
 
@@ -632,7 +829,11 @@
     // the entire right column — each widget then reads as one coherent block under
     // its own heading. Other pages (Settings rows, etc.) keep the row-wise order so
     // a setting name and its control stay together on one line.
-    var dashMid = A.isDashboard(root) ? (rootRect.width * 0.48) : -1;
+    // Dashboard keeps its dedicated 48%-width split (its right column is reminder
+    // widgets, detected by heading); every other page uses the general gap-based
+    // column detector so two-column pages (Checklists menu+items, etc.) read
+    // column-first instead of zippering. Single-column pages return -1 → row-wise.
+    var dashMid = A.isDashboard(root) ? (rootRect.width * 0.48) : A.splitColumns(items);
     if (dashMid > 0) {
       for (var ci = 0; ci < items.length; ci++)
         items[ci]._col = (!items[ci].navRail && items[ci].left > dashMid) ? 1 : 0;
@@ -644,6 +845,13 @@
         return ((a.navRail ? 1 : 0) - (b.navRail ? 1 : 0)) || (a._row - b._row) || (a.left - b.left);
       });
     }
+
+    // Qualify the duplicated/unlabeled throttle-calibration controls by axis +
+    // Low/High BEFORE dedupe, so the now-distinct labels are no longer collapsed.
+    items = A.relabelThrottleCalib(items);
+    // Re-order the throttle-calibration page into logical column blocks (the
+    // generic two-column sort zippers its three columns). No-op on other pages.
+    A.orderThrottleCalib(items);
 
     items = A.dedupe(items);
     A._elements = items;
@@ -754,8 +962,15 @@
       }
       if (out.length > 0 && norm(out[out.length - 1].text) === norm(it.text)) {
         var prev = out[out.length - 1];
-        if (prev.idx === 0 && it.idx > 0) out[out.length - 1] = it;
-        continue;
+        // Replace a non-interactive text line with the interactive control that
+        // echoes it; otherwise drop a non-interactive echo of the previous line.
+        // BUT two DISTINCT interactive controls that happen to share a label (e.g.
+        // the per-axis "Set from Throttle" button on each throttle calibration
+        // axis, or a "Set" button repeated per row) are SEPARATE controls — keep
+        // both. The shell disambiguates identical labels with an occurrence index.
+        if (prev.idx === 0 && it.idx > 0) { out[out.length - 1] = it; continue; }
+        if (it.idx === 0) continue;
+        // both interactive with identical label → fall through, keep both
       }
       out.push(it);
     }
@@ -815,7 +1030,7 @@
 
   // ---- public: drive -----------------------------------------------------
   A.findByIdx = function (index) {
-    return document.querySelector('[data-fbwa32nx-efb-idx="' + index + '"]');
+    return document.querySelector('[data-fbw-efb-idx="' + index + '"]');
   };
 
   A.clickNode = function (node) {

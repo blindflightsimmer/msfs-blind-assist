@@ -5,28 +5,27 @@ param(
   [string]$Expr = "",           # inline JS expression
   [string]$PreFile = ""         # JS file evaluated BEFORE the expression (e.g. inject the agent)
 )
-# Runs Runtime.evaluate inside a Coherent GT view via the sim's remote inspector.
-# Resolve pages BY TITLE from /pagelist.json — ids shuffle every session.
+# Runs Runtime.evaluate inside a Coherent GT view via the sim's remote inspector
+# (the same path CoherentDebuggerClient.cs / CoherentEFBClient.cs use). Resolve
+# pages BY TITLE from /pagelist.json — ids shuffle every session.
 #
-# Vendored from the A380 dev tools (D:\Documents\tools\coherent-eval.ps1). It is
-# generic: it reads/writes any L:var and scrapes/clicks any Coherent DOM from
-# inside a view. Requires MSFS running with the aircraft loaded (the sim opens
-# port 19999 itself — no Dev Mode needed).
+# This is the single most useful A380 dev/debug tool: it lets you read/write ANY
+# L:var and scrape/click ANY Coherent DOM from inside a cockpit view, independent
+# of the SimConnect MCP (which goes stale on focus loss). Requires MSFS running
+# with the A380X loaded (the sim opens port 19999 itself — no Dev Mode needed).
 #
-# Single-connection rule: close the MSFSBlindAssist EFB form before running this
-# (Coherent GT allows only one devtools connection at a time).
+# View title-needles (pass to -Title; never hardcode ids):
+#   A380X_MFD  A380X_ND_1  A380X_FCU  A380X_PFD_1  A380X_SDv2  A380X_EWD
+#   A380X_SYSTEMSHOST   ISISlegacy   "- EFB" (flyPad)
 #
-# FBW A32NX view title-needle: "- EFB" (the flyPad). Examples:
-#   # Scrape the flyPad after injecting the generic agent:
-#   ./coherent-eval.ps1 -Title "- EFB" `
-#       -PreFile ../MSFSBlindAssist/Resources/coherent-a32nx-flypad-agent.js `
-#       -ExprFile fp_scrape.js
-#   # Inspect input-field labels:
-#   ./coherent-eval.ps1 -Title "- EFB" `
-#       -PreFile ../MSFSBlindAssist/Resources/coherent-a32nx-flypad-agent.js `
-#       -ExprFile fp_inspect.js
-#   # Read an L:var:
-#   ./coherent-eval.ps1 -Title "- EFB" -Expr "SimVar.GetSimVarValue('L:A32NX_EFB_TURNED_ON','number')"
+# Examples:
+#   # Read an L:var from the MFD view
+#   ./coherent-eval.ps1 -Title A380X_MFD -Expr "SimVar.GetSimVarValue('L:A32NX_BTV_STATE','number')"
+#   # Inject the in-page agent first, then call it (scrape the MCDU)
+#   ./coherent-eval.ps1 -Title A380X_MFD -PreFile ..\MSFSBlindAssist\Resources\coherent-a380-agent.js -ExprFile _probe\fpln_sanity.js
+#   # Write an L:var via the MobiFlight calculator path (reliable for FBW L:vars)
+#   ./coherent-eval.ps1 -Title A380X_MFD -Expr "SimVar.SetSimVarValue('K:...', 'number', 1)"
+# See tools/_probe/README.md for the probe-file pattern and a worked catalogue.
 $ErrorActionPreference = "Stop"
 $base = "http://127.0.0.1:19999"
 
