@@ -36,10 +36,13 @@ public partial class MainForm : Form
     private MSFSBlindAssist.Services.PMDGProgPageMonitor? pmdgProgPageMonitor;
     private FenixMCDUForm? fenixMCDUForm;
     private FenixMCDUService? fenixMCDUService;
+    private MSFSBlindAssist.Forms.FlyByWireA320.FlyByWireMCDUForm? flyByWireMCDUForm;
+    private MSFSBlindAssist.Services.FlyByWireMCDUService? flyByWireMCDUService;
     private System.Windows.Forms.Form? pmdgCDUForm;
     private System.Windows.Forms.Form? pmdgEFBForm;
     private EFBBridgeServer? efbBridgeServer;
     private EFBBridgeServer? hs787BridgeServer;
+    private A32NXEFBForm? a32nxEFBForm;
     private HS787FMCForm? hs787FMCForm;
     private HS787SimBriefForm? hs787SimBriefForm;
     private HS787EFBForm? hs787EFBForm;
@@ -187,6 +190,8 @@ public partial class MainForm : Form
             CheckAndOfferEFBModPackage();
             StartEFBBridgeServer();
         }
+
+        // FBW flyPad: the EFB form owns its CDP client; nothing to pre-start here.
 
         // Initialize 787 bridge if starting with HS 787
         if (currentAircraft?.AircraftCode == "HS_787")
@@ -1604,6 +1609,10 @@ public partial class MainForm : Form
                 {
                     ShowHS787FMCDialog();
                 }
+                else if (currentAircraft?.AircraftCode == "A320")
+                {
+                    ShowFlyByWireMCDUDialog();
+                }
                 else
                 {
                     ShowFenixMCDUDialog();
@@ -1617,6 +1626,10 @@ public partial class MainForm : Form
                 else if (currentAircraft?.AircraftCode == "HS_787")
                 {
                     ShowHS787EFBFormDialog();
+                }
+                else if (currentAircraft?.AircraftCode == "A320")
+                {
+                    ShowA32NXEFBDialog();
                 }
                 break;
             case HotkeyAction.ShowTrackFixWindow:
@@ -2147,6 +2160,25 @@ public partial class MainForm : Form
         fenixMCDUForm.ShowForm();
     }
 
+    private void ShowFlyByWireMCDUDialog()
+    {
+        // Deactivate input hotkey mode before showing dialog
+        hotkeyManager.ExitInputHotkeyMode();
+
+        if (flyByWireMCDUService == null)
+        {
+            flyByWireMCDUService = new MSFSBlindAssist.Services.FlyByWireMCDUService();
+            flyByWireMCDUService.Connect();
+        }
+
+        if (flyByWireMCDUForm == null || flyByWireMCDUForm.IsDisposed)
+        {
+            flyByWireMCDUForm = new MSFSBlindAssist.Forms.FlyByWireA320.FlyByWireMCDUForm(flyByWireMCDUService, announcer);
+        }
+
+        flyByWireMCDUForm.ShowForm();
+    }
+
     private void ShowPMDGCDUDialog()
     {
         // Deactivate input hotkey mode before showing dialog
@@ -2228,6 +2260,25 @@ public partial class MainForm : Form
         }
 
         hs787FMCForm.ShowForm();
+    }
+
+    private void ShowA32NXEFBDialog()
+    {
+        hotkeyManager.ExitInputHotkeyMode();
+
+        if (a32nxEFBForm == null || a32nxEFBForm.IsDisposed)
+            a32nxEFBForm = new A32NXEFBForm(announcer);
+
+        a32nxEFBForm.ShowForm();
+    }
+
+    private void CleanupA32NXEFBForm()
+    {
+        if (a32nxEFBForm != null && !a32nxEFBForm.IsDisposed)
+        {
+            a32nxEFBForm.Dispose();
+            a32nxEFBForm = null;
+        }
     }
 
     /// <summary>
@@ -2885,15 +2936,6 @@ public partial class MainForm : Form
         hotkeyManager.ExitOutputHotkeyMode();
 
         var dialog = new ECAMDisplayForm(announcer, simConnectManager);
-        dialog.Show();
-    }
-
-    private void ShowFuelPayloadDialog()
-    {
-        // Ensure output hotkey mode is deactivated before showing window
-        hotkeyManager.ExitOutputHotkeyMode();
-
-        var dialog = new FuelPayloadDisplayForm(announcer, simConnectManager);
         dialog.Show();
     }
 
@@ -3810,6 +3852,18 @@ public partial class MainForm : Form
             fenixMCDUService = null;
         }
 
+        // Dispose FlyByWire MCDU form and service when switching aircraft
+        if (flyByWireMCDUForm != null && !flyByWireMCDUForm.IsDisposed)
+        {
+            flyByWireMCDUForm.Dispose();
+            flyByWireMCDUForm = null;
+        }
+        if (flyByWireMCDUService != null)
+        {
+            flyByWireMCDUService.Dispose();
+            flyByWireMCDUService = null;
+        }
+
         // Dispose PMDG CDU form when switching aircraft
         if (pmdgCDUForm != null && !pmdgCDUForm.IsDisposed)
         {
@@ -3869,15 +3923,21 @@ public partial class MainForm : Form
         // init would silently no-op (see comment above the dispose block).
         EnsurePMDGProgPageMonitor();
 
-        // EFB bridge: mod package check and server start (only for aircraft that have EFB support wired up)
+        // EFB bridge: PMDG (mod package) or FBW A320 (CDP, owned by the EFB form)
         if (newAircraft is IPMDGAircraft pmdgChange && pmdgChange.HasEFBSupport)
         {
             CheckAndOfferEFBModPackage();
             StartEFBBridgeServer();
+            CleanupA32NXEFBForm();   // release the FBW CDP connection if it was open
+        }
+        else if (newAircraft.AircraftCode == "A320")
+        {
+            // FBW flyPad: the EFB form owns its CDP client; nothing to pre-start here.
         }
         else
         {
             StopEFBBridgeServer();
+            CleanupA32NXEFBForm();
         }
 
         // 787 FMC bridge: mod package check and server start
@@ -4679,7 +4739,7 @@ public partial class MainForm : Form
                         }
                     }
 
-                    // Handle selection change - send multiple events
+                    // Handle selection change
                     // Capture varKey to avoid nullable reference warnings in closure
                     string capturedVarKey = varKey;
                     // SelectionChangeCommitted fires only on user-initiated changes (mouse click,
@@ -4694,150 +4754,80 @@ public partial class MainForm : Form
                         {
                             var selectedValue = sortedValues[combo.SelectedIndex].Key;
 
-                            // Send the main LVar
-                            simConnectManager?.SetLVar(capturedVarKey, selectedValue);
                             currentSimVarValues[capturedVarKey] = selectedValue;
 
-                            // Send additional events based on the control and value
-                            if (capturedVarKey == "LIGHTING_LANDING_1") // Nose Light
+                            // Landing lights: ASOBO_LIGHTING_Switch_Light_Landing_Template reads
+                            // LIGHTING_LANDING_x every frame and manages the circuits automatically.
+                            // SetLVar via SimConnect is equivalent to the cockpit click. No MobiFlight needed.
+                            if (capturedVarKey == "LIGHTING_LANDING_1") // Nose Light (T.O./Taxi/Off)
                             {
-                                if (selectedValue == 2) // Off
-                                {
-                                    simConnectManager?.SendEvent("LANDING_LIGHTS_OFF", 1);
-                                    simConnectManager?.SendEvent("LIGHT_TAXI", 0);
-                                }
-                                else if (selectedValue == 1) // Taxi
-                                {
-                                    simConnectManager?.SendEvent("LANDING_LIGHTS_ON", 1);
-                                    simConnectManager?.SendEvent("CIRCUIT_SWITCH_ON_20", 1);
-                                    simConnectManager?.SendEvent("LIGHT_TAXI", 1);
-                                }
-                                else if (selectedValue == 0) // T.O.
-                                {
-                                    simConnectManager?.SendEvent("LANDING_LIGHTS_ON", 1);
-                                    simConnectManager?.SendEvent("CIRCUIT_SWITCH_ON_17", 1);
-                                    simConnectManager?.SendEvent("LIGHT_TAXI", 0);
-                                }
+                                simConnectManager?.SetLVar("LIGHTING_LANDING_1", selectedValue);
                             }
                             else if (capturedVarKey == "LIGHTING_LANDING_2") // Left Landing Light
                             {
-                                if (selectedValue == 2) // Retract
-                                {
-                                    simConnectManager?.SendEvent("LANDING_2_RETRACTED", 1);
-                                    simConnectManager?.SendEvent("CIRCUIT_SWITCH_ON_18", 0);
-                                }
-                                else if (selectedValue == 1) // Off
-                                {
-                                    simConnectManager?.SendEvent("LANDING_2_RETRACTED", 0);
-                                    simConnectManager?.SendEvent("CIRCUIT_SWITCH_ON_18", 0);
-                                }
-                                else if (selectedValue == 0) // On
-                                {
-                                    simConnectManager?.SendEvent("LANDING_2_RETRACTED", 0);
-                                    simConnectManager?.SendEvent("CIRCUIT_SWITCH_ON_18", 1);
-                                }
+                                // LANDING_2_RETRACTED: 0 = extended, 1 = retracted
+                                simConnectManager?.SetLVar("LIGHTING_LANDING_2", selectedValue);
+                                simConnectManager?.SetLVar("LANDING_2_RETRACTED", selectedValue == 2 ? 1 : 0);
                             }
                             else if (capturedVarKey == "LIGHTING_LANDING_3") // Right Landing Light
                             {
-                                if (selectedValue == 2) // Retract
-                                {
-                                    simConnectManager?.SendEvent("LANDING_3_RETRACTED", 1);
-                                    simConnectManager?.SendEvent("CIRCUIT_SWITCH_ON_19", 0);
-                                }
-                                else if (selectedValue == 1) // Off
-                                {
-                                    simConnectManager?.SendEvent("LANDING_3_RETRACTED", 0);
-                                    simConnectManager?.SendEvent("CIRCUIT_SWITCH_ON_19", 0);
-                                }
-                                else if (selectedValue == 0) // On
-                                {
-                                    simConnectManager?.SendEvent("LANDING_3_RETRACTED", 0);
-                                    simConnectManager?.SendEvent("CIRCUIT_SWITCH_ON_19", 1);
-                                }
+                                simConnectManager?.SetLVar("LIGHTING_LANDING_3", selectedValue);
+                                simConnectManager?.SetLVar("LANDING_3_RETRACTED", selectedValue == 2 ? 1 : 0);
                             }
                             else if (capturedVarKey == "LIGHTING_STROBE_0") // Strobe Lights
                             {
                                 if (selectedValue == 2) // Off
                                 {
-                                    simConnectManager?.SendEvent("STROBES_OFF", 0);
                                     simConnectManager?.SetLVar("STROBE_0_AUTO", 0);
-                                    simConnectManager?.SetLVar("LIGHT STROBE", 0);
-                                    simConnectManager?.SetLVar("LIGHTING_STROBE_0", 2);
+                                    simConnectManager?.SendEvent("STROBES_OFF", 0);
                                 }
                                 else if (selectedValue == 0) // On
                                 {
-                                    simConnectManager?.SendEvent("STROBES_ON", 0);
-                                    simConnectManager?.SetLVar("LIGHT STROBE", 1);
                                     simConnectManager?.SetLVar("STROBE_0_AUTO", 0);
-                                    simConnectManager?.SetLVar("LIGHTING_STROBE_0", 0);
+                                    simConnectManager?.SendEvent("STROBES_ON", 0);
                                 }
-                                else if (selectedValue == 1) // Auto
+                                else // Auto (1)
                                 {
                                     simConnectManager?.SetLVar("STROBE_0_AUTO", 1);
-                                    simConnectManager?.SetLVar("LIGHTING_STROBE_0", 1);
+                                    // STROBE_0_AUTO=1 is sufficient — FBW FMGC manages strobe state
                                 }
                             }
                             else if (capturedVarKey == "LIGHT BEACON") // Beacon Light
                             {
-                                if (selectedValue == 0) // Off
-                                {
-                                    simConnectManager?.SendEvent("BEACON_LIGHTS_SET", 0);
-                                }
-                                else if (selectedValue == 1) // On
-                                {
-                                    simConnectManager?.SendEvent("BEACON_LIGHTS_SET", 1);
-                                }
+                                simConnectManager?.SendEvent("BEACON_LIGHTS_SET", (uint)selectedValue);
                             }
                             else if (capturedVarKey == "LIGHT WING") // Wing Lights
                             {
-                                if (selectedValue == 0) // Off
-                                {
-                                    simConnectManager?.SendEvent("WING_LIGHTS_SET", 0);
-                                }
-                                else if (selectedValue == 1) // On
-                                {
-                                    simConnectManager?.SendEvent("WING_LIGHTS_SET", 1);
-                                }
+                                simConnectManager?.SendEvent("WING_LIGHTS_SET", (uint)selectedValue);
                             }
-                            else if (capturedVarKey == "LIGHT NAV") // Nav Lights
+                            else if (capturedVarKey == "LIGHT NAV") // Nav Lights (controls both Nav and Logo)
                             {
-                                // Nav and Logo lights are combined in real aircraft
-                                // Control both when Nav light is changed
-                                if (selectedValue == 0) // Off
-                                {
-                                    simConnectManager?.SendEvent("NAV_LIGHTS_SET", 0);
-                                    simConnectManager?.SendEvent("LOGO_LIGHTS_SET", 0);
-                                }
-                                else if (selectedValue == 1) // On
-                                {
-                                    simConnectManager?.SendEvent("NAV_LIGHTS_SET", 1);
-                                    simConnectManager?.SendEvent("LOGO_LIGHTS_SET", 1);
-                                }
+                                simConnectManager?.SendEvent("NAV_LIGHTS_SET", (uint)selectedValue);
+                                simConnectManager?.SendEvent("LOGO_LIGHTS_SET", (uint)selectedValue);
                             }
-                            else if (capturedVarKey == "LIGHT LOGO") // Logo Lights
+                            else if (capturedVarKey == "LIGHT LOGO") // Logo Lights (controls both Nav and Logo)
                             {
-                                // Logo lights are controlled with Nav lights in real aircraft
-                                // Control both when Logo light is changed
-                                if (selectedValue == 0) // Off
-                                {
-                                    simConnectManager?.SendEvent("NAV_LIGHTS_SET", 0);
-                                    simConnectManager?.SendEvent("LOGO_LIGHTS_SET", 0);
-                                }
-                                else if (selectedValue == 1) // On
-                                {
-                                    simConnectManager?.SendEvent("NAV_LIGHTS_SET", 1);
-                                    simConnectManager?.SendEvent("LOGO_LIGHTS_SET", 1);
-                                }
+                                simConnectManager?.SendEvent("NAV_LIGHTS_SET", (uint)selectedValue);
+                                simConnectManager?.SendEvent("LOGO_LIGHTS_SET", (uint)selectedValue);
                             }
                             else if (capturedVarKey == "CIRCUIT_SWITCH_ON:21") // Left RWY Turn Off Light
                             {
-                                // Write directly to the SimVar (as per FBW documentation)
-                                simConnectManager?.SetSimVar("CIRCUIT SWITCH ON:21", selectedValue, "bool");
+                                double currentState = currentSimVarValues.ContainsKey("CIRCUIT_SWITCH_ON:21")
+                                    ? currentSimVarValues["CIRCUIT_SWITCH_ON:21"] : -1;
+                                bool wantOn = selectedValue == 1;
+                                bool isOn = currentState == 1;
+                                // When state is unknown (cache miss on first open), always send toggle
+                                if (currentState < 0 || wantOn != isOn)
+                                    simConnectManager?.SendEvent("ELECTRICAL_CIRCUIT_TOGGLE", 21);
                             }
                             else if (capturedVarKey == "CIRCUIT_SWITCH_ON:22") // Right RWY Turn Off Light
                             {
-                                // Write directly to the SimVar (as per FBW documentation)
-                                simConnectManager?.SetSimVar("CIRCUIT SWITCH ON:22", selectedValue, "bool");
+                                double currentState = currentSimVarValues.ContainsKey("CIRCUIT_SWITCH_ON:22")
+                                    ? currentSimVarValues["CIRCUIT_SWITCH_ON:22"] : -1;
+                                bool wantOn = selectedValue == 1;
+                                bool isOn = currentState == 1;
+                                if (wantOn != isOn)
+                                    simConnectManager?.SendEvent("ELECTRICAL_CIRCUIT_TOGGLE", 22);
                             }
                         }
                     };
@@ -5666,6 +5656,9 @@ public partial class MainForm : Form
         hs787EFBForm?.Dispose();
         hs787BridgeServer?.Dispose();
         hs787BridgeServer = null;
+
+        // Clean up A32NX EFB form (owns its CDP client)
+        CleanupA32NXEFBForm();
 
         // Clean up managers and resources
         hotkeyManager?.Cleanup();
