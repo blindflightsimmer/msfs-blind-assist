@@ -33,6 +33,7 @@ public partial class MainForm : Form
     private ChecklistForm? checklistForm;
     private FenixMonitorManagerForm? fenixMonitorManagerForm;
     private Forms.FBWA380.FBWA380MonitorManagerForm? fbwA380MonitorManagerForm;
+    private Forms.FlyByWireA320.FlyByWireA320MonitorManagerForm? fbwA320MonitorManagerForm;
     private PMDGAnnouncementMonitorForm? pmdgAnnouncementMonitorForm;
     private MSFSBlindAssist.Services.PMDGProgPageMonitor? pmdgProgPageMonitor;
     private FenixMCDUForm? fenixMCDUForm;
@@ -71,6 +72,7 @@ public partial class MainForm : Form
     private HandFlyManager handFlyManager = null!;
     private VisualGuidanceManager visualGuidanceManager = null!;
     private MSFSBlindAssist.Services.GroundSpeedAnnouncer groundSpeedAnnouncer = null!;
+    private MSFSBlindAssist.Services.AltitudeCalloutAnnouncer altitudeCalloutAnnouncer = null!;
     private ElectronicFlightBagForm? electronicFlightBagForm;
     private TrackFixForm? trackFixForm;
     private TcasForm? tcasForm;
@@ -292,6 +294,8 @@ public partial class MainForm : Form
         // variable, so callouts work in every phase (takeoff roll, landing rollout, taxi),
         // not just while taxi guidance is active.
         groundSpeedAnnouncer = new MSFSBlindAssist.Services.GroundSpeedAnnouncer(announcer);
+        // 1,000-foot crossing callouts, fed by the always-on INDICATED ALTITUDE var.
+        altitudeCalloutAnnouncer = new MSFSBlindAssist.Services.AltitudeCalloutAnnouncer(announcer);
 
         // Initialize taxi guidance manager
         taxiGuidanceManager = new TaxiGuidanceManager(announcer);
@@ -641,6 +645,11 @@ public partial class MainForm : Form
             var varDef = currentAircraft.GetVariables()[e.VarName];
             if (varDef.IsAnnounced && varDef.UpdateFrequency == UpdateFrequency.Continuous)
             {
+                // INDICATED_ALTITUDE is continuously monitored only to feed the 1,000-ft
+                // crossing announcer (HandleSpecialAnnouncements); never speak it as a raw
+                // "Altitude: 5234" through the generic gate. Display/feed already ran above.
+                if (e.VarName == "INDICATED_ALTITUDE") return;
+
                 // Check if disabled in Fenix Monitor Manager
                 if (currentAircraft.AircraftCode == "FENIX_A320CEO" &&
                     Settings.SettingsManager.Current.FenixDisabledMonitorVariables.Contains(e.VarName))
@@ -661,6 +670,13 @@ public partial class MainForm : Form
                 // Check if disabled in the A380 Monitor Manager.
                 if (currentAircraft.AircraftCode == "FBW_A380" &&
                     Settings.SettingsManager.Current.A380DisabledMonitorVariables.Contains(e.VarName))
+                {
+                    return; // Skip announcement for disabled variable
+                }
+
+                // Check if disabled in the A32NX Monitor Manager.
+                if (currentAircraft.AircraftCode == "A320" &&
+                    Settings.SettingsManager.Current.A32NXDisabledMonitorVariables.Contains(e.VarName))
                 {
                     return; // Skip announcement for disabled variable
                 }
@@ -717,6 +733,15 @@ public partial class MainForm : Form
     {
         // NOTE: Aircraft-specific ProcessSimVarUpdate() is now called in the main flow (line 206)
         // to avoid duplicate calls. Flight phase window title updates happen there.
+
+        // 1,000-foot crossing callouts. INDICATED_ALTITUDE is also a panel-display var, so
+        // this is a NON-terminal feed (no early return) — processing continues so the
+        // display box still updates. The var is registered IsAnnounced=false (per aircraft),
+        // so the generic announce gate stays silent and only these callouts speak.
+        if (e.VarName == "INDICATED_ALTITUDE")
+        {
+            altitudeCalloutAnnouncer.ProcessAltitude(e.Value, _lastOnGround);
+        }
 
         // Handle FCU hotkey value announcements
         if (e.VarName == "FCU_HEADING" || e.VarName == "FCU_SPEED" || e.VarName == "FCU_ALTITUDE" ||
@@ -2210,6 +2235,17 @@ public partial class MainForm : Form
         fbwA380MonitorManagerForm.ShowForm();
     }
 
+    public void ShowA320MonitorManagerDialog()
+    {
+        hotkeyManager.ExitOutputHotkeyMode();
+        if (fbwA320MonitorManagerForm == null || fbwA320MonitorManagerForm.IsDisposed)
+        {
+            fbwA320MonitorManagerForm = new Forms.FlyByWireA320.FlyByWireA320MonitorManagerForm(
+                announcer, currentAircraft.GetVariables());
+        }
+        fbwA320MonitorManagerForm.ShowForm();
+    }
+
     /// <summary>
     /// Public accessor for the PROG-page monitor. PMDG777Definition's distance
     /// handlers read its <see cref="PMDGProgPageMonitor.LastProgData"/> when
@@ -2487,6 +2523,9 @@ public partial class MainForm : Form
         // auto-announce so failures AND memos come from the one DOM source.
         if (currentAircraft is FlyByWireA380Definition a380def) a380def.EwdScrapeHandlesAnnounce = true;
         coherentEWDClient = new CoherentEWDClient();
+        // Let the SD "Upper E/WD" page read the live E/WD content through this one shared
+        // socket (a second client on A380X_EWD is rejected — one inspector per page).
+        if (currentAircraft is FlyByWireA380Definition a380ewd) a380ewd.EwdMonitor = coherentEWDClient;
         coherentEWDClient.LineAnnounced += line =>
         {
             // Honour the Ctrl+M / Ctrl+E ECAM-monitor mute (same sentinel the
@@ -3183,42 +3222,8 @@ public partial class MainForm : Form
         });
     }
 
-    private void ShowPFDDialog()
-    {
-        // Ensure output hotkey mode is deactivated before showing window
-        hotkeyManager.ExitOutputHotkeyMode();
-
-        var dialog = new PFDForm(announcer, simConnectManager);
-        dialog.CurrentAircraft = currentAircraft;
-        dialog.Show();
-    }
-
-    private void ShowNavigationDisplayDialog()
-    {
-        // Ensure output hotkey mode is deactivated before showing window
-        hotkeyManager.ExitOutputHotkeyMode();
-
-        var dialog = new NavigationDisplayForm(announcer, simConnectManager);
-        dialog.Show();
-    }
-
-    private void ShowECAMDialog()
-    {
-        // Ensure output hotkey mode is deactivated before showing window
-        hotkeyManager.ExitOutputHotkeyMode();
-
-        var dialog = new ECAMDisplayForm(announcer, simConnectManager);
-        dialog.Show();
-    }
-
-    private void ShowStatusDialog()
-    {
-        // Ensure output hotkey mode is deactivated before showing window
-        hotkeyManager.ExitOutputHotkeyMode();
-
-        var dialog = new StatusDisplayForm(announcer, simConnectManager);
-        dialog.Show();
-    }
+    // (Old PFD / ND / ECAM / Status display-window launchers removed — the FBW
+    // aircraft read these through the accessible status-box panels now.)
 
     private void RequestDestinationRunwayDistance()
     {
@@ -4641,6 +4646,38 @@ public partial class MainForm : Form
             panelsListBox.Focus();
             return true;
         }
+        // Ctrl+3 jumps straight to the current panel's Status Display field, mirroring
+        // Ctrl+1 (sections list) / Ctrl+2 (panels list). Status displays are the primary
+        // readout for the A320/A380, so a one-key jump to them is high-value.
+        //
+        // No conflict with the FCU "Pull Speed" global hotkey (also Ctrl+3): that hotkey
+        // is only registered while INPUT mode is active, and a registered global hotkey
+        // consumes the keystroke before ProcessCmdKey sees it — so this branch only fires
+        // when input mode is OFF. This is the exact same coexistence the existing Ctrl+1/
+        // Ctrl+2 panel-nav already relies on against FCU Pull-Heading/Pull-Altitude.
+        else if (keyData == (Keys.Control | Keys.D3))
+        {
+            if (currentControls.TryGetValue("_DISPLAY_", out var dispCtrl) && dispCtrl is TextBox dispBox)
+            {
+                dispBox.Focus();
+                // If the field is empty (OnRequest display vars don't auto-update until a
+                // refresh), pull live content so the user lands on real status rather than a
+                // blank box. The refresh is silent; the screen reader reads the field itself.
+                // If it already has content (continuously-monitored vars / a prior refresh),
+                // leave it untouched so NVDA reads the current value immediately.
+                if (string.IsNullOrWhiteSpace(dispBox.Text) &&
+                    currentControls.TryGetValue("_REFRESH_", out var refreshOnJump) &&
+                    refreshOnJump is Button jumpRefreshBtn && jumpRefreshBtn.Enabled)
+                {
+                    jumpRefreshBtn.PerformClick();
+                }
+            }
+            else
+            {
+                announcer.AnnounceImmediate("No status display on this panel.");
+            }
+            return true;
+        }
         // F5 refreshes the current panel's Status Display without leaving the
         // edit field/combo you're on (easier than tabbing to the Refresh button).
         else if (keyData == Keys.F5 &&
@@ -5013,9 +5050,15 @@ public partial class MainForm : Form
                         if (!updatingFromSim && !_buildingPanel && combo.SelectedIndex >= 0)
                         {
                             uint mode = (uint)combo.SelectedIndex;
-                            // Set both engines to the same mode
+                            // Set both engines to the same mode. The combo reads back the
+                            // stock ignition simvar (TURB ENG IGNITION SWITCH EX1:1), which
+                            // these events DO move — so unlike the A380's old bug it never
+                            // went stale. Also nudge the FBW knob-position L:var so the
+                            // cockpit/EWD display matches (the events don't touch it), the
+                            // same display-sync the A380 fix added.
                             simConnectManager?.SendEvent("TURBINE_IGNITION_SWITCH_SET1", mode);
                             simConnectManager?.SendEvent("TURBINE_IGNITION_SWITCH_SET2", mode);
+                            simConnectManager?.ExecuteCalculatorCode($"{mode} (>L:XMLVAR_ENG_MODE_SEL)");
                             currentSimVarValues["TURB ENG IGNITION SWITCH EX1:1"] = mode;
                         }
                     };
@@ -5372,8 +5415,10 @@ public partial class MainForm : Form
                                 if (varKey.Contains(":2")) comIndex = "2";
                                 else if (varKey.Contains(":3")) comIndex = "3";
 
-                                // Always set standby first, then swap if setting active
-                                string setEvent = "COM_STBY_RADIO_SET_HZ"; // Sets standby in Hz
+                                // Always set standby first, then swap if setting active.
+                                // The COM1 standby-set event is the un-numbered "COM_STBY_RADIO_SET_HZ";
+                                // COM2/COM3 use the numbered form so a COM2 set doesn't write COM1's standby.
+                                string setEvent = comIndex == "1" ? "COM_STBY_RADIO_SET_HZ" : $"COM{comIndex}_STBY_RADIO_SET_HZ";
                                 string swapEvent = $"COM{comIndex}_RADIO_SWAP";
 
                                 // For active frequency: set standby then swap
@@ -5655,6 +5700,11 @@ public partial class MainForm : Form
             controlsContainer.SuspendLayout();
             controlsContainer.Controls.Add(layout);
             controlsContainer.ResumeLayout(true);
+
+            // Auto-populate a multi-page status box (e.g. the SD-page combo) with the
+            // combo's CURRENT page, so the user doesn't have to cycle it to get content
+            // on first display. No-op for panels without such a box.
+            try { currentAircraft.OnDisplayPanelShown(currentPanel, simConnectManager); } catch { }
 
             // For PMDG aircraft, populate controls with current data from the data manager
             if (currentAircraft is IPMDGAircraft && simConnectManager?.PMDGDataManager != null)
