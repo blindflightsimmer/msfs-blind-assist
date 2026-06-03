@@ -61,6 +61,7 @@ public partial class MainForm : Form
     // new failures. Runs whenever the A380X is active — no window needed.
     private CoherentEWDClient? coherentEWDClient;
     private Forms.FBWA380.FbwEfbForm? fbwA380OansForm;
+    private Forms.FBWA380.FBWA380RmpForm? fbwA380RmpForm;
     // Live A380X Electronic Checklist window (normal checklists + ECP controls),
     // read from the E/WD Coherent view. Opened by the Checklist hotkey on the A380.
     private Forms.FBWA380.FBWA380ChecklistForm? fbwA380ChecklistForm;
@@ -72,6 +73,7 @@ public partial class MainForm : Form
     private HandFlyManager handFlyManager = null!;
     private VisualGuidanceManager visualGuidanceManager = null!;
     private MSFSBlindAssist.Services.GroundSpeedAnnouncer groundSpeedAnnouncer = null!;
+    private MSFSBlindAssist.Services.LandingRateAnnouncer landingRateAnnouncer = null!;
     private MSFSBlindAssist.Services.AltitudeCalloutAnnouncer altitudeCalloutAnnouncer = null!;
     private ElectronicFlightBagForm? electronicFlightBagForm;
     private TrackFixForm? trackFixForm;
@@ -130,6 +132,15 @@ public partial class MainForm : Form
     // Weather auto-announcement timer
     private System.Windows.Forms.Timer? weatherAnnouncementTimer;
     private double _prevPrecipState = -1;
+
+    // Periodic auto-refresh for the currently-shown Status Display box. SD-page content
+    // (FOB, engine N1/N2, fuel per-tank, etc.) is an OnRequest snapshot — without this it
+    // freezes at whatever it read when the panel opened and never reflects live changes.
+    // While a panel with a "_REFRESH_" button is shown, this ticks every few seconds and
+    // (a) rebuilds any snapshot SD content via OnDisplayPanelShown and (b) re-pulls the
+    // panel's OnRequest display vars — silently (the "Loading..." placeholder only shows on
+    // the first empty populate, so the box updates in place with no flash).
+    private System.Windows.Forms.Timer? _sdAutoRefreshTimer;
     private double _prevPrecipRate = -1;
     private double _prevInCloud = -1;
     private double _prevVisibility = -1;      // meters; -1 = uninitialized
@@ -294,6 +305,9 @@ public partial class MainForm : Form
         // variable, so callouts work in every phase (takeoff roll, landing rollout, taxi),
         // not just while taxi guidance is active.
         groundSpeedAnnouncer = new MSFSBlindAssist.Services.GroundSpeedAnnouncer(announcer);
+        // Captures the last landing's touchdown rate + peak g (the ReadLastLandingRate /
+        // ReadLastLandingPeakG output hotkeys). Fed by the always-on G FORCE var.
+        landingRateAnnouncer = new MSFSBlindAssist.Services.LandingRateAnnouncer();
         // 1,000-foot crossing callouts, fed by the always-on INDICATED ALTITUDE var.
         altitudeCalloutAnnouncer = new MSFSBlindAssist.Services.AltitudeCalloutAnnouncer(announcer);
 
@@ -696,6 +710,16 @@ public partial class MainForm : Form
                     description = $"{varDef.DisplayName}: {e.Value}";
                 }
 
+                // Generic ARINC429 auto-decode for the announce path (only reached for vars
+                // the aircraft's ProcessSimVarUpdate did NOT handle, so existing ad-hoc ARINC
+                // announce branches are untouched — no double-decode). Renders the spoken value
+                // decoded instead of a raw word.
+                if (currentAircraft is BaseAircraftDefinition arincAnnDef &&
+                    arincAnnDef.TryDecodeArinc429(e.VarName, e.Value, out string arincSpoken))
+                {
+                    description = $"{varDef.DisplayName}: {arincSpoken}";
+                }
+
                 simVarMonitor.ProcessUpdate(e.VarName, e.Value, description);
             }
         }
@@ -760,6 +784,14 @@ public partial class MainForm : Form
         if (e.VarName == "GROUND_VELOCITY")
         {
             groundSpeedAnnouncer.ProcessGroundSpeed(e.Value, _lastOnGround);
+            return true;
+        }
+
+        // Feed g-force to the landing-rate tracker so it can capture the peak touchdown g
+        // inside the post-touchdown window (the ReadLastLandingPeakG hotkey). Not announced.
+        if (e.VarName == "G_FORCE")
+        {
+            landingRateAnnouncer.ProcessG(e.Value);
             return true;
         }
 
@@ -918,6 +950,15 @@ public partial class MainForm : Form
                 visualGuidanceManager.Toggle();
             }
 
+            // Open the peak-g capture window at the touchdown edge, seeded with the g at contact,
+            // so the ReadLastLandingPeakG hotkey reports the impact spike. The landing RATE itself
+            // is read live from the persistent PLANE_TOUCHDOWN_NORMAL_VELOCITY cache by its hotkey.
+            if (justTouchedDown)
+            {
+                landingRateAnnouncer.OnTouchdown(
+                    simConnectManager.GetCachedVariableValue("G_FORCE") ?? 1.0);
+            }
+
             // Feed SIM_ON_GROUND transitions to the landing-exit planner so it
             // can detect touchdown and auto-activate taxi guidance to the
             // pre-selected exit. ALWAYS request a fresh aircraft position at
@@ -1071,10 +1112,13 @@ public partial class MainForm : Form
         // the A380 by both the aircraft-type check and the MetricAlt flag — no other aircraft
         // and no non-metric A380 state reach this branch, so feet behaviour is unchanged.
         if ((e.VarName == "ALTITUDE_MSL" || e.VarName == "ALTITUDE_AGL")
-            && currentAircraft is Aircraft.FlyByWireA380Definition a380Alt && a380Alt.MetricAlt)
+            && currentAircraft is Aircraft.FlyByWireA380Definition a380Alt)
         {
-            double metres = e.Value * 0.3048;
-            announcer.AnnounceImmediate($"{metres:0} meters");
+            // Metric on -> "X meters"; metric off -> "X feet". Previously the off case fell
+            // through and spoke just the number with no unit — now it says "feet" for
+            // consistency with the "meters" suffix.
+            if (a380Alt.MetricAlt) announcer.AnnounceImmediate($"{e.Value * 0.3048:0} meters");
+            else announcer.AnnounceImmediate($"{e.Value:0} feet");
             return true;
         }
 
@@ -1161,7 +1205,19 @@ public partial class MainForm : Form
             updatingFromSim = true;
 
             Control control = currentControls[varName];
-            if (control is ComboBox combo)
+            if (control is TrackBar slider)
+            {
+                // Reflect a sim-side axis change back into the slider (updatingFromSim is set,
+                // so the slider's ValueChanged handler won't write it back — no feedback loop).
+                if (currentAircraft.GetVariables().TryGetValue(varName, out var sVarDef) && sVarDef.RenderAsSlider)
+                {
+                    double sspan = (sVarDef.SliderMax - sVarDef.SliderMin) == 0 ? 1 : (sVarDef.SliderMax - sVarDef.SliderMin);
+                    int pct = (int)Math.Round((value - sVarDef.SliderMin) / sspan * 100.0);
+                    pct = Math.Max(0, Math.Min(100, pct));
+                    if (slider.Value != pct) slider.Value = pct;
+                }
+            }
+            else if (control is ComboBox combo)
             {
                 // Find the matching value in the combo box
                 if (currentAircraft.GetVariables().ContainsKey(varName))
@@ -1382,6 +1438,14 @@ public partial class MainForm : Form
                         {
                             displayValue = overrideText;
                         }
+                        // Generic ARINC429 auto-decode (after the ad-hoc override so baro/minimums/
+                        // rudder etc. keep their custom logic; covers any IsArinc429 var with just
+                        // value+unit, so a raw ~14-billion word never reaches a panel field).
+                        else if (currentAircraft is BaseAircraftDefinition arincDef &&
+                                 arincDef.TryDecodeArinc429(varKey, value, out string arincText))
+                        {
+                            displayValue = arincText;
+                        }
                         // Check if we have value descriptions (like Off/Aligning/Aligned)
                         else if (varDef.ValueDescriptions != null && varDef.ValueDescriptions.ContainsKey(value))
                         {
@@ -1430,8 +1494,29 @@ public partial class MainForm : Form
                 }
             }
 
-            displayBox.Text = string.Join("\r\n", values);
+            SetDisplayTextPreserveCaret(displayBox, string.Join("\r\n", values));
         }
+    }
+
+    /// <summary>
+    /// Writes new text into a (read-only) status display box WITHOUT yanking the
+    /// screen-reader review cursor back to the top on every refresh.
+    ///  • If the text is unchanged, the box is left completely untouched — no
+    ///    TextChanged, no caret move — so an idle auto-refresh is invisible.
+    ///  • If it changed, the caret (SelectionStart) is captured before the
+    ///    assignment and restored (clamped to the new length) after, so a blind
+    ///    user reading line-by-line stays where they were instead of being thrown
+    ///    back to line 1 the instant a value (FOB, N1, …) ticks.
+    /// </summary>
+    private void SetDisplayTextPreserveCaret(TextBox box, string text)
+    {
+        if (box.Text == text) return;
+        int caret = box.SelectionStart;
+        int selLen = box.SelectionLength;
+        box.Text = text;
+        int max = box.TextLength;
+        box.SelectionStart = Math.Min(caret, max);
+        box.SelectionLength = Math.Min(selLen, Math.Max(0, max - box.SelectionStart));
     }
 
 
@@ -1629,6 +1714,35 @@ public partial class MainForm : Form
             case HotkeyAction.ReadMachSpeed:
                 simConnectManager.RequestMachSpeed();
                 break;
+            case HotkeyAction.ReadLastLandingRate:
+            {
+                // Read straight from the persistent touchdown-velocity cache (ft/s × 60 = fpm).
+                // The value is latched by the sim at touchdown and survives until the next landing.
+                double? td = simConnectManager.GetCachedVariableValue("PLANE_TOUCHDOWN_NORMAL_VELOCITY");
+                if (td.HasValue && System.Math.Abs(td.Value) > 0.01)
+                {
+                    int fpm = (int)System.Math.Round(System.Math.Abs(td.Value) * 60.0);
+                    announcer.AnnounceImmediate($"Landing rate {fpm} feet per minute.");
+                }
+                else
+                {
+                    announcer.AnnounceImmediate("No landing recorded this session.");
+                }
+                break;
+            }
+            case HotkeyAction.ReadLastLandingPeakG:
+            {
+                double? g = landingRateAnnouncer.LastPeakG;
+                if (g.HasValue)
+                {
+                    announcer.AnnounceImmediate($"Landing g-force {g.Value:F2} g.");
+                }
+                else
+                {
+                    announcer.AnnounceImmediate("No landing recorded this session.");
+                }
+                break;
+            }
             case HotkeyAction.ReadVerticalSpeed:
                 simConnectManager.RequestVerticalSpeed();
                 break;
@@ -1745,6 +1859,16 @@ public partial class MainForm : Form
                     // CoherentEFBClient as the A380 (both drive the one shared
                     // coherent-flypad-agent.js over the "- EFB" Coherent view).
                     ShowFbwEfbDialog();
+                }
+                break;
+            case HotkeyAction.ShowRMP:
+                if (currentAircraft is FlyByWireA380Definition)
+                {
+                    ShowFBWA380RmpDialog();
+                }
+                else
+                {
+                    announcer.Announce("The Radio Management Panel window is only available on the A380.");
                 }
                 break;
             case HotkeyAction.ShowOANS:
@@ -2494,6 +2618,28 @@ public partial class MainForm : Form
     // A380 ND OANS / BTV control panel — reuses the WebView2 EFB form, but driven
     // by the ND Coherent view through CoherentNDClient. Used for BTV (Brake-To-
     // Vacate) exit selection and airport/runway/exit search.
+    // Open the accessible A380 RMP window (Ctrl+Shift+R in input mode) — replaces the old
+    // per-key RMP button panel. Scrapes A380X_RMP_1/2 live; one window, Captain ↔ FO combo.
+    private void ShowFBWA380RmpDialog()
+    {
+        if (currentAircraft is not FlyByWireA380Definition a380rmp) return;
+        // CRITICAL: release the mode hotkeys before showing. The RMP window is opened by an
+        // INPUT-mode hotkey (Ctrl+Shift+R), so input mode is still active and its global
+        // RegisterHotKey shortcuts (Ctrl+1/2/3 = FCU pulls, Alt+n, digits via Track Slots,
+        // etc.) would be consumed system-wide and NEVER reach the RMP window — making the
+        // RMP soft keys, page switching and digit entry all appear dead. Exiting both modes
+        // unregisters those, so every keystroke flows to the form. (Mirrors the OANS dialog.)
+        hotkeyManager.ExitInputHotkeyMode();
+        hotkeyManager.ExitOutputHotkeyMode();
+        if (fbwA380RmpForm == null || fbwA380RmpForm.IsDisposed)
+        {
+            fbwA380RmpForm = new Forms.FBWA380.FBWA380RmpForm(announcer, a380rmp, simConnectManager);
+        }
+        fbwA380RmpForm.Show();
+        fbwA380RmpForm.BringToFront();
+        fbwA380RmpForm.Activate();
+    }
+
     private void ShowFBWA380OansDialog()
     {
         hotkeyManager.ExitOutputHotkeyMode();
@@ -4855,9 +5001,9 @@ public partial class MainForm : Form
 
             var varDef = currentAircraft.GetVariables()[varKey];
             
-            // Add a new row
+            // Add a new row (sliders need a little more height for the TrackBar).
             int rowIndex = layout.RowCount++;
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, varDef.RenderAsSlider ? 48 : 35));
 
             // Create label
             Label label = new Label();
@@ -4867,9 +5013,40 @@ public partial class MainForm : Form
             label.Size = new Size(140, 25);
             layout.Controls.Add(label, 0, rowIndex);
 
-            // Create control based on type
-            // Check RenderAsButton FIRST — buttons may have no ValueDescriptions
-            if (varDef.RenderAsButton)
+            // Create control based on type.
+            // Accessible SLIDER (TrackBar) for continuous axis controls — checked first.
+            if (varDef.RenderAsSlider)
+            {
+                double smin = varDef.SliderMin, smax = varDef.SliderMax;
+                double span = (smax - smin) == 0 ? 1 : (smax - smin);
+                TrackBar tb = new TrackBar
+                {
+                    Minimum = 0,
+                    Maximum = 100,
+                    SmallChange = 1,
+                    LargeChange = 10,
+                    TickStyle = TickStyle.None,
+                    Size = new Size(240, 40),
+                    Name = varKey,
+                    AccessibleName = varDef.DisplayName
+                };
+                if (currentSimVarValues.ContainsKey(varKey))
+                {
+                    int pct = (int)Math.Round((currentSimVarValues[varKey] - smin) / span * 100.0);
+                    tb.Value = Math.Max(0, Math.Min(100, pct));
+                }
+                tb.ValueChanged += (s2, e2) =>
+                {
+                    if (updatingFromSim) return;   // change came from the sim, don't write back
+                    double mapped = smin + (tb.Value / 100.0) * span;
+                    bool handled = currentAircraft.HandleUIVariableSet(varKey, mapped, varDef, simConnectManager, announcer);
+                    if (!handled) simConnectManager?.SetLVar(varDef.Name, mapped);
+                };
+                layout.Controls.Add(tb, 1, rowIndex);
+                currentControls[varKey] = tb;
+            }
+            // Check RenderAsButton next — buttons may have no ValueDescriptions
+            else if (varDef.RenderAsButton)
             {
                 // Render as button (momentary pushbutton, action button, etc.)
                 // If StateVariable is set, show on/off state from the indicator LVar
@@ -4881,9 +5058,12 @@ public partial class MainForm : Form
                 }
                 else if (varDef.ValueDescriptions != null && varDef.ValueDescriptions.Count >= 2 && currentSimVarValues.ContainsKey(varKey))
                 {
-                    // Fallback for non-Fenix buttons that still use ValueDescriptions
+                    // Fallback for non-Fenix buttons that still use ValueDescriptions. Skip the
+                    // RESTING state (value 0 = Off/Idle): a momentary push-button has no
+                    // meaningful resting value, so appending it read as noise ("Chronometer
+                    // Start / Stop: Idle, button"). Only show a non-zero (active/latched) state.
                     double val = currentSimVarValues[varKey];
-                    if (varDef.ValueDescriptions.TryGetValue(val, out string? stateText))
+                    if (val != 0 && varDef.ValueDescriptions.TryGetValue(val, out string? stateText))
                         buttonText = $"{varDef.DisplayName}: {stateText}";
                 }
 
@@ -5643,7 +5823,12 @@ public partial class MainForm : Form
 
             refreshButton.Click += async (s2, e2) =>
             {
-                displayTextBox.Text = "Loading...";
+                // Only show the "Loading..." placeholder on the FIRST populate (empty box).
+                // On subsequent refreshes — manual F5 or the periodic auto-refresh timer —
+                // keep the existing content visible so the box doesn't flash/blank every
+                // cycle; the new values simply overwrite it when they arrive.
+                if (string.IsNullOrEmpty(displayTextBox.Text))
+                    displayTextBox.Text = "Loading...";
                 displayValues.Clear();  // Clear old values for this panel
 
                 // Get the display variables for this panel
@@ -5658,6 +5843,16 @@ public partial class MainForm : Form
 
                 // Store the pending values temporarily
                 pendingDisplayRequests = pendingValues;
+
+                // Rebuild any aircraft-managed SNAPSHOT content (the A380/A32NX SD-page
+                // box). That content lives in the aircraft def's _sdPageContent and is ONLY
+                // regenerated by OnDisplayPanelShown -> RefreshSdPageDisplayAsync, which
+                // re-reads the underlying SimVars (FOB, engine N1-N3, per-tank fuel, …).
+                // The display-var re-request below renders that string but never rebuilds
+                // it, so WITHOUT this call a manual F5 / Refresh re-printed the SAME stale
+                // snapshot and values like "FOB 13400 KG" never moved. Fire-and-forget: it
+                // pushes its own UpdateDisplayText when the fresh read completes (~0.6s).
+                try { currentAircraft.OnDisplayPanelShown(currentPanel, simConnectManager); } catch { }
 
                 // Request all values. forceUpdate=true bypasses the
                 // ProcessIndividualVariableResponse suppression that drops
@@ -5705,6 +5900,11 @@ public partial class MainForm : Form
             // combo's CURRENT page, so the user doesn't have to cycle it to get content
             // on first display. No-op for panels without such a box.
             try { currentAircraft.OnDisplayPanelShown(currentPanel, simConnectManager); } catch { }
+
+            // Start (or stop) the live status-box auto-refresh for THIS panel. Only panels
+            // that actually built a status display (have a "_REFRESH_" button) get the timer;
+            // everything else stops it so we don't poll in the background on a static panel.
+            StartOrStopSdAutoRefresh();
 
             // For PMDG aircraft, populate controls with current data from the data manager
             if (currentAircraft is IPMDGAircraft && simConnectManager?.PMDGDataManager != null)
@@ -5790,6 +5990,66 @@ public partial class MainForm : Form
     private void NearestCityAnnouncementTimer_Tick(object? sender, EventArgs e)
     {
         AnnounceNearestCity();
+    }
+
+    // Starts the live status-box auto-refresh when the currently-shown panel has a status
+    // display ("_REFRESH_" button); stops it otherwise. Called every time a panel is shown.
+    private void StartOrStopSdAutoRefresh()
+    {
+        bool hasDisplay = currentControls != null && currentControls.ContainsKey("_REFRESH_");
+        if (!hasDisplay)
+        {
+            _sdAutoRefreshTimer?.Stop();
+            return;
+        }
+        if (_sdAutoRefreshTimer == null)
+        {
+            // 3s: longer than the Refresh handler's 2s response timeout so ticks don't stack.
+            _sdAutoRefreshTimer = new System.Windows.Forms.Timer { Interval = 3000 };
+            _sdAutoRefreshTimer.Tick += SdAutoRefreshTimer_Tick;
+        }
+        _sdAutoRefreshTimer.Stop();
+        _sdAutoRefreshTimer.Start();
+    }
+
+    private void SdAutoRefreshTimer_Tick(object? sender, EventArgs e)
+    {
+        try
+        {
+            // Panel changed out from under us (or app tearing down) → stop polling.
+            if (currentAircraft == null || string.IsNullOrEmpty(currentPanel) ||
+                currentControls == null || !currentControls.ContainsKey("_REFRESH_"))
+            {
+                _sdAutoRefreshTimer?.Stop();
+                return;
+            }
+            if (simConnectManager == null || !simConnectManager.IsConnected) return;
+
+            // DON'T refresh the status box WHILE THE USER IS READING IT. Replacing a
+            // read-only multiline TextBox's .Text fires an MSAA value-change that resets
+            // NVDA's review cursor to the top even though the system caret is preserved
+            // (SetDisplayTextPreserveCaret can't stop the review-cursor reset). So if the
+            // display box currently has focus, skip this auto tick entirely — the content
+            // the user is reading stays frozen and stable. Ticks resume the moment they
+            // move focus away (combo/another control), and manual F5 always refreshes.
+            if (currentControls.TryGetValue("_DISPLAY_", out var dc) && dc is TextBox dtb
+                && dtb.IsHandleCreated && dtb.Focused)
+                return;
+
+            // (a) Rebuild any snapshot SD-page content (FOB, engine, fuel, etc.) — silent,
+            //     no speech, pushes into the box via the page-index display var.
+            try { currentAircraft.OnDisplayPanelShown(currentPanel, simConnectManager); } catch { }
+
+            // (b) Re-pull the panel's OnRequest display vars for the generic status box.
+            //     The handler keeps existing content (no "Loading..." flash) and overwrites
+            //     in place when the fresh values arrive.
+            if (currentControls.TryGetValue("_REFRESH_", out var rc) && rc is Button rb &&
+                rb.Enabled && rb.IsHandleCreated)
+            {
+                rb.PerformClick();
+            }
+        }
+        catch { /* best-effort live refresh; never let a tick crash the UI */ }
     }
 
     private void WeatherAnnouncementTimer_Tick(object? sender, EventArgs e)

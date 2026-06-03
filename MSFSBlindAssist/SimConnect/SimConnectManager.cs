@@ -18,6 +18,16 @@ public class SimConnectManager
     private IntPtr windowHandle;
     private const int WM_USER_SIMCONNECT = 0x0402;
 
+    // Re-entrancy guard for ReceiveMessage(). The managed SimConnect ReceiveMessage()
+    // is NOT reentrant: a nested call corrupts its internal receive buffer, which shows
+    // up as a native heap-corruption access violation (0xC0000005) inside coreclr.dll
+    // and a 0x80131506 ExecutionEngineException — uncatchable by managed try/catch.
+    // Application.DoEvents() pump loops (used while waiting for data-definition changes
+    // during aircraft switches/disconnect) can dispatch a queued WM_USER_SIMCONNECT and
+    // re-enter ReceiveMessage() in the middle of one already in flight. This flag blocks
+    // that; the skipped message stays queued and is drained on the next non-nested pump.
+    private bool _inReceiveMessage;
+
     // Events
     public event EventHandler<string>? ConnectionStatusChanged;
     public event EventHandler<string>? SimulatorVersionDetected;
@@ -39,6 +49,14 @@ public class SimConnectManager
     public double AircraftWingSpan { get; private set; } // Wing span in feet, populated on connect
     private bool wasConnected = false; // Track if we've already announced connection state
     private System.Windows.Forms.Timer reconnectTimer = null!;
+    // Aircraft-detection retry. RequestAircraftInfo() fires once at Connect() with PERIOD.ONCE;
+    // on a heavy aircraft the one-shot AIRCRAFT_INFO/ATC response can be missed, so
+    // IsFullyConnected never flips and every hotkey reports "not connected" (continuous
+    // monitoring/auto-announce works — separate path). This timer re-requests every 2s until
+    // detection completes, independent of continuous monitoring. (5 doors connected fine; 16
+    // pushed setup past the tipping point — this makes it self-heal regardless of load.)
+    private System.Windows.Forms.Timer _detectRetryTimer = null!;
+    private int _detectRetryCount = 0;
 
     // MobiFlight WASM integration
     private MobiFlightWasmModule? mobiFlightWasm;
@@ -467,6 +485,25 @@ public class SimConnectManager
         reconnectTimer = new System.Windows.Forms.Timer();
         reconnectTimer.Interval = 5000;
         reconnectTimer.Tick += ReconnectTimer_Tick;
+
+        _detectRetryTimer = new System.Windows.Forms.Timer();
+        _detectRetryTimer.Interval = 2000;
+        _detectRetryTimer.Tick += DetectRetryTimer_Tick;
+    }
+
+    // Re-request aircraft info until detection completes (IsFullyConnected). Stops itself
+    // once connected. Ultimate fallback: after several retries, if aircraft info has arrived
+    // but ATC data never did, stop waiting on ATC and complete detection so hotkeys unblock.
+    private void DetectRetryTimer_Tick(object? sender, EventArgs e)
+    {
+        if (!IsConnected || IsFullyConnected) { _detectRetryTimer.Stop(); return; }
+        _detectRetryCount++;
+        try { RequestAircraftInfo(); } catch { }
+        if (_detectRetryCount >= 5 && pendingAircraftInfo.HasValue && !atcDataReceived)
+        {
+            atcDataReceived = true;
+            TryAnnounceConnection();
+        }
     }
 
     public void Connect()
@@ -497,8 +534,12 @@ public class SimConnectManager
                 SimulatorVersionDetected?.Invoke(this, "MSFS 2024 detected");
             }
 
-            // Check aircraft type
+            // Check aircraft type — fire once now, and start the retry timer so a missed
+            // one-shot response self-heals (otherwise IsFullyConnected can stick at false).
+            _detectRetryCount = 0;
             RequestAircraftInfo();
+            _detectRetryTimer.Stop();
+            _detectRetryTimer.Start();
         }
         catch (COMException)
         {
@@ -553,14 +594,16 @@ public class SimConnectManager
     {
         var sc = simConnect!; // Local reference for cleaner null-safety
 
-        // Register all variables as individual data definitions
-        RegisterAllVariables();
-
-        // Start continuous monitoring for announced variables
-        StartContinuousMonitoring();
-
-        // NOTE: FCU values are now handled by aircraft-specific implementations
-        // Each aircraft definition (e.g., FlyByWireA320Definition) handles its own FCU variables
+        // ⚠️ RESILIENCE (2026-06): the bulk per-aircraft variable registration — which can be
+        // ~1000+ SimConnect data definitions and may approach SimConnect's documented hard
+        // ceiling of 1000 data definitions / 1000 requests per client (the A380 nearly hits it)
+        // — is now done LAST, AFTER all the fixed/critical data definitions below
+        // (AIRCRAFT_INFO, ATC, position, AI traffic, visual guidance, weather, nav radio…).
+        // This GUARANTEES the detection-critical AIRCRAFT_INFO/ATC defs register within
+        // SimConnect's budget even if the bulk registration later overflows — so aircraft
+        // detection (and position/AI-traffic/visual-guidance) can never again be stranded by a
+        // heavy aircraft's variable count. See RegisterAllVariables (the cap guard) and
+        // DetectRetryTimer_Tick (the force-complete fallback). FCU vars are handled per-aircraft.
 
         // Register aircraft info
         sc.AddToDataDefinition(DATA_DEFINITIONS.AIRCRAFT_INFO, "TITLE", null,
@@ -717,6 +760,12 @@ public class SimConnectManager
         sc.AddToDataDefinition(DATA_DEFINITIONS.DEF_NAV_RADIO, "NAV NAME:2", null, SIMCONNECT_DATATYPE.STRING256, 0.0f, SIMCONNECT_UNUSED);
         sc.AddToDataDefinition(DATA_DEFINITIONS.DEF_NAV_RADIO, "NAV OBS:2", "Degrees", SIMCONNECT_DATATYPE.FLOAT64, 0.0f, SIMCONNECT_UNUSED);
         sc.RegisterDataDefineStruct<NavRadioData>(DATA_DEFINITIONS.DEF_NAV_RADIO);
+
+        // Bulk per-aircraft variable registration runs LAST — see the resilience note at the
+        // top of this method. Everything above (detection, position, AI, VG, weather, nav) is
+        // now guaranteed registered before the heavy var set can approach the SimConnect ceiling.
+        RegisterAllVariables();
+        StartContinuousMonitoring();
     }
 
     /// <summary>
@@ -726,7 +775,22 @@ public class SimConnectManager
     {
         var sc = simConnect!; // Local reference for cleaner null-safety
         int registeredCount = 0;
+        int batchCoveredCount = 0;
+        int cappedCount = 0;
         var variables = CurrentAircraft?.GetVariables() ?? new Dictionary<string, SimVarDefinition>();
+
+        // ⚠️ HEADROOM (root-caused 2026-06): SimConnect caps a client at ~1000 data definitions
+        // ("objects"). Every Continuous+IsAnnounced var was being registered TWICE — once here as
+        // its own individual data def, and again as a datum inside a CONTINUOUS_BATCH_n def in
+        // StartContinuousMonitoring — which nearly doubled the A380's footprint and pushed it over
+        // the ceiling (the 2nd batch's AddToDataDefinition then failed wholesale → detection broke).
+        // FIX: skip the individual def for these "batch-covered" vars. Their on-demand value is read
+        // from `lastVariableValues`, the SAME cache the batch update writes (verified: panels fall
+        // back to GetCachedVariableValue, forms use GetCachedVariableSnapshot, the batch keeps both
+        // fresh at 1 Hz). This roughly HALVES the data-definition footprint of continuous-heavy
+        // aircraft. ExcludeFromBatch vars KEEP their individual def (they run a per-var SECOND
+        // subscription on it); OnRequest vars KEEP theirs (read on demand); Never/HVar/PMDG skipped.
+        const int IndividualDefCap = 900;   // future-proof: stay well clear of the 1000 ceiling
 
         foreach (var kvp in variables)
         {
@@ -735,6 +799,24 @@ public class SimConnectManager
             // Skip write-only variables (Never frequency), H-variables, AND PMDG variables (handled by IPMDGDataManager)
             if (varDef.UpdateFrequency == UpdateFrequency.Never || varDef.Type == SimVarType.HVar || varDef.Type == SimVarType.PMDGVar)
                 continue;
+
+            // Batch-covered: Continuous + IsAnnounced + not ExcludeFromBatch. These are monitored
+            // (and cached) via the continuous batches — no individual data def needed.
+            if (varDef.UpdateFrequency == UpdateFrequency.Continuous && varDef.IsAnnounced && !varDef.ExcludeFromBatch)
+            {
+                batchCoveredCount++;
+                continue;
+            }
+
+            // FUTURE-PROOF cap: once the individual-def count approaches the SimConnect ceiling,
+            // stop creating more so a future mega-aircraft DEGRADES (a few on-demand vars unreadable)
+            // instead of overflowing and breaking detection. (Detection is already protected by
+            // registering the fixed defs first — see SetupDataDefinitions.)
+            if (registeredCount >= IndividualDefCap)
+            {
+                cappedCount++;
+                continue;
+            }
 
             // Get a unique data definition ID for this variable
             int dataDefId = nextDataDefinitionId++;
@@ -792,7 +874,24 @@ public class SimConnectManager
             }
         }
 
-        System.Diagnostics.Debug.WriteLine($"Successfully registered {registeredCount} individual variables");
+        // Observability: persist a one-line registration summary so a future ceiling problem is
+        // immediately diagnosable without re-instrumenting. registeredCount = individual on-demand
+        // defs; batchCoveredCount = continuous vars served by batches (no individual def);
+        // cappedCount = vars skipped at the future-proof cap (should be 0 in normal operation).
+        int totalDefs = registeredCount + 5 /*continuous batches*/ + 20 /*fixed defs, approx*/;
+        string regSummary = $"[Registration] aircraft={CurrentAircraft?.GetType().Name} individualDefs={registeredCount} batchCovered={batchCoveredCount} capped={cappedCount} approxTotalDefs~{totalDefs} (SimConnect ceiling ~1000)";
+        System.Diagnostics.Debug.WriteLine(regSummary);
+        if (cappedCount > 0)
+            System.Diagnostics.Debug.WriteLine($"[Registration] ⚠️ {cappedCount} vars exceeded the individual-def cap and are not on-demand-readable (degraded gracefully).");
+        try
+        {
+            string regLog = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "MSFSBlindAssist", "logs", "registration.log");
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(regLog)!);
+            System.IO.File.AppendAllText(regLog, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {regSummary}{Environment.NewLine}");
+        }
+        catch { }
     }
 
     /// <summary>
@@ -2972,6 +3071,16 @@ public class SimConnectManager
         ConnectionStatusChanged?.Invoke(this, $"Connected to {info.title}{identification}");
         wasConnected = true; // Mark that we're now successfully connected
         IsFullyConnected = true; // Aircraft detection complete, hotkeys are now safe to use
+        // Observability: log successful detection so the registration.log shows the full picture
+        // (footprint + clean connect) and any future "not connected" regression is obvious by its absence.
+        try
+        {
+            string regLog = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "MSFSBlindAssist", "logs", "registration.log");
+            System.IO.File.AppendAllText(regLog, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [Detection] FULLY CONNECTED — '{info.title}' (hotkeys enabled){Environment.NewLine}");
+        }
+        catch { }
 
         // Aircraft-specific InputEvents (WT Boeing 787 AT_Arm, bleed-air, engine start
         // rotaries, etc.) only exist in the catalog after the cockpit model is loaded.
@@ -3125,6 +3234,22 @@ public class SimConnectManager
         }
 
         System.Diagnostics.Debug.WriteLine($"SimConnect Exception: {data.dwException} ({exceptionName}) - SendID: {data.dwSendID}, Index: {data.dwIndex}");
+        // Observability: TOO_MANY_OBJECTS / TOO_MANY_REQUESTS mean we hit SimConnect's ~1000
+        // data-definition / request ceiling — the exact failure that used to silently break
+        // aircraft detection. Persist these so the ceiling is never again a mystery. (Non-throwing;
+        // harmless NAME_UNRECOGNIZED noise from probing nonexistent simvars is NOT logged.)
+        if (data.dwException == 11 /*TOO_MANY_OBJECTS*/ || data.dwException == 12 /*TOO_MANY_REQUESTS*/)
+        {
+            try
+            {
+                string exLog = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "MSFSBlindAssist", "logs", "registration.log");
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(exLog)!);
+                System.IO.File.AppendAllText(exLog, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [CEILING] SimConnect {exceptionName} (SendID {data.dwSendID}) — exceeded the ~1000 data-definition/request limit. Some vars are unregistered; detection is still protected.{Environment.NewLine}");
+            }
+            catch { }
+        }
     }
 
     private void SimConnect_OnRecvClientData(Microsoft.FlightSimulator.SimConnect.SimConnect sender, SIMCONNECT_RECV_CLIENT_DATA data)
@@ -3844,6 +3969,12 @@ public class SimConnectManager
     {
         if (m.Msg == WM_USER_SIMCONNECT && simConnect != null)
         {
+            // Never dispatch ReceiveMessage() reentrantly (see _inReceiveMessage). A DoEvents()
+            // pump can land us back here while an outer ReceiveMessage() is still on the stack;
+            // skipping leaves the data queued for the next clean pump rather than corrupting the
+            // marshalling buffer.
+            if (_inReceiveMessage) return;
+            _inReceiveMessage = true;
             try
             {
                 simConnect.ReceiveMessage();
@@ -3862,6 +3993,10 @@ public class SimConnectManager
             {
                 // Unexpected exception - log but don't crash
                 System.Diagnostics.Debug.WriteLine($"Unexpected exception in ProcessWindowMessage: {ex}");
+            }
+            finally
+            {
+                _inReceiveMessage = false;
             }
         }
     }

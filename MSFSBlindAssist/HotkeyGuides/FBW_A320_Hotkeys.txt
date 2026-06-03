@@ -36,6 +36,8 @@ Heading:
 
 Vertical:
   V          Read Vertical Speed
+  Ctrl+Shift+R  Read last landing rate (touchdown vertical speed, feet per minute)
+  Ctrl+Shift+G  Read last landing peak g-force
 
 Weather:
   I          Wind Info
@@ -60,6 +62,7 @@ Location:
 
 Flight planning:
   W Next waypoint information
+  Ctrl+W     ND active (TO) waypoint: name, distance, and bearing
 
 Fuel and weight:
   F          Read Total Fuel Quantity (pounds)

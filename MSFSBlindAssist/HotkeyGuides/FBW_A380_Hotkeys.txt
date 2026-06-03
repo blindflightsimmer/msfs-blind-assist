@@ -39,6 +39,9 @@ OUTPUT MODE  (press ] first)
   D          Distance to destination (from the FMS)
   Shift+D    Distance to Top of Descent (once computed in flight)
              (Q / A / Shift+A read in metres when the FCU MTRS button is on)
+  Ctrl+W     ND active (TO) waypoint: name, distance, and bearing
+  Ctrl+Shift+R  Last landing rate (touchdown vertical speed, feet per minute)
+  Ctrl+Shift+G  Last landing peak g-force
 
   Characteristic speeds
   Shift+1    Green Dot speed
@@ -92,6 +95,8 @@ INPUT MODE  (press [ first)
   Windows
   Shift+M    Open MCDU / MFD window
   Shift+T    Open flyPad EFB window
+  Ctrl+Shift+R  Open Radio Management Panel (RMP) window — Captain / First Officer,
+             type a frequency + Enter, page / line / swap / clear keys
   Alt+G      Open GSX window
 
   Teleport / flight planning
@@ -144,6 +149,27 @@ INSIDE THE MCDU / MFD WINDOW
   Alt+R  RAD NAV  Alt+S  SEC FPL  Alt+A  ATC COM
   Alt+D  DIR      Alt+H  Refresh
   Alt+U  Toggle weight units (kilograms / pounds) for MSFSBA read-outs
+
+
+INSIDE THE RADIO MANAGEMENT PANEL (RMP) WINDOW (Ctrl+Shift+R opens it)
+  The RMP screen is read-only text — read it with the arrow keys. It refreshes
+  automatically and announces the standby and any message (e.g. FREQ NOT VALID).
+  Soft keys (same scheme as the MCDU: left = Ctrl, right = Alt):
+  Ctrl+1 / 2 / 3   Select radio 1 / 2 / 3 (the left line keys; again = load standby)
+  Alt+1 / 2 / 3    Swap that radio's active and standby (the right keys; manual)
+                   (or F1/2/3 = select, F7/8/9 = swap, with alternate MCDU keys on)
+  Pages (also buttons in the Tab order):
+  Alt+V            VHF page          Alt+T   Transponder (SQWK) page
+                   (HF / TEL / NAV / MENU are not modelled by FBW — those do nothing)
+  Alt+C            Fully clear the entry (resets a stuck entry)
+  Alt+Home         Jump back to the screen (e.g. from a page button)
+  You TYPE the digits right on the screen — there is no separate entry box (the
+  screen is read-only, so the digits go to the radio, not the text):
+  VHF page  — type the digits (keyed live, no decimal), Enter loads the standby,
+             Backspace deletes a digit; Alt+n swaps it active.
+  SQWK page — type the 4 squawk digits, Enter validates, Alt+3 = ident.
+  Side combo (Captain / First Officer) switches which RMP you control — the screen,
+  the announcements and the keys all follow it.
 
 
 INSIDE THE LIVE CHECKLIST (ECL) WINDOW (Ctrl+Shift+C opens it)

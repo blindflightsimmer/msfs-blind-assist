@@ -318,7 +318,10 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             Type = SimConnect.SimVarType.LVar,
             UpdateFrequency = SimConnect.UpdateFrequency.OnRequest,
             ValueDescriptions = new Dictionary<double, string> { [0] = "Off", [1] = "On" },
-            RenderAsButton = true  // Render as button instead of combo box
+            // COMBO, not a button: APU Start is an on/off STATE pushbutton. As a button its
+            // label never updated (press did X but the second press appeared to do nothing);
+            // a combo always shows the current Off/On and toggles correctly. (User request 2026-06.)
+            RenderAsButton = false
         },
 
         // Exterior Lighting Panel
@@ -990,6 +993,19 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
         {
             Name = "TOTAL WEIGHT", DisplayName = "Gross Weight",
             Type = SimConnect.SimVarType.SimVar, Units = "kilograms", UpdateFrequency = SimConnect.UpdateFrequency.OnRequest
+        },
+        // Gross weight (kg, stock) + CG (%MAC, FBW L-var) — monitored + cached for the
+        // W / Shift+W readouts. CG MUST read with Units="number" (L-var). Both are
+        // cached silently in ProcessSimVarUpdate (return true → never auto-announced).
+        ["GW_KG_CACHE"] = new SimConnect.SimVarDefinition
+        {
+            Name = "TOTAL WEIGHT", DisplayName = "Gross Weight (cache)",
+            Type = SimConnect.SimVarType.SimVar, Units = "kilograms", UpdateFrequency = SimConnect.UpdateFrequency.Continuous, IsAnnounced = true
+        },
+        ["A32NX_AIRFRAME_GW_CG_PERCENT_MAC"] = new SimConnect.SimVarDefinition
+        {
+            Name = "A32NX_AIRFRAME_GW_CG_PERCENT_MAC", DisplayName = "Gross Weight CG",
+            Type = SimConnect.SimVarType.LVar, Units = "number", UpdateFrequency = SimConnect.UpdateFrequency.Continuous, IsAnnounced = true
         },
         ["FUEL_QUANTITY_KG"] = new SimConnect.SimVarDefinition
         {
@@ -2507,6 +2523,11 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             Type = SimConnect.SimVarType.LVar,
             UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
             IsAnnounced = true,
+            // Keep an individual data def. The FCU readout force-reads this status leg via
+            // RequestVariable(forceUpdate), which NO-OPS for batch-covered vars (the SimConnect-
+            // ceiling strengthening skips their individual def). Without this the HDG readout's
+            // managed-status leg never arrives and the readout goes silent. (Regression fix.)
+            ExcludeFromBatch = true,
             ValueDescriptions = new Dictionary<double, string> { [0] = "Select heading mode", [1] = "Managed heading mode" }
         },
         ["A32NX_FCU_LOC_LIGHT_ON"] = new SimConnect.SimVarDefinition
@@ -2523,6 +2544,7 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             Type = SimConnect.SimVarType.LVar,
             UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
             IsAnnounced = true,
+            ExcludeFromBatch = true,   // see HDG_TRK_MANAGED — keep individual def for the forced readout
             ValueDescriptions = new Dictionary<double, string> { [0] = "Selected speed", [1] = "Managed speed" }
         },
         ["A32NX_FCU_AFS_DISPLAY_LVL_CH_MANAGED"] = new SimConnect.SimVarDefinition
@@ -2531,6 +2553,7 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             Type = SimConnect.SimVarType.LVar,
             UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
             IsAnnounced = true,
+            ExcludeFromBatch = true,   // see HDG_TRK_MANAGED — keep individual def for the forced readout
             ValueDescriptions = new Dictionary<double, string> { [0] = "Selected Altitude", [1] = "Managed altitude" }
         },
         ["A32NX_FCU_EXPED_LIGHT_ON"] = new SimConnect.SimVarDefinition
@@ -2732,9 +2755,9 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
                 [0] = "Not shown", [1] = "Linear Deviation Active"
             }
         },
-        ["A32NX_FMGC_1_LDEV_REQUEST"] = new SimConnect.SimVarDefinition
+        ["A32NX_FMGC_L_LDEV_REQUEST"] = new SimConnect.SimVarDefinition
         {
-            Name = "A32NX_FMGC_1_LDEV_REQUEST",
+            Name = "A32NX_FMGC_L_LDEV_REQUEST",   // _1_ does not exist in FBW source; _L_ is real
             DisplayName = "FMGC L DEV Request",
             Type = SimConnect.SimVarType.LVar,
             UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
@@ -4911,7 +4934,20 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             // On-demand altimeter / baro setting (output mode + B). Reads the cached EFIS
             // baro (continuously monitored), so it's instant.
             case HotkeyAction.ReadAltimeter:
-                announcer.AnnounceImmediate(BaroPhrase(_baroHpa < 0 ? 1013 : _baroHpa, _baroMode < 0 ? 1 : _baroMode));
+            {
+                // Fenix/PMDG-style dual-unit readout (parity with the A380's B readout):
+                // "Altimeter: 1013, 29.92" / "Altimeter standard". The live knob-turn
+                // auto-announce + panel still use BaroPhrase (single-unit, per-side).
+                int baroMode = _baroMode < 0 ? 1 : _baroMode;
+                double baroHpa = _baroHpa < 0 ? 1013 : _baroHpa;
+                announcer.AnnounceImmediate(baroMode == 0
+                    ? "Altimeter standard"
+                    : $"Altimeter: {baroHpa:F0}, {baroHpa * 0.0295299830714:F2}");
+                return true;
+            }
+            // Ctrl+W (output): ND TO-waypoint name/distance/bearing via SimVars (no Coherent — see NdWaypointReadout).
+            case HotkeyAction.ReadNDWaypoint:
+                Services.NdWaypointReadout.Announce(simConnect, announcer);
                 return true;
             // FCU value windows (Fenix-style: value entry + knob Push/Pull + mode
             // toggles + spoken read-out). Mirrors the A380's Ctrl+S/H/A/V/P/B windows;
@@ -4966,8 +5002,10 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             // W repurposed to gross weight in pounds (matches PMDG / Fenix, which also
             // repurpose the waypoint key). Fuel (F=lb / Shift+F=kg) and Shift+W (kg)
             // already use the shared fleet requests; this aligns W to the fleet too.
-            case HotkeyAction.ReadWaypointInfo: // W -> "Gross weight N pounds"
-                simConnect.RequestSingleValue((int)SimConnect.SimConnectManager.DATA_DEFINITIONS.DEF_GROSS_WEIGHT, "TOTAL WEIGHT", "pounds", "GROSS_WEIGHT");
+            case HotkeyAction.ReadWaypointInfo: // W -> "Gross weight N pounds, center of gravity X% MAC"
+                announcer.AnnounceImmediate(_gwKgCache > 0
+                    ? $"Gross weight {_gwKgCache * 2.204625:0} pounds{CgMacPhrase()}"
+                    : "Gross weight not available");
                 return true;
 
             case HotkeyAction.ReadApproachCapability:
@@ -5025,8 +5063,13 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
                 ToggleA320ECAMMonitoring(simConnect, announcer);
                 return true;
 
-            case HotkeyAction.ReadGrossWeightKg:
-                if (simConnect.IsConnected) { _reqGw = true; simConnect.RequestVariable("GROSS_WEIGHT_KG", forceUpdate: true); }
+            case HotkeyAction.ReadGrossWeightKg: // Shift+W -> gross weight KILOGRAMS + CG
+                // Deterministic kilograms (like the A380), NOT WeightUser — so a kg
+                // readout is always available regardless of the EFB US-Units toggle
+                // (otherwise imperial mode made Shift+W duplicate W's pounds).
+                announcer.AnnounceImmediate(_gwKgCache > 0
+                    ? $"Gross weight {_gwKgCache:0} kilograms{CgMacPhrase()}"
+                    : "Gross weight not available");
                 return true;
 
             case HotkeyAction.FCUSetBaro:
@@ -5124,6 +5167,7 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
     public const string SdPageVar = "A32NX_MSFSBA_SD_PAGE";
     private SimConnect.CoherentDisplayClient? _ewdScrapeClient;
     private string _sdBoxContent = "";
+    private int _sdRefreshSeq;   // "latest request wins" guard for SD-page refresh (mirrors A380)
 
     // ---- ND status-box cache ---------------------------------------------------
     // The TO-waypoint ident is packed 6-bit-per-char (8 chars in word 0 — enough for
@@ -5149,7 +5193,13 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
 
     // On-demand flaps/gear read (output-mode L / Shift+G) — request the var, announce
     // when it arrives in ProcessSimVarUpdate (parity with the A380).
-    private bool _reqFlaps, _reqGear, _reqGw, _reqFuelKg;
+    private bool _reqFlaps, _reqGear, _reqFuelKg;
+    private double _gwCgMac = -1;   // gross-weight CG %MAC (FBW L-var, cached)
+    private double _gwKgCache = -1; // gross weight in kg (stock TOTAL WEIGHT, cached)
+
+    // Spoken CG suffix for the gross-weight readouts. Empty (suppressed) when the CG
+    // isn't available/sane, so the gross-weight readout never breaks or says "CG 0".
+    private string CgMacPhrase() => (_gwCgMac > 5 && _gwCgMac < 60) ? $", center of gravity {_gwCgMac:0.0} percent MAC" : "";
 
     // Weight-unit read-out preference (kg/lb), followed from the A32NX EFB "US Units"
     // setting (A32NX_EFB_USING_METRIC_UNIT). The raw GW/fuel vars are kilograms.
@@ -5228,12 +5278,19 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
         }
         else if (page == 3) // PRESSURIZATION
         {
-            r.Add(("Cabin altitude", "A32NX_PRESS_CABIN_ALTITUDE", Ft));
-            r.Add(("Cabin vertical speed", "A32NX_PRESS_CABIN_VS", Fpm));
-            r.Add(("Differential pressure", "A32NX_PRESS_CABIN_DELTA_PRESSURE", v => $"{v:0.0} psi"));
-            r.Add(("Outflow valve", "A32NX_PRESS_MAN_OUTFLOW_VALVE_OPEN_PERCENTAGE", Pct));
+            // The plain A32NX_PRESS_CABIN_* names DO NOT EXIST (read static 0) — the A32NX
+            // publishes cab-press via the CPC ARINC429 words. Read CPC 1 (normally the active
+            // controller); "not available" when its SSM is invalid (matches the SD showing XX).
+            string FtAir(double v) { var w = new SimConnect.Arinc429Word(v); return (w.IsNormalOperation || w.IsFunctionalTest) ? $"{w.Value:0} feet" : "not available"; }
+            string FpmAir(double v) { var w = new SimConnect.Arinc429Word(v); return (w.IsNormalOperation || w.IsFunctionalTest) ? $"{w.Value:0} feet per minute" : "not available"; }
+            string PsiAir(double v) { var w = new SimConnect.Arinc429Word(v); return (w.IsNormalOperation || w.IsFunctionalTest) ? $"{w.Value:0.0} psi" : "not available"; }
+            r.Add(("Cabin altitude", "A32NX_PRESS_CPC_1_CABIN_ALTITUDE", FtAir));
+            r.Add(("Cabin vertical speed", "A32NX_PRESS_CPC_1_CABIN_VS", FpmAir));
+            r.Add(("Differential pressure", "A32NX_PRESS_CPC_1_CABIN_DELTA_PRESSURE", PsiAir));
+            r.Add(("Outflow valve", "A32NX_PRESS_CPC_1_OUTFLOW_VALVE_OPEN_PERCENTAGE", PctAir));
             r.Add(("Safety valve", "A32NX_PRESS_SAFETY_VALVE_OPEN_PERCENTAGE", Pct));
             r.Add(("Landing elevation", "A32NX_FM1_LANDING_ELEVATION", LElev));
+            r.Add(("Manual pressurization mode", "A32NX_OVHD_PRESS_MODE_SEL_PB_IS_AUTO", v => v > 0.5 ? "auto" : "manual"));
         }
         else if (page == 4) // APU
         {
@@ -5255,6 +5312,15 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             r.Add(("Aft duct temp", "A32NX_COND_AFT_DUCT_TEMP", C));
             r.Add(("Pack 1 flow valve", "A32NX_COND_PACK_FLOW_VALVE_1_IS_OPEN", OpenShut));
             r.Add(("Pack 2 flow valve", "A32NX_COND_PACK_FLOW_VALVE_2_IS_OPEN", OpenShut));
+            r.Add(("Cockpit trim air valve", "A32NX_COND_CKPT_TRIM_AIR_VALVE_POSITION", Pct));
+            r.Add(("Forward trim air valve", "A32NX_COND_FWD_TRIM_AIR_VALVE_POSITION", Pct));
+            r.Add(("Aft trim air valve", "A32NX_COND_AFT_TRIM_AIR_VALVE_POSITION", Pct));
+            // ACSC discrete word 1: hot-air valve open = bit 20 CLEAR (inverted); switch = bit 23;
+            // cabin fan 1/2 fault = bits 25/26. SSM-gated.
+            r.Add(("Hot air valve", "A32NX_COND_ACSC_1_DISCRETE_WORD_1", v => { var w = new SimConnect.Arinc429Word(v); return (w.IsNormalOperation || w.IsFunctionalTest) ? (w.BitValueOr(20, false) ? "closed" : "open") : "not available"; }));
+            r.Add(("Hot air switch", "A32NX_COND_ACSC_1_DISCRETE_WORD_1", v => { var w = new SimConnect.Arinc429Word(v); return (w.IsNormalOperation || w.IsFunctionalTest) ? (w.BitValueOr(23, false) ? "on" : "off") : "not available"; }));
+            r.Add(("Cabin fan 1", "A32NX_COND_ACSC_1_DISCRETE_WORD_1", v => { var w = new SimConnect.Arinc429Word(v); return (w.IsNormalOperation || w.IsFunctionalTest) ? (w.BitValueOr(25, false) ? "fault" : "normal") : "not available"; }));
+            r.Add(("Cabin fan 2", "A32NX_COND_ACSC_1_DISCRETE_WORD_1", v => { var w = new SimConnect.Arinc429Word(v); return (w.IsNormalOperation || w.IsFunctionalTest) ? (w.BitValueOr(26, false) ? "fault" : "normal") : "not available"; }));
         }
         else if (page == 6) // WHEEL / BRAKES
         {
@@ -5271,11 +5337,16 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             r.Add(("Eng 1 precooler temp", "A32NX_PNEU_ENG_1_BLEED_TEMPERATURE_SENSOR_TEMPERATURE", C));
             r.Add(("Eng 1 bleed pressure", "A32NX_PNEU_ENG_1_REGULATED_TRANSDUCER_PRESSURE", Psi));
             r.Add(("Eng 1 bleed valve", "A32NX_PNEU_ENG_1_PR_VALVE_OPEN", OpenShut));
+            r.Add(("Eng 1 HP valve", "A32NX_PNEU_ENG_1_HP_VALVE_OPEN", OpenShut));
             r.Add(("Eng 2 precooler temp", "A32NX_PNEU_ENG_2_BLEED_TEMPERATURE_SENSOR_TEMPERATURE", C));
             r.Add(("Eng 2 bleed pressure", "A32NX_PNEU_ENG_2_REGULATED_TRANSDUCER_PRESSURE", Psi));
             r.Add(("Eng 2 bleed valve", "A32NX_PNEU_ENG_2_PR_VALVE_OPEN", OpenShut));
+            r.Add(("Eng 2 HP valve", "A32NX_PNEU_ENG_2_HP_VALVE_OPEN", OpenShut));
+            r.Add(("Pack 1 flow", "A32NX_COND_PACK_FLOW_1", Pct));
+            r.Add(("Pack 2 flow", "A32NX_COND_PACK_FLOW_2", Pct));
             r.Add(("Cross-bleed valve", "A32NX_PNEU_XBLEED_VALVE_FULLY_OPEN", OpenShut));
             r.Add(("APU bleed valve", "A32NX_APU_BLEED_AIR_VALVE_OPEN", OpenShut));
+            r.Add(("Ram air valve", "A32NX_AIRCOND_RAMAIR_TOGGLE", v => v > 0.5 ? "open" : "closed"));
             r.Add(("Wing anti-ice", "A32NX_PNEU_WING_ANTI_ICE_SYSTEM_ON", v => v > 0.5 ? "on" : "off"));
         }
         else if (page == 8) // FUEL
@@ -5422,21 +5493,29 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             }
             else
             {
-                // SD system page — request its L:vars, let them arrive, then format.
+                // SD system page. PAINT IMMEDIATELY from cache so content never lags the page
+                // selection, then force-read + repaint ~0.4 s later (guarded so a newer page
+                // wins — mirrors the A380 fix).
                 var rows = SdSystemRows(page);
-                if (rows.Count == 0) { content = "(this SD page is not wired yet)"; }
-                else
+                if (rows.Count == 0) { _sdBoxContent = "(this SD page is not wired yet)"; sim.RequestVariable(SdPageVar, forceUpdate: true); return; }
+                int seq = ++_sdRefreshSeq;
+                void Paint()
                 {
-                    foreach (var row in rows) sim.RequestVariable(row.var, forceUpdate: true);
-                    await System.Threading.Tasks.Task.Delay(600);
                     var sb = new System.Text.StringBuilder();
                     foreach (var row in rows)
                     {
                         double? cv = sim.GetCachedVariableValue(row.var);
                         sb.AppendLine(cv.HasValue ? $"{row.label}: {row.fmt(cv.Value)}" : $"{row.label}: --");
                     }
-                    content = sb.ToString().TrimEnd();
+                    _sdBoxContent = sb.ToString().TrimEnd();
+                    sim.RequestVariable(SdPageVar, forceUpdate: true);
                 }
+                Paint();
+                foreach (var row in rows) sim.RequestVariable(row.var, forceUpdate: true);
+                await System.Threading.Tasks.Task.Delay(400);
+                if (seq != _sdRefreshSeq) return;
+                Paint();
+                return;
             }
             _sdBoxContent = content;
             sim.RequestVariable(SdPageVar, forceUpdate: true);
@@ -5611,14 +5690,10 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             }
             return true;
         }
-        // On-demand gross-weight / fuel read (kilograms vars), spoken in the selected unit.
-        if (_reqGw && varName == "GROSS_WEIGHT_KG")
-        {
-            _reqGw = false;
-            var (gw, gu) = WeightUser(value);
-            announcer.AnnounceImmediate($"Gross weight {gw:0} {gu}");
-            return true;
-        }
+        // Cache gross weight (kg, stock) + CG (%MAC, FBW L-var) silently for the
+        // W / Shift+W readouts; the hotkeys read these caches and speak immediately.
+        if (varName == "GW_KG_CACHE") { _gwKgCache = value; return true; }
+        if (varName == "A32NX_AIRFRAME_GW_CG_PERCENT_MAC") { _gwCgMac = value; return true; }
         if (_reqFuelKg && varName == "FUEL_QUANTITY_KG")
         {
             _reqFuelKg = false;
