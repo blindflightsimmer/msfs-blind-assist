@@ -295,7 +295,9 @@
     if (kind === "dropdown") {
       var di = n.querySelector(".mfd-dropdown-inner");
       // DropdownMenu widget carries its selected value in .mfd-dropdown-inner.
-      if (di) return clean(di.textContent) || "(choice)";
+      // Use spacedText so multi-span values keep their word breaks (D-ATIS
+      // "UPDATE OR PRINT", not "UPDATEOR PRINT").
+      if (di) return A.spacedText(di) || "(choice)";
       // Button-style dropdown (ARRIVAL/DEPARTURE RWY/APPR/STAR/TRANS, etc.): the
       // element text is just the field NAME; the selected value sits in the summary
       // grid directly under the matching header. Fold it in so the combo announces
@@ -441,6 +443,162 @@
       cur = cur.parentElement;
     }
     return false;
+  };
+
+  // ---- PERF page: structure-aware emission (one clean line per field/row) ------
+  // The PERF page is a dense multi-column grid; the generic Y-row merge is column-blind,
+  // so it fused values into the wrong field (APPR F-speed into the wind line) and made
+  // comma-soup. The DOM is well-structured (each field is a .mfd-label-value-container
+  // with label/value/unit siblings; speed predictions are a grid of cells with a header
+  // row), so we emit per field/row. Interactive controls stay with step-1 (they keep
+  // their stamped idx + selectability); this only takes over STATIC text, like buildFplnLines.
+  A.isPerfPage = function (page) {
+    try { return !!page.querySelector('[class*="mfd-fms-perf"]'); } catch (e) { return false; }
+  };
+  A.insidePerf = function (n) {
+    var cur = n;
+    while (cur) { if (cur.getAttribute && cur.getAttribute("data-fbwa380-perf-owned")) return true; cur = cur.parentElement; }
+    return false;
+  };
+  A.buildPerfLines = function (page, pageRect, items, startIdx) {
+    var idx = startIdx;
+    function own(el) { try { el.setAttribute("data-fbwa380-perf-owned", "1"); } catch (e) {} }
+    function hasInteractive(el) { return !!el.querySelector("[data-fbwa380-mcdu-idx]"); }
+    function isDash(s) { return !s || /^[-:.+\s]+$/.test(s); }
+    function push(el, text) {
+      if (!text) return;
+      var r = el.getBoundingClientRect();
+      items.push({ top: r.top - pageRect.top, left: r.left - pageRect.left, right: r.right - pageRect.left, bot: r.bottom - pageRect.top, idx: 0, kind: "text", text: text, value: "", disabled: false, perf: true });
+    }
+
+    // 1) Speed-prediction grids (CLB/CRZ/DES): rows delimited by a `br`-classed first
+    //    cell; row 0 = column headers (MODE/SPD/MACH/PRED TO). Pair each data cell with
+    //    its header by COLUMN INDEX so a right-column value can't leak into another field.
+    var grids = page.querySelectorAll(".mfd-fms-perf-clb-grid, .mfd-fms-perf-crz-grid, .mfd-fms-perf-des-grid");
+    for (var g = 0; g < grids.length; g++) {
+      var grid = grids[g]; if (!A.isVisible(grid)) continue;
+      var cells = grid.querySelectorAll(".mfd-fms-perf-speed-table-cell, .mfd-fms-perf-speed-presel-managed-table-cell");
+      var rows = [], cur = null, ci;
+      for (ci = 0; ci < cells.length; ci++) { var cl = cells[ci]; if (!A.isVisible(cl)) continue; if (cl.classList.contains("br") || cur === null) { cur = []; rows.push(cur); } cur.push(cl); }
+      var headers = rows.length ? rows[0].map(function (c) { return clean(c.innerText); }) : [];
+      for (var ri = 1; ri < rows.length; ri++) {
+        var row = rows[ri]; var rlabel = clean(row[0].innerText); if (rlabel === "null") rlabel = ""; var parts = [];
+        for (var k = 1; k < row.length; k++) {
+          if (hasInteractive(row[k])) continue;   // editable cell (PRESEL) → step-1 owns it
+          var v = clean(row[k].innerText); if (isDash(v) || v === "null") continue;
+          var h = headers[k] || ""; parts.push(h ? (h + " " + v) : v);
+        }
+        if (rlabel || parts.length) push(row[0], (rlabel ? rlabel + ": " : "") + parts.join(", "));
+      }
+      own(grid);
+    }
+
+    // 2) Discrete fields: one clean line per visible .mfd-label-value-container that has
+    //    a LABEL, no interactive child (those stay with step-1), and isn't in an owned grid.
+    //    Label-less composite cells (e.g. CLB SPD LIM's value cells) are left to the generic
+    //    pass. Green-dot speed has an <svg> circle for its label → synthesize "green dot".
+    var lvcs = page.querySelectorAll(".mfd-label-value-container");
+    for (var li = 0; li < lvcs.length; li++) {
+      var c = lvcs[li]; if (!A.isVisible(c)) continue;
+      if (c.getAttribute("data-fbwa380-perf-owned") || A.insidePerf(c.parentElement)) continue;
+      if (hasInteractive(c)) continue;
+      var lab = c.querySelector(".mfd-label"); var labT = lab ? clean(lab.textContent) : "";
+      if (!labT && c.querySelector("svg circle")) labT = "green dot";
+      if (!labT) continue;
+      var valEl = c.querySelector(".mfd-value"); var valT = valEl ? clean(valEl.textContent) : "";
+      var lu = c.querySelector(".mfd-unit-leading"), tu = c.querySelector(".mfd-unit-trailing");
+      // A labeled container with NO value and NO unit is a header/composite (e.g. the APPR
+      // approach summary "APPR ILS24R KJFK", where the ident lives in sibling cells) — don't
+      // own/emit it as "LABEL:" with an empty value; leave it to the generic pass so the
+      // ident isn't lost. Real value fields (even dashed, like "HD --- KT") have a unit.
+      if (isDash(valT) && !lu && !tu) continue;
+      var shown = clean((lu ? clean(lu.textContent) + " " : "") + valT + (tu ? " " + clean(tu.textContent) : ""));
+      own(c); push(c, labT + ": " + shown);
+    }
+    return idx;
+  };
+
+  // General labeled-field emitter — runs on EVERY MFD page. One clean "LABEL: value unit"
+  // line per visible .mfd-label-value-container that has an INNER .mfd-label, isn't already
+  // owned (by buildFplnLines/buildPerfLines), has no interactive child, and isn't in the
+  // F-PLN grid. Generalises the PERF labeled-field cleanup to FUEL&LOAD / POSITION / DATA /
+  // ATC etc. (e.g. "GW: ---.- KLB", "EPU: 0.04 NM"). Containers whose naming label is a
+  // SIBLING (not a child) — common on POSITION pages — are left for page-specific builders;
+  // label-less composites are left to the generic pass. Safe: PERF LVCs are already owned, so
+  // this no-ops there; F-PLN is skipped; nothing interactive is touched.
+  A.buildLabeledFields = function (page, pageRect, items, startIdx) {
+    var idx = startIdx;
+    function isDash(s) { return !s || /^[-:.+\s]+$/.test(s); }
+    var lvcs = page.querySelectorAll(".mfd-label-value-container");
+    for (var i = 0; i < lvcs.length; i++) {
+      var c = lvcs[i];
+      if (!A.isVisible(c)) continue;
+      if (c.getAttribute("data-fbwa380-perf-owned") || A.insidePerf(c.parentElement)) continue;
+      if (A.insideFpln(c)) continue;
+      if (c.querySelector("[data-fbwa380-mcdu-idx]")) continue;   // interactive child → step-1 owns it
+      var lab = c.querySelector(".mfd-label"); var labT = lab ? clean(lab.textContent) : "";
+      if (!labT) continue;   // label-less composite → leave to the generic pass / page builders
+      var valEl = c.querySelector(".mfd-value"); var valT = valEl ? clean(valEl.textContent) : "";
+      var lu = c.querySelector(".mfd-unit-leading"), tu = c.querySelector(".mfd-unit-trailing");
+      if (isDash(valT) && !lu && !tu) continue;   // header/composite with no real value
+      var shown = clean((lu ? clean(lu.textContent) + " " : "") + valT + (tu ? " " + clean(tu.textContent) : ""));
+      try { c.setAttribute("data-fbwa380-perf-owned", "1"); } catch (e) {}
+      var r = c.getBoundingClientRect();
+      items.push({ top: r.top - pageRect.top, left: r.left - pageRect.left, right: r.right - pageRect.left, bot: r.bottom - pageRect.top, idx: 0, kind: "text", text: labT + ": " + shown, value: "", disabled: false, perf: true });
+    }
+    return idx;
+  };
+
+  // ---- SURV CONTROLS page: header-prefix the radios + toggle buttons ----------
+  // The SURV CONTROLS page is a 2-D grid: section headers (XPDR / TCAS / TAWS as
+  // .mfd-surv-heading; ALT RPTG / ELEVN/TILT as .mfd-label.bigger) and per-control
+  // labels (WXR / PRED W/S / TURB / GAIN / MODE / WX ON VD / TERR SYS / GPWS / G/S
+  // MODE / FLAP MODE as .mfd-surv-label) sit ABOVE the radios / SurvButtons they
+  // name. A flat read gives bare "radio | TA/RA" / "surv | AUTO" with no idea which
+  // system they belong to. Here we PREFIX each surv/radio control (already emitted +
+  // stamped in step 1 — idx/selectability untouched) with the nearest header DIRECTLY
+  // ABOVE it in the same column ("TCAS: TA/RA", "WXR: AUTO", "TERR SYS: OFF: ON"), and
+  // mark the matched header owned so it isn't ALSO read as a bare line. The TCAS
+  // ABV/BLW/NORM range column has no DOM header → those stay bare (self-evident).
+  A.isSurvPage = function (page) {
+    try { return !!page.querySelector(".mfd-surv-button, .mfd-surv-heading"); } catch (e) { return false; }
+  };
+  A.buildSurvControls = function (page, pageRect, items, startIdx) {
+    function own(el) { try { el.setAttribute("data-fbwa380-perf-owned", "1"); } catch (e) {} }
+    function dtext(el) { var s = ""; for (var c = 0; c < el.childNodes.length; c++) { if (el.childNodes[c].nodeType === 3) s += el.childNodes[c].nodeValue; } return clean(s); }
+    // header candidates (with geometry)
+    var hs = page.querySelectorAll(".mfd-surv-label, .mfd-surv-heading, .mfd-label.bigger");
+    var headers = [];
+    for (var h = 0; h < hs.length; h++) {
+      if (!A.isVisible(hs[h])) continue;
+      var t = dtext(hs[h]); if (!t) continue;
+      var r = hs[h].getBoundingClientRect();
+      headers.push({ t: t, top: r.top - pageRect.top, left: r.left - pageRect.left, right: r.right - pageRect.left, el: hs[h] });
+    }
+    function headerAbove(rect) {
+      var best = null, bestGap = 1e9;
+      for (var i = 0; i < headers.length; i++) {
+        var hd = headers[i];
+        if (hd.top >= rect.top) continue;                                 // must start above the control
+        if (hd.right < rect.left + 3 || hd.left > rect.right - 3) continue; // same column (x-overlap)
+        var gap = rect.top - hd.top;
+        if (gap < bestGap) { bestGap = gap; best = hd; }
+      }
+      return best;
+    }
+    // enrich each surv-button / radio item by its stamped idx (text only — idx stays)
+    var ctrls = page.querySelectorAll(".mfd-surv-button[data-fbwa380-mcdu-idx], .mfd-radio-button[data-fbwa380-mcdu-idx]");
+    for (var c = 0; c < ctrls.length; c++) {
+      var el = ctrls[c]; if (!A.isVisible(el)) continue;
+      var cidx = parseInt(el.getAttribute("data-fbwa380-mcdu-idx"), 10);
+      var item = null;
+      for (var k = 0; k < items.length; k++) { if (items[k].idx === cidx) { item = items[k]; break; } }
+      if (!item) continue;
+      var rr = el.getBoundingClientRect();
+      var hd = headerAbove({ top: rr.top - pageRect.top, left: rr.left - pageRect.left, right: rr.right - pageRect.left });
+      if (hd && item.text.indexOf(hd.t + ":") !== 0) { item.text = hd.t + ": " + item.text; own(hd.el); }
+    }
+    return startIdx;
   };
 
   // Decode an F-PLN altitude constraint token: "+N" = at or above N feet, "-N" =
@@ -655,6 +813,8 @@
   A.enumerateLines = function (root) {
     var stale = root.querySelectorAll("[data-fbwa380-mcdu-idx]");
     for (var s = 0; s < stale.length; s++) stale[s].removeAttribute("data-fbwa380-mcdu-idx");
+    var staleP = root.querySelectorAll("[data-fbwa380-perf-owned]");
+    for (var sp = 0; sp < staleP.length; sp++) staleP[sp].removeAttribute("data-fbwa380-perf-owned");
 
     var page = root.querySelector(".mfd-navigator-container") || root;
     var pageRect = page.getBoundingClientRect();
@@ -716,6 +876,21 @@
     var isFpln = !!page.querySelector(".mfd-fms-fpln-line");
     if (isFpln) idx = A.buildFplnLines(page, pageRect, items, idx);
 
+    // 1c) PERF page → structure-aware builder (one clean line per field/row); the generic
+    //     static pass + Y-merge then SKIP the regions it consumed (data-fbwa380-perf-owned).
+    var isPerf = A.isPerfPage(page);
+    if (isPerf) idx = A.buildPerfLines(page, pageRect, items, idx);
+
+    // 1d) General labeled-field cleanup on EVERY page (clean "LABEL: value unit" lines for
+    //     any .mfd-label-value-container with an inner label). Runs after the PERF/F-PLN
+    //     builders so it only takes the containers they didn't already own.
+    idx = A.buildLabeledFields(page, pageRect, items, idx);
+
+    // 1e) SURV CONTROLS page → prefix each radio / toggle button with its column
+    //     header ("TCAS: TA/RA", "WXR: AUTO"); matched headers are owned so the
+    //     static pass below skips them. Enriches existing items in place (idx kept).
+    if (A.isSurvPage(page)) idx = A.buildSurvControls(page, pageRect, items, idx);
+
     // 2) static-text leaves not inside an interactive control above.
     var all = page.getElementsByTagName("*");
     for (var j = 0; j < all.length; j++) {
@@ -723,6 +898,7 @@
       if (!A.isVisible(t)) continue;
       if (A.isInsideInteractive(t)) continue;
       if (isFpln && A.insideFpln(t)) continue;   // plan grid handled by buildFplnLines
+      if (A.insidePerf(t)) continue;             // any region owned by a structure-aware builder
       var own = A.directText(t);
       // Skip empty leaves and FBW data-binding artifacts ("null"/"undefined"
       // rendered into empty MFD cells) — never meaningful to the pilot.
@@ -748,7 +924,13 @@
         // F-PLN leg/airway annotation (the SID/STAR/airway name printed to the
         // left of every leg). The same procedure name repeats on every leg it
         // covers, so flag it for consecutive-duplicate suppression below.
-        isAnno: cls.indexOf("mfd-fms-fpln-line-annotation") >= 0
+        isAnno: cls.indexOf("mfd-fms-fpln-line-annotation") >= 0,
+        // SURV STATUS & SWITCHING status indicators (.mfd-surv-status-item) are
+        // INDEPENDENT per-column cells (SYS1 status / a section heading / SYS2-or-OFF
+        // status). They must never row-merge — comma-joining them, or binding a mid-row
+        // heading (TAWS/XPDR/TCAS) to one as a "LABEL: value", reads as a false
+        // relationship. Flag so the Y-merge leaves each on its own line.
+        isStatusItem: cls.indexOf("mfd-surv-status-item") >= 0
       });
     }
 
@@ -789,21 +971,43 @@
     // between each column ("BASU1D, 217°, 2 NM"; "FROM, TIME, TRK, DIST, FPA").
     // Interactive controls (idx>0) always keep their own line, so a clickable
     // waypoint/field is never swallowed into a text row.
+    // A bare UNIT cell (°T, KT, NM, %, KLB, …) attaches to the value before it with
+    // a space ("134.4 °T") instead of a comma; everything else is a column pause.
+    var isUnitCell = function (s) { return /^(°[TWEC]?|KT|NM|FT|FL|%|KLB|KG|LB|M|MIN|HR|NM\/MIN|°\/[A-Z]+)$/i.test(s); };
     var mergedLines = [];
     for (var mi = 0; mi < items.length; mi++) {
       var cur = items[mi];
       // Pre-built F-PLN waypoint lines (fpln:true) are already complete — never
       // merge them with each other or with neighbouring text.
-      if (cur.idx === 0 && cur.kind === "text" && !cur.fpln && mergedLines.length > 0) {
+      if (cur.idx === 0 && cur.kind === "text" && !cur.fpln && !cur.perf && mergedLines.length > 0) {
         var prev = mergedLines[mergedLines.length - 1];
         if (prev.idx === 0 && prev.kind === "text" && !prev.fpln
+            && !cur.isStatusItem && !prev.isStatusItem
             && Math.round(prev.top / A.ROW_Y_TOLERANCE_PX) === Math.round(cur.top / A.ROW_Y_TOLERANCE_PX)) {
-          prev.text = prev.text + ", " + cur.text;
+          // Compose label→value→unit groups so a row of sibling cells reads as
+          // "T.TRK: 134.4 °T, T.HDG: 134.4 °T" instead of comma-soup:
+          //  - a label cell ALREADY printing its own ":" ("ACTIVE ATC :") → strip + ": ";
+          //  - a NEW label cell (.mfd-label) → ", " starts a fresh column group;
+          //  - the first value AFTER a label → ": " binds it to that label;
+          //  - a bare unit cell → " " attaches to its value;
+          //  - anything else → ", " column pause.
+          // A real naming label has letters and isn't a bare unit — so a number/time
+          // cell that happens to carry .mfd-label (FUEL&LOAD DEST/ALTN prediction grid)
+          // can't spuriously bind the next value with a ":".
+          var curRealLabel = cur.isLabel && /[A-Za-z]/.test(cur.text) && !isUnitCell(cur.text);
+          if (/:\s*$/.test(prev.text)) { prev.text = prev.text.replace(/\s*:\s*$/, ": ") + cur.text; prev._afterLabel = false; }
+          else if (curRealLabel) { prev.text = prev.text + ", " + cur.text; prev._afterLabel = true; }
+          else if (prev._afterLabel) { prev.text = prev.text + ": " + cur.text; prev._afterLabel = false; }
+          else if (isUnitCell(cur.text)) { prev.text = prev.text + " " + cur.text; }
+          else { prev.text = prev.text + ", " + cur.text; }
           if (cur.right > prev.right) prev.right = cur.right;
           if (cur.bot > prev.bot) prev.bot = cur.bot;
           continue;
         }
       }
+      // Seed the label-group state for a fresh row from whether its first cell is a real
+      // (letters, non-unit) label.
+      if (cur.idx === 0 && cur.kind === "text") cur._afterLabel = !!cur.isLabel && /[A-Za-z]/.test(cur.text) && !isUnitCell(cur.text);
       mergedLines.push(cur);
     }
     items = mergedLines;

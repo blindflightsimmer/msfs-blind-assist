@@ -547,6 +547,21 @@ public partial class MainForm : Form
         }
     }
 
+    // --- User-set auto-announce de-dup (GLOBAL, all aircraft + all combo types) ---
+    // When the user operates a panel combo, the screen reader already speaks the new
+    // value. The same change ALSO comes back through OnSimVarUpdated and would be
+    // auto-announced a second time by the monitor (per the "announce every state change"
+    // rule). We record the var+value the user just committed, then suppress exactly that
+    // echo once (updating the monitor baseline silently). A change to the SAME var from
+    // ANY OTHER source (flyPad, ground crew, failure, systems-host) still announces,
+    // because only the matching value within the short window is consumed.
+    private readonly Dictionary<string, (double value, long tick)> _uiSetEcho = new();
+    private const int UiSetEchoSuppressMs = 1500;
+    private void MarkUiSet(string? varName, double value)
+    {
+        if (!string.IsNullOrEmpty(varName)) _uiSetEcho[varName] = (value, Environment.TickCount64);
+    }
+
     private void OnSimVarUpdated(object? sender, SimVarUpdateEventArgs e)
     {
         if (InvokeRequired)
@@ -718,6 +733,19 @@ public partial class MainForm : Form
                     arincAnnDef.TryDecodeArinc429(e.VarName, e.Value, out string arincSpoken))
                 {
                     description = $"{varDef.DisplayName}: {arincSpoken}";
+                }
+
+                // Suppress the duplicate echo of a value the user JUST set via the UI (the
+                // screen reader already spoke the combo). Update the baseline silently so a
+                // later change to this var from any OTHER source still announces. Consumed
+                // once; only a value matching what the user set within the window is dropped.
+                if (_uiSetEcho.TryGetValue(e.VarName, out var echo)
+                    && Math.Abs(echo.value - e.Value) < 0.001
+                    && Environment.TickCount64 - echo.tick < UiSetEchoSuppressMs)
+                {
+                    _uiSetEcho.Remove(e.VarName);
+                    simVarMonitor.SetBaseline(e.VarName, e.Value);
+                    return;
                 }
 
                 simVarMonitor.ProcessUpdate(e.VarName, e.Value, description);
@@ -1227,8 +1255,25 @@ public partial class MainForm : Form
             }
             else if (control is ComboBox combo)
             {
+                // Synthetic, MSFSBA-internal selector combos (the A32NX System Display page
+                // picker A32NX_MSFSBA_SD_PAGE, the synthetic speed-brake combo, and the
+                // thrust-lever _DETENT combos) are the SOLE source of truth for their own value:
+                // the combo's SelectedIndex IS the state. They have no real, continuously
+                // broadcast sim var to defer to — the backing L:var is written ONLY by the
+                // user's own selection and is re-requested purely to repaint the status box.
+                // Re-setting SelectedIndex from those (stale / async) round-trip reads yanks the
+                // selection backward while the user is arrowing (the "wonky" A320 SD combo). Skip
+                // the snap-back for them; the same update still flows on to repaint the box.
+                // (The A380 SD combo is a REAL Continuous sim var whose broadcast always agrees
+                // with the user's selection, so it is unaffected. Mirrors the synthetic-combo
+                // exclusion list in FlyByWireA320Definition.cs.)
+                bool isSyntheticSelector =
+                    varName == "A32NX_MSFSBA_SD_PAGE" ||
+                    varName == "A32NX_MSFSBA_SPEEDBRAKE" ||
+                    varName.EndsWith("_DETENT", StringComparison.Ordinal);
+
                 // Find the matching value in the combo box
-                if (currentAircraft.GetVariables().ContainsKey(varName))
+                if (!isSyntheticSelector && currentAircraft.GetVariables().ContainsKey(varName))
                 {
                     var varDef = currentAircraft.GetVariables()[varName];
                     if (varDef.ValueDescriptions.ContainsKey(value))
@@ -1286,11 +1331,24 @@ public partial class MainForm : Form
                         // This button uses a StateVariable — but this update is for the button's own variable,
                         // not the state variable. Skip — the state variable update will handle the label.
                     }
-                    else if (varDef.ValueDescriptions != null && varDef.ValueDescriptions.TryGetValue(value, out string? stateText))
+                    else if (varDef.ValueDescriptions != null && varDef.ValueDescriptions.Count > 0)
                     {
-                        string newLabel = $"{varDef.DisplayName}: {stateText}";
-                        btn.Text = newLabel;
-                        btn.AccessibleName = newLabel;
+                        // Mirror the build-time button-label logic (the RenderAsButton branch):
+                        // a momentary push-button (ECAM-CP keys, calls, acks, tests) has no
+                        // meaningful RESTING state, so the value 0 (Released / Off / Idle) must
+                        // NOT be appended — otherwise this live update relabels e.g. "ECAM All"
+                        // to "ECAM All: Released", which the screen reader reads aloud. Only
+                        // append a non-zero (active / latched) state; reset to the plain
+                        // DisplayName on the resting value. The functional dispatch keys on the
+                        // var name/events, never the label, so this is purely cosmetic.
+                        string newLabel = (value != 0 && varDef.ValueDescriptions.TryGetValue(value, out string? stateText))
+                            ? $"{varDef.DisplayName}: {stateText}"
+                            : varDef.DisplayName;
+                        if (btn.Text != newLabel)
+                        {
+                            btn.Text = newLabel;
+                            btn.AccessibleName = newLabel;
+                        }
                     }
                 }
             }
@@ -5319,6 +5377,7 @@ public partial class MainForm : Form
                             simConnectManager?.SendEvent("TURBINE_IGNITION_SWITCH_SET2", mode);
                             simConnectManager?.ExecuteCalculatorCode($"{mode} (>L:XMLVAR_ENG_MODE_SEL)");
                             currentSimVarValues["TURB ENG IGNITION SWITCH EX1:1"] = mode;
+                            MarkUiSet("TURB ENG IGNITION SWITCH EX1:1", mode);
                         }
                     };
                     
@@ -5401,6 +5460,7 @@ public partial class MainForm : Form
                         if (!updatingFromSim && !_buildingPanel && combo.SelectedIndex >= 0)
                         {
                             var selectedValue = sortedValues[combo.SelectedIndex].Key;
+                            MarkUiSet(varDef.Name, selectedValue);
 
                             // Capture the ACTUAL current cached state BEFORE the lines below
                             // overwrite currentSimVarValues with the new selection. The
@@ -5548,6 +5608,7 @@ public partial class MainForm : Form
                         if (!updatingFromSim && !_buildingPanel && combo.SelectedIndex >= 0)
                         {
                             var selectedValue = sortedValues[combo.SelectedIndex].Key;
+                            MarkUiSet(varDef.Name, selectedValue);
 
                             // Let aircraft handle special cases first (validation, conversion, multi-step logic)
                             bool aircraftHandled = currentAircraft.HandleUIVariableSet(varKey, selectedValue, varDef, simConnectManager, announcer);
