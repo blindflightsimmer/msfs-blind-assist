@@ -15,7 +15,7 @@ DIRECT (no mode)
   Ctrl+3     Focus Status Display field of the current panel (refreshes it if empty)
   Ctrl+M     Monitor Manager (choose what auto-announces)
   Ctrl+E     Toggle ECAM E/WD call-outs
-  Ctrl+Shift+B  Airport Map and BTV (OANS) window
+  Ctrl+Shift+B  Airport Map and BTV (OANS) window — see "INSIDE THE OANS WINDOW" below
 
 
 OUTPUT MODE  (press ] first)
@@ -37,7 +37,8 @@ OUTPUT MODE  (press ] first)
   U          True Heading
   V          Vertical Speed
   D          Distance to destination (from the FMS)
-  Shift+D    Distance to Top of Descent (once computed in flight)
+  Shift+D    Distance + time to Top of Descent, e.g. "145 miles to top of
+             descent: 00:16:58" (once computed in flight)
              (Q / A / Shift+A read in metres when the FCU MTRS button is on)
   Ctrl+W     ND active (TO) waypoint: name, distance, and bearing
   Ctrl+Shift+R  Last landing rate (touchdown vertical speed, feet per minute)
@@ -65,9 +66,12 @@ OUTPUT MODE  (press ] first)
   Ctrl+R     Show TCAS window
   Shift+W    Weather Radar
   Shift+M    METAR report
+  Ctrl+Shift+T  Cold Temperature Altitude Correction (offline calculator: field elevation + temperature + published altitudes -> corrected altitudes)
 
   Display windows
-  Alt+E      E/WD (Engine/Warning Display) window
+  Alt+E      E/WD (Engine/Warning Display) pop-out window — the whole E/WD (engine
+             parameters + the live ECAM memo / warning lines). Read with the arrow
+             keys; it auto-refreshes, F5 refreshes now, Escape closes.
   Alt+I      Standby Instruments (ISIS) window
   Alt+D      Describe Scene (AI)
 
@@ -153,23 +157,28 @@ INSIDE THE MCDU / MFD WINDOW
 
 INSIDE THE RADIO MANAGEMENT PANEL (RMP) WINDOW (Ctrl+Shift+R opens it)
   The RMP screen is read-only text — read it with the arrow keys. It refreshes
-  automatically and announces the standby and any message (e.g. FREQ NOT VALID).
-  Soft keys (same scheme as the MCDU: left = Ctrl, right = Alt):
-  Ctrl+1 / 2 / 3   Select radio 1 / 2 / 3 (the left line keys; again = load standby)
-  Alt+1 / 2 / 3    Swap that radio's active and standby (the right keys; manual)
-                   (or F1/2/3 = select, F7/8/9 = swap, with alternate MCDU keys on)
-  Pages (also buttons in the Tab order):
+  automatically and announces any RMP message (e.g. FREQ NOT VALID) as it appears.
+  Pick a page, then type the digits right on the screen (no separate entry box —
+  the screen is read-only, so the digits go to the radio, not the text):
   Alt+V            VHF page          Alt+T   Transponder (SQWK) page
                    (HF / TEL / NAV / MENU are not modelled by FBW — those do nothing)
-  Alt+C            Fully clear the entry (resets a stuck entry)
   Alt+Home         Jump back to the screen (e.g. from a page button)
-  You TYPE the digits right on the screen — there is no separate entry box (the
-  screen is read-only, so the digits go to the radio, not the text):
-  VHF page  — type the digits (keyed live, no decimal), Enter loads the standby,
-             Backspace deletes a digit; Alt+n swaps it active.
-  SQWK page — type the 4 squawk digits, Enter validates, Alt+3 = ident.
-  Side combo (Captain / First Officer) switches which RMP you control — the screen,
-  the announcements and the keys all follow it.
+
+  VHF page (left keys on Ctrl, right keys on Alt — same scheme as the MCDU):
+  Ctrl+1 / 2 / 3   Select radio 1 / 2 / 3   (or F1/2/3 with alternate MCDU keys on)
+  Alt+1 / 2 / 3    Swap that radio's active and standby   (or F7/8/9)
+                   Type the frequency (keyed live, no decimal — it auto-completes:
+                   118500 or 1185 both give 118.500). Enter loads it into standby and
+                   reads it back, e.g. "VHF standby 1, 118.500"; Backspace deletes a
+                   digit; Alt+C fully clears a stuck entry. Then Alt+1/2/3 swaps it
+                   active (the pilot's call).
+
+  Transponder (SQWK) page:
+  Type the 4 squawk digits (0 to 7). It sets automatically on the 4th digit (or press
+  Enter) and reads back "Squawk 2222".   Alt+I   sends IDENT.
+
+  Side combo (Captain / First Officer / Overhead) switches which RMP you control —
+  the screen, the announcements and the keys all follow it.
 
 
 INSIDE THE LIVE CHECKLIST (ECL) WINDOW (Ctrl+Shift+C opens it)
@@ -180,6 +189,24 @@ INSIDE THE LIVE CHECKLIST (ECL) WINDOW (Ctrl+Shift+C opens it)
   Backspace  Step back to the menu
   F5         Refresh
   (the Abnormal procedures button lists active ECAM procedures)
+
+
+INSIDE THE OANS WINDOW (Ctrl+Shift+B opens it) -- airport map + Brake-To-Vacate (BTV)
+  The OANS airport map only draws at the closest ND range, so opening the window
+  AUTO-ZOOMS the Captain ND to the airport map for you (you don't see the ND, so this
+  is harmless). Give it a second; press F5 if it still says it's loading. Read the
+  controls with the arrow keys; Enter activates a button / opens a list; type into a
+  field then Enter; Escape closes. It's a tool for the GROUND and the terminal area
+  (taxi-out and approach) -- away from an airport it will say it's not available.
+  Three tabs across the top -- arrow to one and press Enter:
+   ARPT SEL  Pick the airport: choose the entry mode (ICAO / IATA / CITY NAME), type
+             the code into the field + Enter, then press DISPLAY AIRPORT. ORIGIN /
+             DEST / ALTN jump to your flight-plan airports.
+   MAP DATA  Brake-To-Vacate: pick the landing RWY, read RUNWAY LENGTH and the BTV
+             STOP DISTANCE, choose the exit (TWY / STAND / OTHER). BTV MANUAL CONTROL
+             is the fallback. (The dry/wet stop distances are also exposed as readouts
+             in the panels and announced during the landing rollout.)
+   STATUS    Active / second airport database + SWAP, and the database identifier.
 
 Thrust levers auto-announce the detent reached (Idle / Climb / Flex MCT / TOGA /
 Reverse). Most cockpit controls are in the Sections/Panels lists (Ctrl+1/Ctrl+2).

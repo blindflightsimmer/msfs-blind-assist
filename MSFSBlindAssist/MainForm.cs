@@ -795,6 +795,14 @@ public partial class MainForm : Form
             return true;
         }
 
+        // Touchdown vertical speed is monitored only so the ReadLastLandingRate hotkey can
+        // read it from the cache (it's latched by the sim at touchdown). It must never be
+        // spoken as a generic "value changed" call-out — swallow it here.
+        if (e.VarName == "PLANE_TOUCHDOWN_NORMAL_VELOCITY")
+        {
+            return true;
+        }
+
         // Handle takeoff assist toggle activation (receives position from RequestPositionForTakeoffAssist)
         if (e.VarName == "POSITION_FOR_TAKEOFF_ASSIST")
         {
@@ -1648,6 +1656,7 @@ public partial class MainForm : Form
         {
             HotkeyAction.ShowChecklist,
             HotkeyAction.ShowMETARReport,
+            HotkeyAction.ShowColdTempCorrection,
             HotkeyAction.SimBriefBriefing,
             HotkeyAction.ShowElectronicFlightBag,
             HotkeyAction.ShowFenixMCDU,
@@ -1805,6 +1814,9 @@ public partial class MainForm : Form
                 break;
             case HotkeyAction.ShowMETARReport:
                 ShowMETARReportDialog();
+                break;
+            case HotkeyAction.ShowColdTempCorrection:
+                ShowColdTempCorrectionDialog();
                 break;
             case HotkeyAction.ShowChecklistECL:
                 ShowChecklistECLDialog();
@@ -2294,6 +2306,15 @@ public partial class MainForm : Form
         dialog.ShowForm();
     }
 
+    private void ShowColdTempCorrectionDialog()
+    {
+        // Ensure output hotkey mode is deactivated before showing the window
+        hotkeyManager.ExitOutputHotkeyMode();
+
+        var dialog = new ColdTemperatureCorrectionForm(announcer);
+        dialog.ShowForm();
+    }
+
     private void ShowChecklistDialog()
     {
         // Ensure output hotkey mode is deactivated before showing dialog
@@ -2532,11 +2553,46 @@ public partial class MainForm : Form
     /// </summary>
     public async void AnnounceA380FlightInfo(bool tod)
     {
+        if (coherentClient == null) { announcer.AnnounceImmediate("Flight info unavailable."); return; }
+        string raw = "";
+        try { raw = await coherentClient.EvalForResultAsync("window.__MSFSBA_A380 ? __MSFSBA_A380.flightInfo() : ''"); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[A380 flightInfo] {ex.Message}"); }
+        AnnounceFlightInfoJson(raw, tod);
+    }
+
+    /// <summary>
+    /// A32NX equivalent. The A320 has no D/Shift+D path of its own and drives its MCDU over
+    /// the SimBridge relay (not the Coherent MCDU bridge), so we read its FMS guidanceController
+    /// directly via a ONE-SHOT Coherent eval of the self-contained coherent-a32nx-flightinfo.js,
+    /// then announce identically to the A380 (PMDG-format TOD).
+    /// </summary>
+    public async void AnnounceA32NXFlightInfo(bool tod)
+    {
+        string js = LoadA32NXFlightInfoJs();
+        if (string.IsNullOrEmpty(js)) { announcer.AnnounceImmediate("Flight info unavailable."); return; }
+        string raw = "";
+        try { raw = await SimConnect.CoherentEvalClient.EvalAsync("A32NX_MCDU", js); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[A32NX flightInfo] {ex.Message}"); }
+        AnnounceFlightInfoJson(raw, tod);
+    }
+
+    private string? _a32nxFlightInfoJs;
+    private string LoadA32NXFlightInfoJs()
+    {
+        if (_a32nxFlightInfoJs == null)
+        {
+            try { _a32nxFlightInfoJs = System.IO.File.ReadAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "Resources", "coherent-a32nx-flightinfo.js")); }
+            catch { _a32nxFlightInfoJs = ""; }
+        }
+        return _a32nxFlightInfoJs;
+    }
+
+    // Parse the flightInfo JSON (same shape for the A380 + A32NX) and speak the D/Shift+D
+    // readout. Shared so both FBW jets announce identically (PMDG-format TOD).
+    private void AnnounceFlightInfoJson(string raw, bool tod)
+    {
         try
         {
-            if (coherentClient == null) { announcer.AnnounceImmediate("A380 flight info unavailable."); return; }
-            string raw = await coherentClient.EvalForResultAsync(
-                "window.__MSFSBA_A380 ? __MSFSBA_A380.flightInfo() : ''");
             if (string.IsNullOrEmpty(raw)) { announcer.AnnounceImmediate("Flight management not ready."); return; }
 
             using var doc = System.Text.Json.JsonDocument.Parse(raw);
@@ -2555,10 +2611,21 @@ public partial class MainForm : Form
             {
                 double? td = Num("distToTD");
                 double? tc = Num("distToTC");
-                if (td.HasValue)
-                    announcer.AnnounceImmediate(td.Value <= 0.5
-                        ? "Past top of descent"
-                        : $"{Math.Round(td.Value)} miles to top of descent");
+                double? tdSecs = Num("timeToTD");   // FMS time-to-go (seconds), null until computed
+                double? phase = Num("flightPhase");  // FMGC phase: >=4 = descent/approach/… = past TOD
+                // Past TOD once descending — the robust PMDG-parity signal (PMDG keys off
+                // FMC_DistanceToTOD going negative; the A380's (T/D) pseudo-waypoint just
+                // disappears, so its distance/time can read stale — phase is authoritative).
+                bool pastTod = phase.HasValue && phase.Value >= 4 && phase.Value <= 7;
+                if (pastTod || (td.HasValue && td.Value <= 0.5))
+                    announcer.AnnounceImmediate("Past top of descent");
+                else if (td.HasValue)
+                {
+                    // Match the PMDG TOD readout format exactly:
+                    // "145 miles to top of descent: 00:16:58" (time from the FMS).
+                    string eta = tdSecs.HasValue ? FormatEtaSeconds(tdSecs.Value) : "";
+                    announcer.AnnounceImmediate($"{Math.Round(td.Value)} miles to top of descent{eta}");
+                }
                 else if (tc.HasValue && tc.Value > 0.5)
                     announcer.AnnounceImmediate($"{Math.Round(tc.Value)} miles to top of climb");
                 else
@@ -2575,9 +2642,21 @@ public partial class MainForm : Form
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[A380 flightInfo] {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[flightInfo] {ex.Message}");
             announcer.AnnounceImmediate("Flight info error.");
         }
+    }
+
+    // ": HH:MM:SS" suffix for the A380 TOD readout — identical to the PMDG TOD
+    // format (PMDG737Definition.FormatEtaFromDistance). Empty when there's no time.
+    private static string FormatEtaSeconds(double seconds)
+    {
+        if (seconds <= 0) return "";
+        int totalSeconds = (int)Math.Round(seconds);
+        int hh = totalSeconds / 3600;
+        int mm = (totalSeconds % 3600) / 60;
+        int ss = totalSeconds % 60;
+        return $": {hh:D2}:{mm:D2}:{ss:D2}";
     }
 
     private void ShowFBWA380MCDUDialog()
@@ -5249,8 +5328,7 @@ public partial class MainForm : Form
                 // Special handling for Lighting controls
                 else if (varKey == "LIGHTING_LANDING_1" || varKey == "LIGHTING_LANDING_2" || varKey == "LIGHTING_LANDING_3" ||
                          varKey == "LIGHTING_STROBE_0" || varKey == "LIGHT BEACON" || varKey == "LIGHT WING" ||
-                         varKey == "LIGHT NAV" || varKey == "LIGHT LOGO" ||
-                         varKey == "CIRCUIT_SWITCH_ON:21" || varKey == "CIRCUIT_SWITCH_ON:22")
+                         varKey == "CIRCUIT_SWITCH_ON:21")
                 {
                     ComboBox combo = new ComboBox();
                     combo.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -5324,6 +5402,15 @@ public partial class MainForm : Form
                         {
                             var selectedValue = sortedValues[combo.SelectedIndex].Key;
 
+                            // Capture the ACTUAL current cached state BEFORE the lines below
+                            // overwrite currentSimVarValues with the new selection. The
+                            // circuit-toggle branches (RWY turn-off) need this: ELECTRICAL_CIRCUIT_TOGGLE
+                            // is toggle-only, so they must compare desired vs actual. The old code
+                            // read currentSimVarValues AFTER the overwrite, so current == selected
+                            // always, and the toggle never fired (RWY turn-off appeared dead).
+                            double priorCachedState = currentSimVarValues.ContainsKey(capturedVarKey)
+                                ? currentSimVarValues[capturedVarKey] : -1;
+
                             // Let the aircraft handle this SimVar-backed combo first
                             // (e.g. an A380 valve/exit combo whose STATE is a SimVar
                             // but whose CONTROL is a K-event — engine masters,
@@ -5382,34 +5469,29 @@ public partial class MainForm : Form
                             {
                                 simConnectManager?.SendEvent("WING_LIGHTS_SET", (uint)selectedValue);
                             }
-                            else if (capturedVarKey == "LIGHT NAV") // Nav Lights (controls both Nav and Logo)
+                            else if (capturedVarKey == "CIRCUIT_SWITCH_ON:21") // Runway Turn Off Lights (single switch -> both circuits)
                             {
-                                simConnectManager?.SendEvent("NAV_LIGHTS_SET", (uint)selectedValue);
-                                simConnectManager?.SendEvent("LOGO_LIGHTS_SET", (uint)selectedValue);
-                            }
-                            else if (capturedVarKey == "LIGHT LOGO") // Logo Lights (controls both Nav and Logo)
-                            {
-                                simConnectManager?.SendEvent("NAV_LIGHTS_SET", (uint)selectedValue);
-                                simConnectManager?.SendEvent("LOGO_LIGHTS_SET", (uint)selectedValue);
-                            }
-                            else if (capturedVarKey == "CIRCUIT_SWITCH_ON:21") // Left RWY Turn Off Light
-                            {
-                                double currentState = currentSimVarValues.ContainsKey("CIRCUIT_SWITCH_ON:21")
-                                    ? currentSimVarValues["CIRCUIT_SWITCH_ON:21"] : -1;
+                                // The real A320 has ONE RWY TURN OFF switch driving BOTH lights
+                                // (left = circuit 21, right = circuit 22). This single combo drives
+                                // both. ELECTRICAL_CIRCUIT_TOGGLE is toggle-only, so toggle each
+                                // circuit independently only when it differs from the desired state
+                                // (self-heals if the two ever got out of sync). priorCachedState is
+                                // circuit 21 captured BEFORE the overwrite above; circuit 22's cache
+                                // isn't overwritten here (a different key) and falls back to 21's
+                                // state when not yet known.
                                 bool wantOn = selectedValue == 1;
-                                bool isOn = currentState == 1;
-                                // When state is unknown (cache miss on first open), always send toggle
-                                if (currentState < 0 || wantOn != isOn)
+                                bool leftOn = priorCachedState == 1;
+                                if (wantOn != leftOn)
                                     simConnectManager?.SendEvent("ELECTRICAL_CIRCUIT_TOGGLE", 21);
-                            }
-                            else if (capturedVarKey == "CIRCUIT_SWITCH_ON:22") // Right RWY Turn Off Light
-                            {
-                                double currentState = currentSimVarValues.ContainsKey("CIRCUIT_SWITCH_ON:22")
-                                    ? currentSimVarValues["CIRCUIT_SWITCH_ON:22"] : -1;
-                                bool wantOn = selectedValue == 1;
-                                bool isOn = currentState == 1;
-                                if (wantOn != isOn)
+                                double rightState = currentSimVarValues.ContainsKey("CIRCUIT_SWITCH_ON:22")
+                                    ? currentSimVarValues["CIRCUIT_SWITCH_ON:22"] : priorCachedState;
+                                bool rightOn = rightState == 1;
+                                if (wantOn != rightOn)
                                     simConnectManager?.SendEvent("ELECTRICAL_CIRCUIT_TOGGLE", 22);
+                                // Refresh both actual states so an external (cockpit) change can't
+                                // leave the next decision stale.
+                                simConnectManager?.RequestVariable("CIRCUIT_SWITCH_ON:21", forceUpdate: true);
+                                simConnectManager?.RequestVariable("CIRCUIT_SWITCH_ON:22", forceUpdate: true);
                             }
                         }
                     };
@@ -5821,6 +5903,18 @@ public partial class MainForm : Form
                 }
             };
 
+            // When the user moves focus TO the status box, refresh it to the current selection.
+            // The auto-refresh timer deliberately skips while a selector combo (or the box) is
+            // focused — that periodic mid-navigation update was interrupting NVDA's combo
+            // announcements — so this GotFocus refresh is what brings the box current when the
+            // user goes to read it. It updates once on focus-in (review cursor at the top, which
+            // is what you want when you start reading), then the box-focused guard above keeps it
+            // stable. SetDisplayTextPreserveCaret no-ops when the content is unchanged.
+            displayTextBox.GotFocus += (s2, e2) =>
+            {
+                try { currentAircraft?.OnDisplayPanelShown(currentPanel, simConnectManager!); } catch { }
+            };
+
             refreshButton.Click += async (s2, e2) =>
             {
                 // Only show the "Loading..." placeholder on the FIRST populate (empty box).
@@ -6035,6 +6129,17 @@ public partial class MainForm : Form
             if (currentControls.TryGetValue("_DISPLAY_", out var dc) && dc is TextBox dtb
                 && dtb.IsHandleCreated && dtb.Focused)
                 return;
+
+            // Also skip while the user is on a SELECTOR COMBO in this panel (e.g. the SD page
+            // picker). The refresh re-requests the page var — UpdateControlFromSimVar can then
+            // re-set the combo's SelectedIndex to a lagging value, fighting the user's arrowing —
+            // and it replaces the box .Text (the MSAA interference noted above). Either one steps
+            // on NVDA's page-selection announcement, which is why arrowing the combo "frequently"
+            // didn't announce the landed page. The box is brought current when the user moves
+            // focus TO it (the display box's GotFocus refresh).
+            foreach (var kv in currentControls)
+                if (kv.Value is ComboBox cb && cb.IsHandleCreated && cb.Focused)
+                    return;
 
             // (a) Rebuild any snapshot SD-page content (FOB, engine, fuel, etc.) — silent,
             //     no speech, pushes into the box via the page-index display var.

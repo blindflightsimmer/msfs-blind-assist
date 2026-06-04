@@ -5,21 +5,23 @@ using MSFSBlindAssist.SimConnect;
 namespace MSFSBlindAssist.Forms.FBWA380;
 
 /// <summary>
-/// Accessible Radio Management Panel (RMP) window for the FlyByWire A380X (Ctrl+Shift+R, input
-/// mode), modelled on the accessible MCDU/CDU forms. The live RMP touchscreen is scraped
-/// (coherent-rmp-agent.js via <see cref="CoherentDisplayClient"/>) into a read-only TEXT box the
-/// user reads with the arrows; it auto-refreshes and announces the selected radio's standby and
-/// any RMP message (e.g. "VHF FREQ NOT VALID") as they change, debounced like the MCDU scratchpad.
+/// Accessible Radio Management Panel (RMP) window for the FlyByWire A380X (Ctrl+Shift+R, input mode).
 ///
-/// Everything is a KEYBOARD SHORTCUT (no button clutter), mirroring the MCDU soft-key scheme:
-///   Ctrl+1/2/3  = the LEFT line keys (LSK) — select radio 1/2/3, or load the typed standby.
-///   Alt+1/2/3   = the RIGHT keys (ADK) — swap that radio's active ↔ standby (manual).
-///   (or F1/2/3 = LSK, F7/8/9 = ADK when MCDUUseAlternateLSKKeys is on.)
-///   Alt+V / Alt+T = the VHF / Transponder (SQWK) pages (the only two the FBW build models).
-///   Just TYPE the digits on the screen itself (no separate field): each is keyed into the RMP
-///   LIVE (the box is read-only, so the digits go to the radio, not the text); Enter loads the standby;
-///   Backspace deletes a digit; Alt+C does a full clear; Alt+Home jumps back to the screen.
-/// Captain ↔ First Officer is a combo (re-points the scrape + the H-event index).
+/// ONE input surface — the RMP SCREEN — exactly like the real touchscreen, so a blind pilot's workflow
+/// matches a sighted pilot's: pick a page, then type on the screen.
+///   • Alt+V = VHF page, Alt+T = Transponder (SQWK) page (the two the FBW build models).
+///   • Read the screen with the arrows; just TYPE the digits on it (the box is read-only, so digits go
+///     to the radio, not the text). The form knows which page you're on and routes the digits:
+///       - VHF page → keyed live into the cockpit RMP keypad; the standby auto-completes; Enter loads it,
+///         Backspace deletes a digit, Alt+C full-clears, Ctrl+1/2/3 select a radio, Alt+1/2/3 swap.
+///       - SQWK page → a 4-digit (0–7) squawk; set on the 4th digit (or Enter) via the stock XPNDR_SET
+///         event — RELIABLE and RMP-page-independent (the keypad-validate route proved unreliable to
+///         drive externally). Backspace deletes a digit, Alt+I sends IDENT.
+///
+/// The page switch also drives the COCKPIT RMP to the matching page (so a sighted observer + the scrape
+/// follow along), but the squawk SET never depends on it. LIVE REGION: the screen is scraped every 300 ms;
+/// on ANY change the form announces the selected radio's auto-completed standby and any new RMP message
+/// ("VHF FREQ NOT VALID", "SQUAWK CODE NOT VALID", …). Captain/First Officer/Overhead is a combo.
 /// </summary>
 public sealed class FBWA380RmpForm : Form
 {
@@ -28,17 +30,21 @@ public sealed class FBWA380RmpForm : Form
     private readonly SimConnectManager _sim;
 
     private CoherentDisplayClient _disp = null!;
-    private int _rmp = 1;                  // 1 = Captain, 2 = First Officer
-    private bool _haveRows;
-    private int _selectedRowIndex;        // transceiver row the RMP has selected (0..2)
+    private int _rmp = 1;                  // 1 = Captain, 2 = First Officer, 3 = Overhead
+    private int _selectedRowIndex;        // VHF transceiver row the RMP keypad is on (0..2)
     private bool _busy;                   // held-clear running
+    private string _page = "VHF";         // active page on the SCREEN: "VHF" or "SQWK"
+    private string _squawkEntry = "";     // local squawk being typed on the SQWK page (set via XPNDR_SET)
+    private string _vhfEntry = "";        // VHF digits typed on the VHF page — the readback formats THESE (no scrape race)
 
-    // Announce-on-change (debounced, like the MCDU scratchpad) — selected standby + message line.
+    // ---- live region (announce-on-change, driven by the scrape poll) -------------------------
     private bool _firstScrape = true;
-    private string _standby = "", _lastAnnouncedStandby = "";
     private string _message = "", _lastAnnouncedMessage = "";
-    private System.Windows.Forms.Timer? _announceTimer;
+    private List<string> _scrapeVhfRows = new();   // "VHF1: active 129.000, standby 121.500, transmit, selected"
     private System.Windows.Forms.Timer? _refreshTimer;
+    private System.Windows.Forms.Timer? _simPoll;
+    private System.Windows.Forms.Timer? _standbyTimer;   // debounce for the post-typing standby announce
+    private string _lastStandbyAnnounced = "";           // dedup key "row:freq" so it speaks once
 
     private ComboBox _side = null!;
     private TextBox _display = null!;
@@ -63,96 +69,101 @@ public sealed class FBWA380RmpForm : Form
 
         var sideLabel = new Label { Text = "&Side:", Location = new Point(12, 14), Size = new Size(40, 22) };
         _side = new ComboBox { Location = new Point(56, 11), Size = new Size(170, 24), DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "Side" };
-        _side.Items.AddRange(new object[] { "Captain", "First Officer" });
+        _side.Items.AddRange(new object[] { "Captain", "First Officer", "Overhead" });
         _side.SelectedIndex = 0;
-        _side.SelectedIndexChanged += (_, _) => { _rmp = _side.SelectedIndex == 1 ? 2 : 1; SwitchSide(); };
+        _side.SelectedIndexChanged += (_, _) => { _rmp = _side.SelectedIndex + 1; SwitchSide(); };
         _status = new Label { Location = new Point(240, 14), Size = new Size(360, 22), Text = "Connecting…", AccessibleName = "Status" };
 
-        // The RMP screen IS the input surface (like the real touchscreen): read it with the
-        // arrows, and just TYPE the frequency / squawk digits right here — each digit is keyed
-        // into the RMP live (the box is read-only, so the digits never change its text; they go
-        // to the radio). Enter loads the standby, Backspace deletes a digit. No separate field.
+        // The RMP SCREEN — read with the arrows AND type the digits for the CURRENT page (VHF freq or SQWK).
         _display = new TextBox
         {
-            Location = new Point(12, 44), Size = new Size(584, 340),
+            Location = new Point(12, 44), Size = new Size(584, 312),
             Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
-            Font = new Font("Consolas", 11), AccessibleName = "RMP screen — type digits to enter a frequency", Text = "Loading…"
+            Font = new Font("Consolas", 11),
+            AccessibleName = "RMP screen — type the digits for the current page",
+            Text = "Loading…"
         };
-        _display.KeyPress += OnDigitKeyPress;
+        _display.KeyPress += OnDisplayKeyPress;
         _display.KeyDown += OnDisplayKeyDown;
 
-        // Page selectors, in the tab order. The FBW A380 RMP only models the VHF and Transponder
-        // (SQWK) pages — HF / TEL / NAV / MENU are not implemented on this build, so they are not
-        // offered (pressing those keys does nothing).
-        var pVhf = new Button { Text = "&VHF page", Location = new Point(12, 390), Size = new Size(130, 28), AccessibleName = "VHF page" };
+        // Page selectors (no mnemonics — Alt+V / Alt+T are handled in OnFormKeyDown so they can't steal
+        // focus onto a button). The FBW A380 RMP models only VHF + Transponder.
+        var pVhf = new Button { Text = "VHF page", Location = new Point(12, 362), Size = new Size(120, 28), AccessibleName = "VHF page" };
         pVhf.Click += (_, _) => Page("VHF", "VHF page");
-        var pSqwk = new Button { Text = "&Transponder page", Location = new Point(150, 390), Size = new Size(160, 28), AccessibleName = "Transponder page" };
+        var pSqwk = new Button { Text = "Transponder page", Location = new Point(140, 362), Size = new Size(150, 28), AccessibleName = "Transponder page" };
         pSqwk.Click += (_, _) => Page("SQWK", "Transponder page");
+        var ident = new Button { Text = "Ident", Location = new Point(300, 362), Size = new Size(80, 28), AccessibleName = "Send transponder ident" };
+        ident.Click += (_, _) => SendIdent();
 
         var help = new Label
         {
-            Location = new Point(12, 424), Size = new Size(584, 44),
-            Text = "Type the frequency / squawk digits right on the screen. Enter loads · Backspace deletes.\n" +
-                   "Ctrl+1/2/3 select radio · Alt+1/2/3 swap · Alt+V / Alt+T pages · Alt+C clear (SQWK: Alt+3 ident)."
+            Location = new Point(12, 398), Size = new Size(584, 56),
+            Text = "Alt+V VHF page · Alt+T Transponder page. Type the digits on the screen.\n" +
+                   "VHF: Enter loads · Backspace deletes · Alt+C clear · Ctrl+1/2/3 radio · Alt+1/2/3 swap.  SQWK: 4 digits 0–7 · Alt+I ident."
         };
-        var close = new Button { Text = "&Close", Location = new Point(12, 472), Size = new Size(100, 30), AccessibleName = "Close" };
+        var close = new Button { Text = "Close", Location = new Point(12, 460), Size = new Size(100, 30), AccessibleName = "Close" };
         close.Click += (_, _) => Hide();   // hide, don't dispose — keeps the scrape warm for instant reopen
 
-        Controls.AddRange(new Control[] { sideLabel, _side, _status, _display, pVhf, pSqwk, help, close });
+        Controls.AddRange(new Control[] { sideLabel, _side, _status, _display, pVhf, pSqwk, ident, help, close });
+        _display.TabIndex = 1; pVhf.TabIndex = 2; pSqwk.TabIndex = 3; ident.TabIndex = 4; close.TabIndex = 5;
     }
 
-    // Focus the screen (not the Side combo) every time the window is shown, and pause/resume
-    // the scrape with visibility so a hidden window costs nothing. Showing forces an instant
-    // refresh so the screen is current the moment it appears.
     protected override void OnVisibleChanged(EventArgs e)
     {
         base.OnVisibleChanged(e);
         if (Visible)
         {
             _disp?.SetActive(true);
+            if (_simPoll == null)
+            {
+                _simPoll = new System.Windows.Forms.Timer { Interval = 300 };
+                _simPoll.Tick += (_, _) => RenderFromSim();
+            }
+            _simPoll.Start();
+            RenderFromSim();
             ActiveControl = _display;
             _display.Focus();
             _ = InitialScrape();
         }
-        else _disp?.SetActive(false);
+        else { _disp?.SetActive(false); _simPoll?.Stop(); _refreshTimer?.Stop(); }
     }
 
-    // The window is reused across opens (Ctrl+Shift+R), so the X / Alt+F4 just HIDES it and
-    // keeps the Coherent connection alive — only a real app/aircraft teardown disposes it.
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); return; }
         base.OnFormClosing(e);
     }
 
-    // ---- keyboard: the soft keys + pages, MCDU-style -----------------------------------------
+    // ---- keyboard: page switch + VHF soft keys + ident ---------------------------------------
 
     private void OnFormKeyDown(object? sender, KeyEventArgs e)
     {
         bool alt = MSFSBlindAssist.Settings.SettingsManager.Current.MCDUUseAlternateLSKKeys;
 
-        // Line keys (LSK, left) and adjacent keys (ADK, right = swap), rows 1..3.
-        if (alt)
+        // VHF line keys / swap — only meaningful on the VHF page.
+        if (_page == "VHF")
         {
-            if (NoMods(e) && e.KeyCode >= Keys.F1 && e.KeyCode <= Keys.F3) { PressLine(e.KeyCode - Keys.F1); Handled(e); return; }
-            if (NoMods(e) && e.KeyCode >= Keys.F7 && e.KeyCode <= Keys.F9) { Swap(e.KeyCode - Keys.F7); Handled(e); return; }
-        }
-        else
-        {
-            if (e.Control && !e.Alt && e.KeyCode >= Keys.D1 && e.KeyCode <= Keys.D3) { PressLine(e.KeyCode - Keys.D1); Handled(e); return; }
-            if (e.Alt && !e.Control && e.KeyCode >= Keys.D1 && e.KeyCode <= Keys.D3) { Swap(e.KeyCode - Keys.D1); Handled(e); return; }
+            if (alt)
+            {
+                if (NoMods(e) && e.KeyCode >= Keys.F1 && e.KeyCode <= Keys.F3) { PressLine(e.KeyCode - Keys.F1); Handled(e); return; }
+                if (NoMods(e) && e.KeyCode >= Keys.F7 && e.KeyCode <= Keys.F9) { Swap(e.KeyCode - Keys.F7); Handled(e); return; }
+            }
+            else
+            {
+                if (e.Control && !e.Alt && e.KeyCode >= Keys.D1 && e.KeyCode <= Keys.D3) { PressLine(e.KeyCode - Keys.D1); Handled(e); return; }
+                if (e.Alt && !e.Control && e.KeyCode >= Keys.D1 && e.KeyCode <= Keys.D3) { Swap(e.KeyCode - Keys.D1); Handled(e); return; }
+            }
         }
 
         if (e.Alt && !e.Control)
         {
             switch (e.KeyCode)
             {
-                // Only VHF + Transponder (SQWK) pages are modelled by the FBW A380 dev build.
-                // Alt+T matches the "&Transponder page" button mnemonic (one key, no duplicate).
                 case Keys.V: Page("VHF", "VHF page"); Handled(e); return;
                 case Keys.T: Page("SQWK", "Transponder page"); Handled(e); return;
-                case Keys.C: _ = FullClear(); Handled(e); return;
-                case Keys.Home: _display.Focus(); Handled(e); return;   // jump back to the screen from a button
+                case Keys.I: SendIdent(); Handled(e); return;
+                case Keys.C: ClearEntry(); Handled(e); return;
+                case Keys.Home: ActiveControl = _display; _display.Focus(); Handled(e); return;
             }
         }
     }
@@ -164,9 +175,105 @@ public sealed class FBWA380RmpForm : Form
     {
         if (_busy) return;
         bool wasSel = _selectedRowIndex == row;
+        _selectedRowIndex = row;
         _def.SendRmpKey(_rmp, $"LSK_{row + 1}", _sim);
-        _announcer?.Announce(wasSel ? "Standby loaded" : $"Radio {row + 1}");
-        ScheduleRefresh();
+        if (wasSel) { _standbyTimer?.Stop(); AnnounceVhfEntry(force: true); _vhfEntry = ""; }   // re-press = load -> read back
+        else { _vhfEntry = ""; _announcer?.Announce($"Radio {row + 1}"); ScheduleRefresh(); }    // new radio = fresh entry
+    }
+
+    // Announce the SELECTED radio's standby as "VHF standby 1, 123.500", formatting the DIGITS the user
+    // typed (no scrape -> no autocomplete-timing race). FBW completes an entry as entered.padEnd(6,'0')
+    // shown XXX.XXX; we mirror that. If the typed digits don't form a plausible VHF frequency (e.g. the
+    // rare leading-omitted shortcut "8" = 118.000), fall back to the scrape-settle reader.
+    private void AnnounceVhfEntry(bool force)
+    {
+        int row = _selectedRowIndex;
+        string freq = FormatVhfEntry(_vhfEntry);
+        if (freq.Length == 0) { AnnounceSelectedStandby(force); return; }   // empty / shortcut -> read the live value
+        string key = $"{row}:{freq}";
+        if (force || key != _lastStandbyAnnounced)
+        {
+            _lastStandbyAnnounced = key;
+            _announcer?.AnnounceImmediate($"VHF standby {row + 1}, {freq}");
+        }
+    }
+
+    // FBW completes a VHF entry as `entered.padEnd(6,'0')` displayed as XXX.XXX. Returns "" if the result
+    // isn't a plausible 118.000–136.975 COM frequency (caller then falls back to the scrape).
+    private static string FormatVhfEntry(string digits)
+    {
+        if (string.IsNullOrEmpty(digits)) return "";
+        string d = digits.Length >= 6 ? digits.Substring(0, 6) : digits.PadRight(6, '0');
+        string f = $"{d.Substring(0, 3)}.{d.Substring(3, 3)}";
+        return double.TryParse(f, System.Globalization.NumberStyles.Float,
+                   System.Globalization.CultureInfo.InvariantCulture, out double mhz)
+               && mhz >= 118.0 && mhz <= 137.0
+            ? f : "";
+    }
+
+    // Debounce: ~350 ms after the user stops typing a VHF frequency, announce the selected radio's standby.
+    private void ScheduleStandbyAnnounce()
+    {
+        if (_standbyTimer == null)
+        {
+            _standbyTimer = new System.Windows.Forms.Timer { Interval = 350 };
+            _standbyTimer.Tick += (_, _) => { _standbyTimer!.Stop(); AnnounceVhfEntry(false); };
+        }
+        _standbyTimer.Stop(); _standbyTimer.Start();
+    }
+
+    // Scrape FRESH and announce the SELECTED radio's standby ONCE: "VHF standby 1, 121.900". Reading fresh
+    // (not a cached value) avoids the stale-cache bug; deduped per radio+value so the typing-settle and the
+    // Enter/LSK paths don't double; marshalled to the UI thread so the announce reliably speaks (the scrape
+    // continuation can resume off the UI thread, where the screen-reader announce silently fails).
+    // force = an explicit action (Enter / re-press the selected radio) — always speak, even if the
+    // typing-settle debounce already announced this same value. The debounce path passes force = false
+    // (deduped) so continuous typing speaks only once.
+    private async void AnnounceSelectedStandby(bool force = false)
+    {
+        int row = _selectedRowIndex;
+        // The FBW RMP auto-completes over a FEW FRAMES after the last keystroke, so a single scrape can
+        // catch a transient mid-entry value (e.g. 123.400 while the final is 123.450 — the bug the user
+        // hit). Poll the FRESH scrape until the standby reads the SAME complete value twice in a row
+        // (settled), capped at ~0.9 s so it can never hang.
+        string sby = "", prev = "";
+        List<string>? rows = null;
+        for (int i = 0; i < 8; i++)
+        {
+            try { rows = await _disp.ScrapeNowAsync(); } catch { }
+            sby = StandbyFromRows(rows, row);
+            if (sby.Length > 0 && sby.IndexOf('_') < 0 && sby == prev) break;   // settled on a complete value
+            prev = sby;
+            await Task.Delay(110);
+        }
+        void Finish()
+        {
+            if (sby.Length > 0 && sby.IndexOf('_') < 0)   // a complete (auto-completed) frequency
+            {
+                string key = $"{row}:{sby}";
+                if (force || key != _lastStandbyAnnounced)
+                {
+                    _lastStandbyAnnounced = key;
+                    _announcer?.AnnounceImmediate($"VHF standby {row + 1}, {sby}");
+                }
+            }
+            else if (force)
+            {
+                _announcer?.AnnounceImmediate("Standby not set");   // Enter on an empty/incomplete entry
+            }
+            Apply(rows);
+        }
+        if (InvokeRequired) { try { BeginInvoke((Action)Finish); } catch { } } else Finish();
+    }
+
+    // The SELECTED VHF row's standby frequency from a scrape row set ("" if none / not found).
+    private static string StandbyFromRows(List<string>? rows, int row)
+    {
+        if (rows == null) return "";
+        var vhf = rows.FindAll(r => r.StartsWith("VHF", StringComparison.Ordinal));
+        string? sel = vhf.Find(r => r.EndsWith(", selected", StringComparison.Ordinal));
+        if (sel == null && row >= 0 && row < vhf.Count) sel = vhf[row];
+        return sel != null ? Token(sel, "standby ") : "";
     }
 
     private void Swap(int row)
@@ -180,45 +287,104 @@ public sealed class FBWA380RmpForm : Form
     private void Page(string key, string spoken)
     {
         if (_busy) return;
-        _def.SendRmpKey(_rmp, key, _sim);
+        _page = (key == "SQWK") ? "SQWK" : "VHF";
+        _squawkEntry = ""; _vhfEntry = "";       // start each page visit with a fresh entry
+        _def.SendRmpKey(_rmp, key, _sim);         // drive the cockpit RMP to match (best-effort; scrape follows)
         _announcer?.Announce(spoken);
         ScheduleRefresh();
+        // A page switch via a button moves focus onto it; pull it back so typed digits reach the screen.
+        ActiveControl = _display;
+        _display.Focus();
+        RenderFromSim();
     }
 
-    // ---- digit entry on the screen itself: type digits, Enter = load -------------------------
+    // ---- digit entry on the screen (page-aware) ----------------------------------------------
 
-    // The display is read-only, so typing never edits its text — we intercept the keystrokes and
-    // key them straight into the RMP (digits keyed live, Enter loads the standby, Backspace
-    // deletes a digit). Arrow keys still read the screen normally.
-    private void OnDigitKeyPress(object? sender, KeyPressEventArgs e)
+    private void OnDisplayKeyPress(object? sender, KeyPressEventArgs e)
     {
-        if (e.KeyChar >= '0' && e.KeyChar <= '9')
+        if (_busy) { e.Handled = true; return; }
+        if (e.KeyChar < '0' || e.KeyChar > '9') return;
+        e.Handled = true;
+
+        if (_page == "SQWK")
         {
-            _def.SendRmpKey(_rmp, $"DIGIT_{e.KeyChar}", _sim);   // keyed live; the standby auto-completes
-            e.Handled = true;                                    // swallow so there's no error ding
-            // No per-keystroke scrape here — that stacked a Coherent round-trip on every digit and
-            // made fast typing lag. The auto-poll (RowsUpdated) refreshes the screen within one tick.
+            SquawkDigit(e.KeyChar);
+            return;
         }
+        if (_vhfEntry.Length >= 6) _vhfEntry = "";           // a 7th digit starts a fresh frequency
+        _vhfEntry += e.KeyChar;                              // remember what was typed (the readback uses this)
+        _def.SendRmpKey(_rmp, $"DIGIT_{e.KeyChar}", _sim);   // VHF: keyed live; the standby auto-completes
+        ScheduleStandbyAnnounce();   // ~350 ms after the last digit: announce "VHF standby N, freq"
     }
 
     private void OnDisplayKeyDown(object? sender, KeyEventArgs e)
     {
+        if (_busy) { Handled(e); return; }
+
         if (e.KeyCode == Keys.Enter)
         {
-            e.SuppressKeyPress = true;
-            _def.SendRmpKey(_rmp, $"LSK_{_selectedRowIndex + 1}", _sim);   // load standby (manual; no auto-swap)
-            _announcer?.Announce("Standby loaded");
-            ScheduleRefresh();
+            Handled(e);
+            if (_page == "SQWK")
+            {
+                if (_squawkEntry.Length == 4) CommitSquawk();
+                else _announcer?.AnnounceImmediate("Enter a 4 digit squawk, 0 to 7");
+                return;
+            }
+            _def.SendRmpKey(_rmp, $"LSK_{_selectedRowIndex + 1}", _sim);   // VHF: confirm/load the typed standby
+            _standbyTimer?.Stop();                                          // cancel the pending typing-settle announce
+            AnnounceVhfEntry(force: true);                                  // read back what was typed: "VHF standby N, freq"
+            _vhfEntry = "";                                                 // next digit starts a fresh entry
         }
         else if (e.KeyCode == Keys.Back)
         {
-            e.SuppressKeyPress = true;
-            _def.SendRmpKey(_rmp, "DIGIT_CLR", _sim);   // one-digit backspace in the RMP entry
+            Handled(e);
+            if (_page == "SQWK")
+            {
+                if (_squawkEntry.Length > 0) { _squawkEntry = _squawkEntry.Substring(0, _squawkEntry.Length - 1); RenderFromSim(); }
+                return;
+            }
+            if (_vhfEntry.Length > 0) _vhfEntry = _vhfEntry.Substring(0, _vhfEntry.Length - 1);
+            _def.SendRmpKey(_rmp, "DIGIT_CLR", _sim);   // VHF: one-digit backspace
             ScheduleRefresh();
         }
     }
 
-    // ---- held clear (full reset of a stuck entry) -------------------------------------------
+    // ---- squawk entry: type on the SQWK page, set via the reliable stock XPNDR_SET -----------
+
+    private void SquawkDigit(char c)
+    {
+        if (c < '0' || c > '7') { _announcer?.AnnounceImmediate("Squawk digits are 0 to 7"); return; }
+        if (_squawkEntry.Length >= 4) _squawkEntry = "";   // a 5th digit starts a fresh code
+        _squawkEntry += c;
+        // No per-digit echo (the screen shows "Squawk entry: 22__"); the commit announces "Squawk NNNN".
+        if (_squawkEntry.Length == 4) CommitSquawk();
+        else RenderFromSim();
+    }
+
+    private void CommitSquawk()
+    {
+        _def.SetSquawkFromForm(_squawkEntry, _sim, _announcer);   // fires XPNDR_SET + announces "Squawk 2222"
+        _squawkEntry = "";
+        RenderFromSim();
+    }
+
+    private void ClearEntry()
+    {
+        if (_page == "SQWK")
+        {
+            _squawkEntry = "";
+            _announcer?.Announce("Cleared");
+            RenderFromSim();
+            return;
+        }
+        _ = FullClear();   // VHF: held full-clear of the keypad scratchpad
+    }
+
+    private void SendIdent()
+    {
+        _def.SendTransponderIdent(_sim);
+        _announcer?.AnnounceImmediate("Ident");
+    }
 
     private async Task FullClear()
     {
@@ -226,26 +392,31 @@ public sealed class FBWA380RmpForm : Form
         _busy = true;
         try { _def.SendRmpKeyPress(_rmp, "DIGIT_CLR", _sim); await Task.Delay(1150); }
         finally { _def.SendRmpKeyRelease(_rmp, "DIGIT_CLR", _sim); _busy = false; }
+        _vhfEntry = "";
         _announcer?.Announce("Cleared");
         Apply(await _disp.ScrapeNowAsync());
     }
 
-    // ---- scrape + display -------------------------------------------------------------------
+    // ---- scrape + live region ----------------------------------------------------------------
 
     private void StartScrape()
     {
-        _haveRows = false; _firstScrape = true;
-        _lastAnnouncedStandby = ""; _lastAnnouncedMessage = "";
+        _firstScrape = true;
+        _lastAnnouncedMessage = ""; _lastStandbyAnnounced = "";
+        _message = ""; _scrapeVhfRows = new(); _vhfEntry = "";
         _disp = new CoherentDisplayClient($"A380X_RMP_{_rmp}", 300, "coherent-rmp-agent.js");
         _disp.RowsUpdated += OnRowsUpdated;
         _disp.Start();
         _ = InitialScrape();
     }
 
+    private string SideName() => _rmp == 1 ? "Captain" : _rmp == 2 ? "First Officer" : "Overhead";
+
     private void SwitchSide()
     {
         try { _disp.RowsUpdated -= OnRowsUpdated; _disp.Dispose(); } catch { }
-        _status.Text = _rmp == 1 ? "Captain — connecting…" : "First Officer — connecting…";
+        _status.Text = $"{SideName()} — connecting…";
+        _selectedRowIndex = 0;
         StartScrape();
     }
 
@@ -265,61 +436,95 @@ public sealed class FBWA380RmpForm : Form
 
     private void Apply(List<string>? rows)
     {
-        if (rows == null || rows.Count == 0)
+        // ScrapeNowAsync's continuation can resume OFF the UI thread, so Apply (and thus the live-region
+        // Announce) could run on a thread-pool thread — where the screen-reader announce silently fails
+        // AND _lastAnnouncedStandby still gets updated, so the next UI-thread poll then sees "no change"
+        // and never speaks. That was why the VHF autocomplete never announced. Marshal to the UI thread.
+        if (InvokeRequired) { try { BeginInvoke(new Action(() => Apply(rows))); } catch { } return; }
+
+        if (rows != null && rows.Count > 0)
         {
-            if (!_haveRows) _status.Text = "RMP not reachable — is the A380X loaded and powered?";
+            var vhf = rows.FindAll(r => r.StartsWith("VHF", StringComparison.Ordinal));
+            if (vhf.Count > 0) _scrapeVhfRows = vhf;
+
+            // Sync our selected-row tracking to the cockpit ONLY on the first scrape (to initialize). After
+            // that the user's Ctrl+1/2/3 is authoritative. A per-poll sync RACED the LSK-select registration
+            // lag: a poll firing before LSK_2/LSK_3 registered would see VHF1 still selected and reset a
+            // fresh VHF2/3 selection back to row 0 — that's the "says VHF standby 1 and won't swap" bug.
+            if (_firstScrape)
+                for (int k = 0; k < vhf.Count; k++)
+                    if (vhf[k].EndsWith(", selected", StringComparison.Ordinal)) { _selectedRowIndex = k; break; }
+
+            var msgRow = rows.Find(r => r.StartsWith("Message: ", StringComparison.Ordinal)) ?? "";
+            _message = msgRow.Length > 0 ? msgRow.Substring("Message: ".Length) : "";
+
+            AnnounceLive();
+        }
+        RenderFromSim();
+    }
+
+    // Live region: speak any NEW RMP message + the selected radio's COMPLETE standby on change.
+    // Announced DIRECTLY (no debounce timer — the old timer was reset by every 300 ms poll, so it
+    // never ticked; that was why the autocomplete never spoke).
+    private void AnnounceLive()
+    {
+        if (_firstScrape)
+        {
+            _firstScrape = false;
+            _lastAnnouncedMessage = _message;
             return;
         }
-        _haveRows = true;
-        _status.Text = _rmp == 1 ? "Live — Captain" : "Live — First Officer";
 
-        // Render the RMP as plain text (the touchscreen IS text), preserving the read caret.
-        string text = string.Join("\r\n", rows);
+        if (_message != _lastAnnouncedMessage)
+        {
+            _lastAnnouncedMessage = _message;
+            if (_message.Length > 0) _announcer?.Announce(_message);
+        }
+        // The STANDBY is intentionally NOT announced per keystroke (that was chatty autocomplete noise);
+        // the loaded standby is announced once on Enter / LSK by LoadStandby().
+    }
+
+    // Build the read-out: VHF rows (scrape) + squawk/transponder line (reliable simvars) + the live
+    // squawk-entry feedback when typing on the SQWK page + message. Caret-preserving.
+    private void RenderFromSim()
+    {
+        if (_sim == null || !_sim.IsConnected) return;
+        _status.Text = $"Live — {SideName()} — {(_page == "SQWK" ? "Transponder" : "VHF")} page";
+        var sb = new System.Text.StringBuilder();
+        if (_scrapeVhfRows.Count > 0)
+        {
+            foreach (var r in _scrapeVhfRows) sb.AppendLine(r);
+        }
+        else
+        {
+            for (int i = 1; i <= 3; i++)
+            {
+                double act = _sim.GetCachedVariableValue($"COM_ACTIVE_{i}") ?? 0;
+                bool tx = (_sim.GetCachedVariableValue($"A380X_RMP_{_rmp}_VHF_TX_{i}") ?? 0) > 0.5;
+                string line = $"VHF {i}: active {act:0.000}";
+                if (tx) line += ", transmit";
+                if (i - 1 == _selectedRowIndex) line += ", selected";
+                sb.AppendLine(line);
+            }
+        }
+        int bcd = (int)Math.Round(_sim.GetCachedVariableValue("XPNDR_CODE") ?? 0);
+        string sq = $"{(bcd >> 12) & 0xF}{(bcd >> 8) & 0xF}{(bcd >> 4) & 0xF}{bcd & 0xF}";
+        double xst = _sim.GetCachedVariableValue("XPNDR_STATE") ?? 0;
+        // 0 Off · 1 Standby · 2 Test · 3 Mode A · 4 Mode C · 5 Mode S (the FBW A380 reports Mode S on the
+        // ground/airborne when AUTO; earlier code mislabelled 5 as "Mode C").
+        string mode = xst >= 5 ? "Mode S" : xst >= 4 ? "Mode C" : xst >= 3 ? "Mode A" : xst >= 2 ? "Test" : xst >= 1 ? "Standby" : "Off";
+        sb.AppendLine($"Squawk: {sq}, transponder {mode}");
+        if (_page == "SQWK" && _squawkEntry.Length > 0)
+            sb.AppendLine($"Squawk entry: {_squawkEntry.PadRight(4, '_')}");
+        if (_message.Length > 0) sb.AppendLine($"Message: {_message}");
+
+        string text = sb.ToString().TrimEnd();
         if (_display.Text != text)
         {
             int caret = _display.SelectionStart;
             _display.Text = text;
             _display.SelectionStart = Math.Min(caret, _display.TextLength);
         }
-
-        // Track the selected row + its standby + the message line for the announce.
-        _selectedRowIndex = 0;
-        int tIdx = 0; string selRow = "";
-        foreach (var r in rows)
-        {
-            if (r.IndexOf(": active ", StringComparison.Ordinal) < 0) continue;
-            if (r.IndexOf(", selected", StringComparison.Ordinal) >= 0) { _selectedRowIndex = tIdx; selRow = r; }
-            tIdx++;
-        }
-        _standby = Token(selRow, "standby ");
-        var msgRow = rows.Find(r => r.StartsWith("Message: ", StringComparison.Ordinal)) ?? "";
-        _message = msgRow.Length > 0 ? msgRow.Substring("Message: ".Length) : "";
-
-        if (_firstScrape) { _lastAnnouncedStandby = _standby; _lastAnnouncedMessage = _message; _firstScrape = false; }
-        // Only (re)start the debounce when there is genuinely something NEW to announce. Calling
-        // it on every poll restarted the timer each tick — and with the 300 ms poll equal to the
-        // 300 ms debounce, any screen flicker kept resetting it so it never fired (no announcements
-        // at all). Now the timer fires 300 ms after the LAST real standby/message change.
-        else if (_standby != _lastAnnouncedStandby || _message != _lastAnnouncedMessage) ScheduleAnnounce();
-    }
-
-    // Debounced announce (mirrors the MCDU scratchpad): once the dust settles, speak the
-    // selected radio's standby if it changed, and any new RMP message (e.g. FREQ NOT VALID).
-    private void ScheduleAnnounce()
-    {
-        if (_announceTimer == null)
-        {
-            _announceTimer = new System.Windows.Forms.Timer { Interval = 300 };
-            _announceTimer.Tick += (_, _) =>
-            {
-                _announceTimer!.Stop();
-                if (_message.Length > 0 && _message != _lastAnnouncedMessage)
-                { _lastAnnouncedMessage = _message; _announcer?.Announce(_message); }
-                if (_standby.Length > 0 && _standby != _lastAnnouncedStandby)
-                { _lastAnnouncedStandby = _standby; _announcer?.Announce($"Standby {_standby}"); }
-            };
-        }
-        _announceTimer.Stop(); _announceTimer.Start();
     }
 
     private static string Token(string row, string after)
@@ -340,7 +545,8 @@ public sealed class FBWA380RmpForm : Form
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         try { _refreshTimer?.Stop(); _refreshTimer?.Dispose(); } catch { }
-        try { _announceTimer?.Stop(); _announceTimer?.Dispose(); } catch { }
+        try { _standbyTimer?.Stop(); _standbyTimer?.Dispose(); } catch { }
+        try { _simPoll?.Stop(); _simPoll?.Dispose(); } catch { }
         try { _disp.RowsUpdated -= OnRowsUpdated; _disp.Dispose(); } catch { }
         base.OnFormClosed(e);
     }

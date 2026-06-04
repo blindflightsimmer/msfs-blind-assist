@@ -516,6 +516,25 @@
       if (A.hasClassToken(sibs[i], "cursor-pointer") &&
           A.hasClassToken(sibs[i], "bg-opacity-0")) return true;                    // (B)
     }
+    // (C) FBW SelectGroup option (boarding/refuel rate Instant/Fast/Real, etc.):
+    // EACH option may be wrapped in its own TooltipWrapper <div> (so it can be
+    // disabled-with-tooltip), so the SELECTED option's only sibling is its tooltip,
+    // not the other options — the immediate-sibling checks above then miss it. The
+    // options live together in the SelectGroup container (class "divide-x"). If an
+    // ancestor is such a group AND holds ANOTHER cursor-pointer option, n is a
+    // selected segment. (A standalone action button has no divide-x group, so this
+    // stays specific.)
+    var g = p, up = 0;
+    while (g && up < 4) {
+      if (A.hasClassToken(g, "divide-x")) {
+        var opts = g.getElementsByTagName("*");
+        for (var o = 0; o < opts.length; o++) {
+          if (opts[o] !== n && !opts[o].contains(n) && !n.contains(opts[o]) &&
+              A.hasClassToken(opts[o], "cursor-pointer")) return true;
+        }
+      }
+      g = g.parentElement; up++;
+    }
     return false;
   };
 
@@ -553,6 +572,68 @@
   // title, so the two always agree.
   A.isActiveTab = function (n) {
     return A.hasClassToken(n, "bg-theme-accent");
+  };
+
+  // Precise door identity from the tile's click handler, MATCHING MSFSBA's own door
+  // names (its `_doorDefs` table — which is also what the read-only door-state
+  // announcements speak). FBW labels several distinct doors with the SAME tile text
+  // ("Door Fwd"/"Door Aft"), and its flyPad enum DIGIT is unreliable — e.g. the A380
+  // `Main4Right` controls INTERACTIVE POINT OPEN:9, which the FBW MODEL itself names
+  // "M5R" and the EWD calls "MAIN 5R", i.e. MSFSBA's "Main Door 5 Right" — NOT "Main 4".
+  // So we don't trust FBW's digit: we parse the enum NAME from the handler comment
+  // (`() => handleButtonClick(N /* Main4Right */)`) and look it up in a fixed map to the
+  // app's authoritative name, keeping the flyPad label consistent with the announcement.
+  // GUARDED: an unknown/renamed enum, a minified build (no comment), or a Cargo handler
+  // all return "" so the caller falls back to the column-based Left/Right — never a
+  // wrong label. Keep this map in sync with FlyByWire{A320,A380}Definition._doorDefs.
+  A.DOOR_NAMES = {
+    // A320 (FBW enum -> INTERACTIVE POINT -> MSFSBA name): pt 0/1/2/3
+    cabinleftdoor: "Forward Left Door", cabinrightdoor: "Forward Right Door",
+    aftleftdoor: "Aft Left Door", aftrightdoor: "Aft Right Door",
+    // A380: Main1Left=pt0, Main2Left=pt2, Main4Right=pt9 (the model's M5R), Upper1Left=pt10
+    main1left: "Main Door 1 Left", main2left: "Main Door 2 Left",
+    main4right: "Main Door 5 Right", upper1left: "Upper Door 1 Left"
+  };
+  A.doorIdentity = function (n) {
+    function srcsOf(el) {
+      var out = [];
+      try { if (typeof el.onclick === "function") out.push("" + el.onclick); } catch (e) {}
+      try {
+        var ks = Object.keys(el);
+        for (var k = 0; k < ks.length; k++) {
+          if (ks[k].indexOf("__reactProps") === 0) {
+            var p = el[ks[k]];
+            if (p && typeof p.onClick === "function") out.push("" + p.onClick);
+          }
+        }
+      } catch (e2) {}
+      return out;
+    }
+    var srcs = [], cur = n, g = 0;
+    while (cur && g < 4) { srcs = srcs.concat(srcsOf(cur)); cur = cur.parentElement; g++; }
+    // The React handler (which carries the enum-name comment) may sit on the stamped
+    // node, an ancestor, OR an inner descendant — the agent doesn't always stamp the
+    // exact clickable div (e.g. the A380's first forward door stamps an outer wrapper
+    // whose DOM onclick has no comment, while a child holds the React onClick). Scan
+    // the tile subtree too. Each door tile is its own small subtree, so this can't pick
+    // up a neighbouring door's handler.
+    try { var kids = n.getElementsByTagName("*"); for (var d = 0; d < kids.length && d < 50; d++) srcs = srcs.concat(srcsOf(kids[d])); } catch (e3) {}
+    for (var i = 0; i < srcs.length; i++) {
+      var m = /\/\*\s*([A-Za-z0-9]+)\s*\*\//.exec(srcs[i]);
+      if (m) {
+        var nm = A.DOOR_NAMES[m[1].toLowerCase()];
+        if (nm) { try { n.setAttribute("data-fbw-door", nm); } catch (e4) {} return nm; }
+      }
+    }
+    // The handler (and its enum comment) is REMOVED when the door button is disabled
+    // — FBW sets onClick=undefined while an attached service (jet bridge, stairs)
+    // controls that door, so the identity is state-dependent. We stamped the resolved
+    // name on the node the first time it WAS parseable (door inactive); reuse that
+    // cache so the label stays stable across the door's state changes. The cache is
+    // NOT cleared by the per-scrape stale sweep, and the door tile's DOM node persists
+    // across React re-renders, so it survives.
+    try { var cached = n.getAttribute("data-fbw-door"); if (cached) return cached; } catch (e5) {}
+    return "";
   };
 
   // Read-only ground-equipment status indicator (Wheel Chocks / Safety Cones).
@@ -803,7 +884,11 @@
       if (it.navRail) { it._gband = 1e7; continue; }
       if (it._groundSub) { it._gband = 100; continue; }   // sub-tab strip, grouped
       if (it.top < 50) { it._gband = 0; continue; }        // global EFB status bar (top)
-      it._gband = 200;                                     // all service tiles + chocks/cones
+      // Group the door service tiles together (user request) right after the sub-tab
+      // strip, ahead of the other services. Only the Services page has door buttons
+      // (Payload/Fuel builder rows aren't buttons named "door").
+      if (it.kind === "button" && /door/i.test(it.text || "")) { it._gband = 150; continue; }
+      it._gband = 200;                                     // all other service tiles + chocks/cones
     }
     // Within the service band keep the existing column→row order so the left
     // column's tiles read fully, then the right column's — contiguous, no strip.
@@ -991,6 +1076,20 @@
       }
       field(n, unit ? (nm + " (" + unit + ")") : nm);
     }
+
+    // Boarding time: FBW renders the duration as a parenthetical CHILD of the label
+    // (<div>Boarding Time<span>(11:00 minutes)</span></div>), so the generic pass
+    // captures only "Boarding Time" (directText) and the parenthetical-skip rule
+    // drops the time. Emit the FULL text (space before the paren) and own it.
+    var btAll = root.getElementsByTagName("*");
+    for (var bt = 0; bt < btAll.length; bt++) {
+      var bn = btAll[bt];
+      if (!/^boarding time/i.test(A.directText(bn))) continue;
+      if (A.insideGroundRegion(bn)) continue;
+      textline(clean(bn.textContent).replace(/\s*\(/, " ("));
+      A.markOwned(bn);
+      break;
+    }
     return out;
   };
 
@@ -1110,7 +1209,66 @@
         if (fsibs[fx] !== fuelInput && A.unitToken(clean(fsibs[fx].textContent))) A.markOwned(fsibs[fx]);
       }
     }
+
+    // Suppress the redundant "Refuel Time" heading: it labels the Instant/Fast/Real
+    // rate selector but reads as a second, oddly-placed time line (after "Start
+    // refueling") when the actual estimated duration already shows above. The rate
+    // options are self-evident on the Fuel page — matches the Payload boarding flow,
+    // which has no separate rate heading.
+    var rtAll = root.getElementsByTagName("*");
+    for (var rt = 0; rt < rtAll.length; rt++) {
+      if (/^h[1-6]$/i.test(rtAll[rt].tagName) && /^refuel time$/i.test(clean(rtAll[rt].textContent))) {
+        A.markOwned(rtAll[rt]); break;
+      }
+    }
     return out;
+  };
+
+  // Navigraph / LIDO / FAA CHART LIST rows are clickable container <div>s (they carry a
+  // React AND a DOM onClick) whose visible text lives in child spans (chart name + a small
+  // index-code chip). The generic leaf-only pass therefore emitted the name/code as plain
+  // TEXT and never marked the row clickable — a blind pilot could READ the chart names but
+  // not SELECT one (the accessibility bug). This builder finds each chart row (a clickable
+  // div containing a ".bg-theme-secondary" index-code chip), owns its subtree, and emits ONE
+  // clickable line "Name, code" stamped for clickElement. Shared with the A32NX. (The chart
+  // IMAGE itself stays inaccessible — that's the separate AI-reader idea.)
+  A.buildChartLines = function (root, idxRef) {
+    var onCharts = false, hs = root.querySelectorAll("h1,h2");
+    for (var h = 0; h < hs.length; h++) {
+      if (/navigation\s*&\s*charts/i.test(clean(hs[h].textContent))) { onCharts = true; break; }
+    }
+    if (!onCharts) return null;
+    var divs = root.getElementsByTagName("div"), rows = [];
+    for (var i = 0; i < divs.length; i++) {
+      var d = divs[i];
+      if (!A.isVisible(d)) continue;
+      if (!(typeof d.onclick === "function" || A.hasReactClick(d))) continue;
+      if (!d.querySelector(".bg-theme-secondary")) continue;   // the chart index-code chip
+      rows.push(d);
+    }
+    if (!rows.length) return null;
+    var out = [];
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r], nested = false;
+      for (var q = 0; q < rows.length; q++) { if (q !== r && rows[q].contains(row)) { nested = true; break; } }
+      if (nested) continue;
+      // Join the row's leaf text pieces (chart name + index-code chip) with ", " so the
+      // name and code don't run together ("AIRPORT BRIEFING (GEN), 10-1P").
+      var pieces = [], leaves = row.getElementsByTagName("*");
+      for (var z = 0; z < leaves.length; z++) {
+        if (leaves[z].children.length) continue;     // leaf only
+        var tt = clean(leaves[z].textContent);
+        if (tt && pieces.indexOf(tt) < 0) pieces.push(tt);
+      }
+      var label = pieces.length ? pieces.join(", ") : clean(row.textContent);
+      if (!label) continue;
+      A.markOwned(row);
+      var ix = idxRef.v++; row.setAttribute("data-fbw-efb-idx", String(ix));
+      out.push({ idx: ix, kind: "link", tag: "div", role: "", text: label, value: "",
+                 top: 200 + out.length * 22, left: 0, _axis: 0, navRail: false,
+                 controlType: "", clickable: true, level: 0, live: "", disabled: false, options: [] });
+    }
+    return out.length ? out : null;
   };
 
   A.enumerate = function (root) {
@@ -1151,7 +1309,7 @@
     // below skip those subtrees but still surface the nav rail, sub-tabs, and the
     // boarding/refuel buttons (which sit OUTSIDE the owned subtrees).
     var idxRef = { v: idx };
-    var groundItems = A.buildPayloadLines(root, idxRef) || A.buildFuelLines(root, idxRef);
+    var groundItems = A.buildPayloadLines(root, idxRef) || A.buildFuelLines(root, idxRef) || A.buildChartLines(root, idxRef);
     if (groundItems) { for (var gi = 0; gi < groundItems.length; gi++) items.push(groundItems[gi]); idx = idxRef.v; }
 
     for (var i = 0; i < all.length && idx <= 400; i++) {
@@ -1179,12 +1337,38 @@
       var ctype = A.controlType(kind, n);
       var clickable = A.isClickable(kind);
 
+      var r = n.getBoundingClientRect();
+      var topRel = r.top - rootRect.top, leftRel = r.left - rootRect.left;
+      // The left nav rail (page links in the far-left column) is grouped at the
+      // END so it stops interleaving with the page content row-by-row.
+      var navRail = (kind === "link" && leftRel < 100 && topRel > 40);
+      // Ground page sub-tab (Services/Fuel/Payload/Pushback): a link whose href is
+      // "/ground/<x>". Tagged so orderGroundServices can group the tab strip apart
+      // from the service tiles (the two-column read order otherwise drops the strip
+      // between the left- and right-column service items).
+      var hrefAttr = (n.getAttribute && n.getAttribute("href")) || "";
+      var groundSub = (kind === "link" && /^\/ground\//.test(hrefAttr));
+
       // Mark the selected option of a segmented setting control (e.g. the chosen
       // "Instant / Fast / Real", throttle axis, or calibration detent). Only a
       // genuine choice control gets the marker — a primary action button shares
       // the same bg-theme-highlight background, so isSelectedSegment additionally
       // requires an unselected (bg-theme-accent) sibling to disambiguate.
       if (text && A.isSelectedSegment(n)) text = text + " (selected)";
+
+      // Distinguish the duplicated passenger door tiles: FBW labels several distinct
+      // doors "Door Fwd"/"Door Aft". Prefer the PRECISE identity parsed from the tile's
+      // click handler (Door Forward Left / Door Main 2 Left / Door Upper 1 Left / Door
+      // Aft Right) — guarded so it can only return a known door or nothing. If the
+      // handler isn't parseable (minified build), fall back to the robust column-based
+      // side: the screen LEFT column is the aircraft's LEFT side (the xr-anchored
+      // wrapper holds CabinLeftDoor / Main1Left = interactive point 0). Cargo Door is
+      // unique — left alone. Done BEFORE the (active)/(called) suffix so the focus-
+      // stable key strip (which trims the trailing state marker) still works.
+      if (text && kind === "button" && /\bdoor\b/i.test(text) && !/cargo/i.test(text)) {
+        var did = A.doorIdentity(n);   // MSFSBA-matching full name, or "" -> column fallback
+        text = did ? did : text + (leftRel < rootRect.width * 0.5 ? " Left" : " Right");
+      }
 
       // Ground-service tiles: append the connected/called state (see A.serviceState).
       if (text && kind === "button") {
@@ -1206,18 +1390,6 @@
 
       var thisIdx = 0;
       if (interactive) { thisIdx = idx; n.setAttribute("data-fbw-efb-idx", String(idx)); idx++; }
-
-      var r = n.getBoundingClientRect();
-      var topRel = r.top - rootRect.top, leftRel = r.left - rootRect.left;
-      // The left nav rail (page links in the far-left column) is grouped at the
-      // END so it stops interleaving with the page content row-by-row.
-      var navRail = (kind === "link" && leftRel < 100 && topRel > 40);
-      // Ground page sub-tab (Services/Fuel/Payload/Pushback): a link whose href is
-      // "/ground/<x>". Tagged so orderGroundServices can group the tab strip apart
-      // from the service tiles (the two-column read order otherwise drops the strip
-      // between the left- and right-column service items).
-      var hrefAttr = (n.getAttribute && n.getAttribute("href")) || "";
-      var groundSub = (kind === "link" && /^\/ground\//.test(hrefAttr));
 
       // Active tab/nav indicator: mark the selected nav-rail page and the selected
       // Ground sub-tab so the reader knows where it is. Nav-rail links read

@@ -18,6 +18,80 @@ to `bin\Debug` and you'll launch a STALE `bin\x64` exe.
 
 ---
 
+## ✅ COMPLETED 2026-06-03 (A32NX parity session — implemented + verified live in-sim)
+
+- **Correctness fixes (existing A320 bugs surfaced by the audit):** the 6 V-speed readout
+  hotkeys (VLS/green-dot/S/F/VFE/VS) were firing into the FUEL/W&B dispatch (request-ids 340-345
+  collided with fuel) — fixed to 330/331/332/335/336/337; VFE re-sourced to the plain
+  `A32NX_SPEEDS_VFEN` (the FAC word is an un-decodable ARINC word via the temp-def path). ND
+  cross-track `/1852` (read NM as metres → always "on track") fixed. `ReadAltimeter` now reads STD
+  + the baro word from the live cache (recurring-theme fix). The PFD/ISIS "indicated airspeed" box
+  field was re-aliased to a non-special key (`PFD_IAS`) so panel-focus stops re-firing the
+  universal airspeed announce. (The recurring-theme sweep otherwise found the A320 already correct
+  — flaps/gear were fixed earlier; OnRequest + ExcludeFromBatch + dedicated-request-id readouts are safe.)
+- **Safety/awareness auto-announces (G4):** GPWS aural callouts (`A32NX_GPWS_AURAL_OUTPUT`, 12-value
+  enum source-verified), stall (`A32NX_AUDIO_STALL_WARNING`), AP-disconnect cavalry charge
+  (`A32NX_FWC_CAVALRY_CHARGE`), TCAS computed mode + fault. FMA speed-protection / mode-reversion are
+  **A380-only** (verified read 0 / PFD-local on the A32NX) — NOT ported.
+- **PFD/ND/ISIS display fields (B, G3, G3b, G7-autoland):** managed/preselect speed+Mach, selected
+  V/S, expedite, FD 1/2, the weight/config speeds from `A32NX_SPEEDS_*` (G3b), FAC alpha-protection
+  speeds (ARINC), transition level/alt, SAT/TAT, FCU-selected ALT/HDG (`AUTOPILOT ALTITUDE LOCK VAR:3`
+  verified), autoland capability (`A32NX_FMGC_1_DISCRETE_WORD_4` bits 23/24/25 — **NOT** FCDC), ND
+  GS/TAS/wind/heading-ref + tuned VOR/DME/ADF freqs.
+- **Controls (C, G5, G7-slider):** rudder-trim LEFT/RIGHT nudge buttons + nosewheel/tiller readouts;
+  oxygen-timer-reset / APU-auto-exit-test / emer-gen-test / lighting-preset load+save buttons;
+  speed-brake fine slider (SPOILERS_SET 0-16383). Cockpit sunshades/seats/armrests/sliding-windows
+  are **NOT MODELLED** on the A32NX (Agent 5 source-verified) — SKIP.
+- **Doors / ground / preset (C):** doors → READ-ONLY auto-announced status (passenger =
+  `INTERACTIVE POINT OPEN:0/1/2/3` SimVar, cargo = `A32NX_{FWD,AFT}_DOOR_CARGO_LOCKED` LVar inverted
+  — the old `:4/:5` cargo mapping was wrong); Ground Services panels REMOVED (flyPad-only, matching
+  A380 d48b275) keeping a `JETWAY MOVING` auto-announce; aircraft-preset loading-progress
+  auto-announce (`A32NX_AIRCRAFT_PRESET_LOAD_PROGRESS`, must be IsAnnounced=true to be monitored);
+  standalone slides-armed readout.
+
+- **SD-page readouts (G1) + 3 active-source correctness fixes (G6):** FUEL per-tank quantities /
+  pumps / valves, ELEC contactors / battery charge-direction / TR / IDG temp / galley-shed, HYD
+  reservoir-overheat + e-pump-overheat + fire-valves, APU N2 / bleed pressure / master+avail, WHEEL
+  gear-position (`A32NX_GEAR_{CENTER,LEFT,RIGHT}_POSITION` — confirmed exist) + anti-skid, ENG
+  starter-valves, DOOR crew-oxygen. Correctness: COND active-ACSC, PRESS active-CPC (discrete bit 11),
+  FCTL active-FAC source selection (redundant-controller pick at row-build time via a cache param).
+  The SD auto-register loop was **hardened** (a SPACE-named var → Type=SimVar, NOT the L:var path —
+  the documented crash; colon-indexed FBW L:vars stay LVar). EHA buses = SKIP (none on the A320). A
+  global NaN guard renders non-existent vars (e.g. ESS-TR current) as "--".
+- **Decoded Upper E/WD (G2):** SD page 0 now DECODES the engine row from SimVars (thrust rating +
+  single thrust-limit number — the A320 has no per-engine THR% gauge — N1 / N1-command / EGT / N2 /
+  FF / engine-state per engine, reversers, IDLE memo) instead of scraping the schematic ("XX XX")
+  ENGINE row, plus the live ECAM memo lines. Memos read via a new `SimConnectManager.GetEcamLineRaw`
+  accessor: the memo CODE vars are decoded into strings and the batch handler `continue`s past the
+  numeric cache, so `GetCachedVariableValue` returns null for them — the accessor exposes the decoded
+  text. BOTH the Alt+E pop-out (`BuildEwdWindowTextAsync`, + FOB) and the SD page-0 box use this
+  decode; the Coherent scrape was REMOVED entirely from the A320 E/WD (the old `ReadEwdAloud` + the
+  `_ewdScrapeClient` are gone) — a text placeholder shows when nothing decodes. The A320 (older FBW)
+  publishes all EWD content as `Ewd_LOWER` codes so no scrape is needed; the A380 keeps its always-on
+  scrape only for its EventBus-only abnormal procedures.
+- **SD page-combo announce fix (UI):** the SD-panel 3 s auto-refresh updated the status box (and
+  re-requested the page var) while the page-selector combo was focused, firing an MSAA event that
+  stepped on NVDA's page announcement. The auto-refresh now also skips while a selector combo is
+  focused, and the box refreshes on focus instead — so arrowing the combo announces cleanly. (The
+  residual fast-arrow cutoff is normal screen-reader self-interruption, not an app bug.)
+
+- **Fire-test aural-cancel (C):** turning a fire / cargo-smoke test Off in the Fire panel now pulses
+  `PUSH_AUTOPILOT_MASTERWARN_L` (the A320 no-extra-A spelling its `CLEAR_MASTER_WARNING` uses; the A380
+  uses MASTERAWARN) to silence the CRC. Live-verified.
+- **Squawk read-back (D):** `XPNDR_CODE` (= stock `TRANSPONDER CODE:1`, BCO16) decoded to the 4-digit
+  squawk in the Transponder status box (distinct from the special `SQUAWK_CODE` key). Decode verified
+  live (8192 → "2000").
+- **SimConnect-ceiling (A):** verified live — ~454 defs (429 individual + 236 batch-covered), capped=0,
+  FULLY CONNECTED; ~546 of headroom under the 1000 ceiling.
+- **PRESS overhead (B):** confirmed already correct — the A320 reads cabin pressurization from the CPC
+  ARINC words (the plain names don't exist), and the Tier-6 active-CPC fix picks the right controller.
+
+**STILL OPEN:** RMP scraped-window (A — assessed NOT worth porting; the A32NX RMP is a different
+instrument — bare-SVG seven-segment DOM, knob-only entry — so the A380's scraped-window approach
+doesn't transfer). This is the single deliberate skip; the parity pass is otherwise complete.
+
+---
+
 ## A. Connection-safety / shared
 
 - [x] **Landing-rate + landing-G output hotkeys — ALREADY shared, work on the A32NX now.**
