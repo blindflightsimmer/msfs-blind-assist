@@ -302,7 +302,9 @@
       // element text is just the field NAME; the selected value sits in the summary
       // grid directly under the matching header. Fold it in so the combo announces
       // "RWY, 30R" instead of a bare "RWY" (nothing appended when none is set).
-      var dlbl = clean(n.textContent);
+      // spacedText so multi-span button labels keep word breaks (D-ATIS function
+      // selector "UPDATE OR PRINT", not "UPDATEOR PRINT").
+      var dlbl = A.spacedText(n) || clean(n.textContent);
       var dval = A.comboSelectedValue(dlbl, n);
       return dval ? (dlbl + ", " + dval) : (dlbl || "(choice)");
     }
@@ -668,10 +670,12 @@
         if (ut.indexOf("°") >= 0) track = ut;
         else if (/^\d+$/.test(ut)) dist = ut;
       }
-      // altitude constraint cell ("+500" / "-5000"); ignore dash placeholders
+      // altitude constraint cell ("+500" / "-5000" / "5000" / "FL100"); ignore dash
+      // placeholders AND the bare "*" managed-constraint marker (which produced the
+      // junk "at * feet"). Require a digit so only real numeric constraints decode.
       var con = "";
       var cons = L.querySelectorAll('[class*="fpln-leg-constraint"]');
-      for (var c = 0; c < cons.length; c++) { var ct = clean(cons[c].textContent); if (!isDash(ct)) con = ct; }
+      for (var c = 0; c < cons.length; c++) { var ct = clean(cons[c].textContent); if (!isDash(ct) && /\d/.test(ct)) con = ct; }
       var lr = L.getBoundingClientRect();
       // ETA in the lower row's leftmost cell — only meaningful once airborne
       var eta = cellText(L, ".mfd-fms-fpln-leg-lower-row");
@@ -799,6 +803,11 @@
     for (i = 0; i < all.length; i++) {
       var t = clean(A.directText(all[i]));
       if (!t || t === label) continue;
+      // A dropdown SELECTION is short (a runway, ident, mode). Never treat a long
+      // free-text block as a selected value — esp. the D-ATIS report sitting directly
+      // below the per-station "UPDATE OR PRINT" button (.mfd-atccom-datis-block-msgarea).
+      if (t.length > 40) continue;
+      if (A.ancestorWithClass(all[i], "mfd-atccom-datis-block-msgarea")) continue;
       var rr = all[i].getBoundingClientRect();
       if (!(rr.width > 0 && rr.height > 0)) continue;
       var g = rr.top - hdr.bottom;
@@ -943,6 +952,23 @@
     // Drop labels that were folded into an input line (avoid a dangling copy).
     items = items.filter(function (it) { return !it.consumed; });
 
+    // VERT REV → STEP ALTs sub-page: the two editable fields are just "WPT" and "ALT",
+    // which out of context don't say what they do. On THIS sub-page only (active STEP
+    // ALTs subtab) clarify them to "Step waypoint" / "Step altitude" — the waypoint
+    // where the step climb/descent occurs and its target altitude (both must be set to
+    // create a step). Scoped so the generic WPT/ALT fields elsewhere are untouched.
+    var stepAltsActive = false;
+    for (var sa = 0; sa < items.length; sa++) {
+      if (items[sa].kind === "subtab" && /STEP ALTs/i.test(items[sa].text) && /active/i.test(items[sa].text)) { stepAltsActive = true; break; }
+    }
+    if (stepAltsActive) {
+      for (var si = 0; si < items.length; si++) {
+        if (items[si].kind !== "input") continue;
+        if (/^WPT\s*:/.test(items[si].text)) items[si].text = items[si].text.replace(/^WPT\s*:/, "Step waypoint:");
+        else if (/^ALT\s*:/.test(items[si].text)) items[si].text = items[si].text.replace(/^ALT\s*:/, "Step altitude:");
+      }
+    }
+
     // reading order: rows top→bottom (rounded to a tolerance), then left→right.
     items.sort(function (a, b) {
       var dy = Math.round(a.top / A.ROW_Y_TOLERANCE_PX) - Math.round(b.top / A.ROW_Y_TOLERANCE_PX);
@@ -999,6 +1025,8 @@
           else if (curRealLabel) { prev.text = prev.text + ", " + cur.text; prev._afterLabel = true; }
           else if (prev._afterLabel) { prev.text = prev.text + ": " + cur.text; prev._afterLabel = false; }
           else if (isUnitCell(cur.text)) { prev.text = prev.text + " " + cur.text; }
+          // a LEADING "FL" unit binds its flight-level number ("FL 390", not "FL, 390").
+          else if (/\bFL$/.test(prev.text) && /^[\d-]/.test(cur.text)) { prev.text = prev.text + " " + cur.text; }
           else { prev.text = prev.text + ", " + cur.text; }
           if (cur.right > prev.right) prev.right = cur.right;
           if (cur.bot > prev.bot) prev.bot = cur.bot;
@@ -1011,6 +1039,28 @@
       mergedLines.push(cur);
     }
     items = mergedLines;
+
+    // Re-attach an orphaned bare-UNIT line (just "°" / "KT" / "FT" / …) to the value
+    // line directly above it. The Y-row bucketing (ROW_Y_TOLERANCE_PX) can split a value
+    // from its trailing unit when the two sit a pixel either side of a rounding boundary
+    // (NAVAIDS SELECTED: "SLOPE: -3.0" at top 818 → bucket 58, its "°" at 820 → bucket 59),
+    // leaving the unit stranded on its own line. Fold it back so it reads "SLOPE: -3.0 °".
+    var attached = [];
+    for (var ai = 0; ai < items.length; ai++) {
+      var ln = items[ai];
+      if (ln.idx === 0 && ln.kind === "text" && isUnitCell(ln.text) && attached.length > 0) {
+        var pvl = attached[attached.length - 1];
+        // only fold onto a static value line that ENDS in a number/percent (its value),
+        // never onto a label-only line or an interactive control.
+        if (pvl.idx === 0 && pvl.kind === "text" && /[\d%)]$/.test(pvl.text)) {
+          pvl.text = pvl.text + " " + ln.text;
+          if (ln.right > pvl.right) pvl.right = ln.right;
+          continue;
+        }
+      }
+      attached.push(ln);
+    }
+    items = attached;
 
     items = A.dedupeLines(items);
 
@@ -1304,6 +1354,18 @@
     if (commit) A.dispatchKey(span, "keypress", 13);
   };
 
+  // CLEAR a focused field. A bare ENTER on a just-focused field does NOT clear it —
+  // InputField.onBlur sees modifiedFieldValue===null ("Enter after no modification") and
+  // re-validates the CURRENT value, so nothing changes (this was the "Backspace doesn't
+  // clear the field" bug). The real clear is a BACKSPACE keydown (keyCode 8): handleBackspace
+  // sets the edit buffer to '' (via the canBeCleared branch, or the else slice→''), then ENTER
+  // commits the empty value → the field clears (subject to the field allowing empty). One
+  // backspace clears the WHOLE field — it's the "clear field" semantic, not char-by-char.
+  A.clearFocusedField = function (span) {
+    A.dispatchKey(span, "keydown", 8);    // BACKSPACE → modifiedFieldValue = ''
+    A.dispatchKey(span, "keypress", 13);  // ENTER → blur+validate('') → field cleared
+  };
+
   // Legacy no-op kept so older call sites don't break; the DOM path needs no
   // KCCU keyboard-enable (that SimVar.Set doesn't even stick in-page anyway).
   A.ensureKccuKeyboardOn = function () {};
@@ -1430,17 +1492,22 @@
     // its InputField is handleFocusBlurExternally, so a direct span click does NOT
     // focus it — the field only becomes editable when the DROPDOWN is opened
     // (DropdownMenu focuses the inner InputField on open). So open it first.
+    // Empty newValue = a CLEAR request (the form's Backspace/Delete on a field). A clear
+    // needs a real BACKSPACE+ENTER, not a bare ENTER (see clearFocusedField).
+    var isClear = (newValue === null || String(newValue) === "");
+
     var dd = A.ancestorWithClass(node, "mfd-dropdown-outer");
     if (dd) {
       if (!A.dropdownIsOpen(dd)) A.clickNode(dd);   // toggle open -> focuses inner field
-      A.typeIntoField(span, newValue, true);        // type + ENTER (commits, closes)
+      if (isClear) A.clearFocusedField(span);       // backspace + ENTER (clears, closes)
+      else A.typeIntoField(span, newValue, true);   // type + ENTER (commits, closes)
       return "ok";
     }
 
-    // Plain InputField: focus via the real click->focus path, then type + ENTER.
-    // Focusing clears the field's edit buffer, so no manual backspacing needed.
+    // Plain InputField: focus via the real click->focus path, then type/clear + ENTER.
     A.focusField(span, spanningDiv);
-    A.typeIntoField(span, newValue, true);
+    if (isClear) A.clearFocusedField(span);
+    else A.typeIntoField(span, newValue, true);
     return "ok";
   };
 

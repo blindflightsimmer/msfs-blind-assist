@@ -114,3 +114,57 @@ test('SURV STATUS & SWITCHING: status items stay on their own lines', () => {
   assert.doesNotMatch(j, /XPDR: XPDR OFF/, 'XPDR spuriously bound a status cell');
   assert.doesNotMatch(j, /TERR SYS 1,/, 'status items wrongly comma-merged');
 });
+
+// D-ATIS/LIST: the per-station "UPDATE OR PRINT" function selector is a .mfd-button
+// (no .mfd-dropdown-inner); it must read its own label with word spacing and must NOT
+// geometrically absorb the ATIS report sitting below it. The ATIS reads once as text.
+test('D-ATIS: function dropdown reads "UPDATE OR PRINT", ATIS not duplicated into it', () => {
+  const list = els('datis');
+  const dd = list.filter((e) => e.kind === 'dropdown');
+  assert.ok(dd.length >= 1, 'no D-ATIS function dropdown found');
+  for (const e of dd) {
+    assert.strictEqual(e.text, 'UPDATE OR PRINT', `dropdown text wrong: "${e.text}"`);
+    assert.doesNotMatch(e.text, /ATIS INFO|UPDATEOR/, 'dropdown absorbed the ATIS / lost spacing');
+  }
+  // the ATIS report still reads as its own (text) line
+  assert.ok(list.some((e) => e.kind === 'text' && /ATIS INFO K/.test(e.text)), 'ATIS report line missing');
+  assertSelectable('datis');
+});
+
+// F-PLN VERT REV → STEP ALTs sub-page: the two anonymous fields are clarified to
+// "Step waypoint" / "Step altitude" (only on this subtab), and a leading "FL" unit
+// binds its flight level ("FROM CRZ: FL 390", not "FL, 390"). Captured live.
+test('STEP ALTs: WPT/ALT relabeled, FL binds its level, fields selectable', () => {
+  const list = els('vertrev_stepalts');
+  const j = list.map((e) => e.text).join('\n');
+  assert.match(j, /Step waypoint: /, 'WPT not relabeled to "Step waypoint"');
+  assert.match(j, /Step altitude: /, 'ALT not relabeled to "Step altitude"');
+  assert.doesNotMatch(j, /(^|\n)WPT: /, 'bare "WPT:" still present');
+  assert.doesNotMatch(j, /(^|\n)ALT: /, 'bare "ALT:" still present');
+  assert.match(j, /FROM CRZ: FL 390/, 'leading FL not bound to its level');
+  assert.doesNotMatch(j, /FL, 390/, 'FL still comma-split from its level');
+  // the WPT combobox + ALT input keep their stamped idx (still settable)
+  assertSelectable('vertrev_stepalts');
+});
+
+// F-PLN DEPARTURE sub-page: the RWY/SID/TRANS selector dropdowns must show their
+// CURRENT selection (comboSelectedValue reads the summary cell under each header),
+// so they read "RWY, 24L" / "SID, OSHNN1" / "TRANS, BEALE", not bare names. Captured live.
+test('DEPARTURE: selector dropdowns show their selected value, stay selectable', () => {
+  const list = els('departure');
+  const dd = list.filter((e) => e.kind === 'dropdown');
+  const j = dd.map((e) => e.text).join('\n');
+  assert.match(j, /RWY, 24L/, 'RWY dropdown not showing selected runway');
+  assert.match(j, /SID, OSHNN1/, 'SID dropdown not showing selected SID');
+  assert.match(j, /TRANS, BEALE/, 'TRANS dropdown not showing selected transition');
+  assertSelectable('departure');
+});
+
+// NAVAIDS → SELECTED FOR FMS NAV: a trailing unit that the Y-row bucketing split onto
+// its own line (the glideslope "°" 2px past a rounding boundary from "-3.0") is folded
+// back onto its value, so it reads "SLOPE: -3.0 °", not "SLOPE: -3.0" + a stray "°".
+test('NAVAIDS SELECTED: orphaned trailing unit re-attaches to its value', () => {
+  const j = joined('navaids_selected');
+  assert.match(j, /SLOPE: -3\.0 °/, 'SLOPE value did not keep its degree unit');
+  assert.doesNotMatch(j, /(^|\n)°(\n|$)/, 'a bare "°" line was left stranded');
+});

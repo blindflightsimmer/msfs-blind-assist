@@ -25,11 +25,13 @@ namespace MSFSBlindAssist.Forms.FBWA380;
 ///   3. Scratchpad box  — staging buffer. Type, then go to the display and
 ///                        press Enter on the target field. Enter here sends
 ///                        to the MFD's current cursor field; Escape clears it.
-///   4. Page buttons    — INIT, F-PLN, PERF, RAD NAV, SEC FPL, ATC COM, DIR,
-///                        UP, DOWN, CLR (Alt+letter mnemonics). Each clicks the
-///                        matching on-screen MFD control, KCCU key as fallback.
+///   4. Page buttons    — INIT, F-PLN, PERF, FUEL&LOAD, RAD NAV, SEC FPL, DIR
+///                        (row 1) / ATC COM, SURV, CLR, Refresh, Units (row 2),
+///                        Alt+letter mnemonics. Each navigates to / clicks the
+///                        matching MFD page/control (KCCU key as fallback).
 ///
-/// Page navigation: Ctrl+Up = previous page, Ctrl+Down = next page.
+/// Page navigation: Ctrl+Up = previous page, Ctrl+Down = next page (also
+/// PageUp/PageDown). There are no UP/DOWN buttons — the hotkeys cover it.
 ///
 /// Everything auto-refreshes: the agent polls the MFD DOM (~350 ms) and the
 /// client pushes new state only when it changes. Title and footer-message
@@ -120,12 +122,12 @@ public class FBWA380MCDUForm : Form
     private Button _btnInit = null!;
     private Button _btnFPln = null!;
     private Button _btnPerf = null!;
+    private Button _btnFuel = null!;
     private Button _btnRadNav = null!;
     private Button _btnSecFPln = null!;
     private Button _btnAtc = null!;
+    private Button _btnSurv = null!;
     private Button _btnDir = null!;
-    private Button _btnUp = null!;
-    private Button _btnDown = null!;
     private Button _btnClr = null!;
     private Button _btnRefresh = null!;
     private Button _btnUnits = null!;
@@ -144,6 +146,11 @@ public class FBWA380MCDUForm : Form
 
     private IntPtr _previousWindow = IntPtr.Zero;
     private System.Windows.Forms.Timer _statusTimer = null!;
+    // Debounce for the "Go to MFD page" combo: a closed DropDownList fires
+    // SelectedIndexChanged on EVERY arrow keystroke, so without this, arrowing from
+    // F-PLN down to INIT would navigate through (and load + announce) every page in
+    // between. We instead wait until the selection settles, then navigate once.
+    private System.Windows.Forms.Timer? _pageNavTimer;
 
     public FBWA380MCDUForm(IMcduBridge bridgeServer, ScreenReaderAnnouncer announcer,
         FlyByWireA380Definition? aircraftDefinition = null)
@@ -266,21 +273,26 @@ public class FBWA380MCDUForm : Form
             return b;
         }
 
-        _btnInit    = MakeBtn("&INIT",    "INIT");
-        _btnFPln    = MakeBtn("&F-PLN",   "F-PLN");
-        _btnPerf    = MakeBtn("&PERF",    "PERF");
-        _btnRadNav  = MakeBtn("&RAD NAV", "RAD NAV");
-        _btnSecFPln = MakeBtn("&SEC FPL", "SEC FPL");
-        _btnAtc     = MakeBtn("&ATC COM", "ATC COM");
-        _btnDir     = MakeBtn("&DIR",     "DIR");
+        // Row 1 — FMS pages (the ACTIVE trio F-PLN/PERF/FUEL&LOAD sit together).
+        _btnInit    = MakeBtn("&INIT",         "INIT");
+        _btnFPln    = MakeBtn("&F-PLN",        "F-PLN");
+        _btnPerf    = MakeBtn("P&ERF",         "PERF");   // Alt+E
+        _btnFuel    = MakeBtn("Fuel && &Load", "Fuel and Load");   // Alt+L
+        _btnRadNav  = MakeBtn("&RAD NAV",      "RAD NAV");
+        _btnSecFPln = MakeBtn("&SEC FPL",      "SEC FPL");
+        _btnDir     = MakeBtn("&DIR",          "DIR");
         y += btnH + gap; col = 10;
 
-        _btnUp      = MakeBtn("&UP",      "UP");
-        _btnDown    = MakeBtn("DO&WN",    "DOWN");
+        // Row 2 — comms / surveillance / utility. (The UP/DOWN page-step buttons were
+        // removed; their job is on Ctrl+Up/Down and PageUp/PageDown.)
+        _btnAtc     = MakeBtn("&ATC COM", "ATC COM");
+        _btnSurv    = MakeBtn("SUR&V",    "SURV");                 // Alt+V
         _btnClr     = MakeBtn("&CLR",     "CLR");
         _btnRefresh = MakeBtn("Refres&h", "Refresh");
         // Toggle the WEIGHT unit MSFSBA reads out (kilograms / pounds).
-        _btnUnits   = MakeBtn("&Units", "Toggle weight units, kilograms or pounds");
+        // Mnemonic is Alt+N ("U&nits"): Alt+U already belongs to the UP page button,
+        // and a shared mnemonic only CYCLES focus between the two instead of activating.
+        _btnUnits   = MakeBtn("U&nits", "Toggle weight units, kilograms or pounds");
         _btnUnits.Width = 110;
         _btnUnits.Enabled = _aircraftDefinition != null;
 
@@ -320,12 +332,12 @@ public class FBWA380MCDUForm : Form
         _btnInit.Click    += (_, _) => SendNavigateById("Active",   4, "INIT");     // ACTIVE ▸ INIT
         _btnFPln.Click    += (_, _) => SendNavigateById("Active",   0, "FPLN");     // ACTIVE ▸ F-PLN
         _btnPerf.Click    += (_, _) => SendNavigateById("Active",   1, "PERF");     // ACTIVE ▸ PERF
+        _btnFuel.Click    += (_, _) => SendNavigateById("Active",   2, "");         // ACTIVE ▸ FUEL & LOAD
         _btnRadNav.Click  += (_, _) => SendNavigateById("Position", 2, "NAVAID");   // POSITION ▸ NAVAIDS
         _btnSecFPln.Click += (_, _) => SendNavigateUri("fms/sec/index");          // SEC INDEX (secondary flight plans)
         _btnAtc.Click     += (_, _) => SendNavigateUri("atccom/connect");          // ATC COM via UIService (reliable)
+        _btnSurv.Click    += (_, _) => SendNavigateUri("surv/controls");           // SURV CONTROLS (XPDR/TCAS/WXR/TAWS)
         _btnDir.Click     += (_, _) => SendNavigateById("",        -1, "DIR");      // KCCU only
-        _btnUp.Click      += (_, _) => SendCommand("key_prev_page");
-        _btnDown.Click    += (_, _) => SendCommand("key_next_page");
         _btnClr.Click     += (_, _) => PerformClear();
         _btnRefresh.Click += (_, _) => _bridgeServer.EnqueueCommand("get_mcdu_elements");
         _btnUnits.Click   += (_, _) => ToggleUnits();
@@ -341,22 +353,36 @@ public class FBWA380MCDUForm : Form
 
         _pageSelector.SelectedIndexChanged += (_, _) =>
         {
-            int i = _pageSelector.SelectedIndex;
-            if (i < 0 || i >= AllPages.Length) return;
-            var p = AllPages[i];
-            if (!string.IsNullOrEmpty(p.Uri)) SendNavigateUri(p.Uri);
-            else SendNavigateById(p.Prefix, p.Index, p.Key);
-            // No explicit announce: the screen reader already speaks the chosen
-            // combo item, and the MFD page title announces when the new page loads.
-            // Pull the new page's elements shortly after the route switches.
-            var t = new System.Windows.Forms.Timer { Interval = 450 };
-            t.Tick += (_, _) => { t.Stop(); t.Dispose(); _bridgeServer.EnqueueCommand("get_mcdu_elements"); };
-            t.Start();
+            // Debounce: reset a short timer on each change and only navigate once the
+            // user STOPS arrowing, so passing over intermediate pages doesn't load and
+            // announce each one. (A closed DropDownList fires this per arrow keystroke.)
+            _pageNavTimer ??= new System.Windows.Forms.Timer { Interval = 350 };
+            _pageNavTimer.Stop();
+            // re-point the tick handler to the CURRENT selection each time
+            _pageNavTimer.Tick -= PageNavTick;
+            _pageNavTimer.Tick += PageNavTick;
+            _pageNavTimer.Start();
         };
 
         _scratchpad.KeyDown += ScratchpadKeyDown;
         _display.KeyDown    += DisplayKeyDown;
         KeyDown             += FormKeyDown;
+    }
+
+    // Fires once the "Go to MFD page" combo selection has settled (see the debounced
+    // SelectedIndexChanged handler). Navigates to the now-selected page and refreshes.
+    private void PageNavTick(object? sender, EventArgs e)
+    {
+        _pageNavTimer?.Stop();
+        int i = _pageSelector.SelectedIndex;
+        if (i < 0 || i >= AllPages.Length) return;
+        var p = AllPages[i];
+        if (!string.IsNullOrEmpty(p.Uri)) SendNavigateUri(p.Uri);
+        else SendNavigateById(p.Prefix, p.Index, p.Key);
+        // No explicit announce: the screen reader already speaks the chosen combo item,
+        // and the MFD page title announces when the new page loads. Pull the new page's
+        // elements shortly after the route switches.
+        ScheduleRefresh();
     }
 
     private void OnBridgeStateUpdated(object? sender, EFBStateUpdateEventArgs e)
@@ -609,9 +635,24 @@ public class FBWA380MCDUForm : Form
     }
 
     /// <summary>
-    /// Airbus CLR semantics. A real pilot pressing CLR first clears the
-    /// scratchpad; once it's empty, CLR acts on the field. Mirror that:
-    ///   • scratchpad has text  → clear it, announce "Scratchpad cleared"
+    /// The MFD's on-screen "CLEAR INFO" button (clears the footer info/error MESSAGE
+    /// line) on the current page, or 0 if none is shown. This is DISTINCT from clearing
+    /// a field — it dismisses the displayed message.
+    /// </summary>
+    private int FindClearInfoIndex()
+    {
+        foreach (var el in _displayedElements)
+            if (el.Index > 0 && el.Text.IndexOf("CLEAR INFO", StringComparison.OrdinalIgnoreCase) >= 0)
+                return el.Index;
+        return 0;
+    }
+
+    /// <summary>
+    /// Airbus CLR semantics. A real pilot pressing CLR clears the scratchpad, then any
+    /// displayed MESSAGE, then acts on a field. Mirror that:
+    ///   • scratchpad (our staging box) has text → clear it ("Scratchpad cleared")
+    ///   • else a footer info/error MESSAGE is shown → click the MFD "CLEAR INFO"
+    ///     button to dismiss it ("Info cleared") — answers "CLR also clears the message"
     ///   • else field selected  → clear that field on the MFD
     ///   • else                 → fire KCCU CLR (clears the MFD's own scratchpad)
     /// </summary>
@@ -622,6 +663,22 @@ public class FBWA380MCDUForm : Form
             _scratchpad.Text = "";
             _announcer.Announce("Scratchpad cleared");
             return;
+        }
+        // A displayed MFD info / error message is dismissed before acting on a field —
+        // matching real Airbus CLR (clears the scratchpad message first). _previousScratchpad
+        // holds the live footer text (footerMessage() returns "" when none), so this only
+        // fires when a message is actually up AND the page exposes a CLEAR INFO button.
+        if (!string.IsNullOrWhiteSpace(_previousScratchpad))
+        {
+            int infoIdx = FindClearInfoIndex();
+            if (infoIdx > 0)
+            {
+                _bridgeServer.EnqueueCommand("click_mcdu_element",
+                    new Dictionary<string, string> { ["index"] = infoIdx.ToString() });
+                _announcer.Announce("Info cleared");
+                ScheduleRefresh();
+                return;
+            }
         }
         int fieldIdx = SelectedElementIndex();
         if (fieldIdx > 0)
@@ -793,6 +850,8 @@ public class FBWA380MCDUForm : Form
             _bridgeServer.StateUpdated -= OnBridgeStateUpdated;
             _statusTimer?.Stop();
             _statusTimer?.Dispose();
+            _pageNavTimer?.Stop();
+            _pageNavTimer?.Dispose();
         }
         base.Dispose(disposing);
     }
