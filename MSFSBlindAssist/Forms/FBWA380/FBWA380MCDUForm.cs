@@ -129,7 +129,6 @@ public class FBWA380MCDUForm : Form
     private Button _btnSurv = null!;
     private Button _btnDir = null!;
     private Button _btnClr = null!;
-    private Button _btnRefresh = null!;
     private Button _btnUnits = null!;
 
     private List<McduElement> _elements = new();
@@ -143,6 +142,11 @@ public class FBWA380MCDUForm : Form
     private int _mcduIndex = 1;
     private bool _initialPushReceived;
     private bool _resetSelection;
+    // Signature of the lines last rendered. Used to tie the "jump to top of new page" reset to the
+    // page's CONTENT actually arriving: a stale elements push for the OLD page (which can interleave
+    // after the new page's title push set _resetSelection) renders identical lines, so it must NOT
+    // consume the pending reset — otherwise the reader lands mid-list on the wrong page.
+    private string _lastRenderedSignature = "";
 
     private IntPtr _previousWindow = IntPtr.Zero;
     private System.Windows.Forms.Timer _statusTimer = null!;
@@ -288,7 +292,8 @@ public class FBWA380MCDUForm : Form
         _btnAtc     = MakeBtn("&ATC COM", "ATC COM");
         _btnSurv    = MakeBtn("SUR&V",    "SURV");                 // Alt+V
         _btnClr     = MakeBtn("&CLR",     "CLR");
-        _btnRefresh = MakeBtn("Refres&h", "Refresh");
+        // NO Refresh button — the window auto-updates live on every MFD state change
+        // (the bridge pushes on change). F5 is the manual re-fetch (ProcessCmdKey).
         // Toggle the WEIGHT unit MSFSBA reads out (kilograms / pounds).
         // Mnemonic is Alt+N ("U&nits"): Alt+U already belongs to the UP page button,
         // and a shared mnemonic only CYCLES focus between the two instead of activating.
@@ -339,7 +344,6 @@ public class FBWA380MCDUForm : Form
         _btnSurv.Click    += (_, _) => SendNavigateUri("surv/controls");           // SURV CONTROLS (XPDR/TCAS/WXR/TAWS)
         _btnDir.Click     += (_, _) => SendNavigateById("",        -1, "DIR");      // KCCU only
         _btnClr.Click     += (_, _) => PerformClear();
-        _btnRefresh.Click += (_, _) => _bridgeServer.EnqueueCommand("get_mcdu_elements");
         _btnUnits.Click   += (_, _) => ToggleUnits();
 
         _mcduSelector.SelectedIndexChanged += (_, _) =>
@@ -385,12 +389,23 @@ public class FBWA380MCDUForm : Form
         ScheduleRefresh();
     }
 
+    // Marshal to the UI thread, tolerating the form being torn down between the IsHandleCreated
+    // check and the BeginInvoke. OnBridgeStateUpdated fires on a background receive-pool thread,
+    // so an aircraft swap / window close can destroy the handle mid-flight; an unguarded BeginInvoke
+    // would then throw on the pool thread (unobserved).
+    private void SafeBeginInvoke(Action action)
+    {
+        // ObjectDisposedException derives from InvalidOperationException, so one catch covers both.
+        try { if (IsHandleCreated) BeginInvoke(action); }
+        catch (InvalidOperationException) { }
+    }
+
     private void OnBridgeStateUpdated(object? sender, EFBStateUpdateEventArgs e)
     {
         if (e.Type == StateTypeConnected)
         {
             _bridgeConnected = true;
-            if (IsHandleCreated) BeginInvoke(UpdateStatusLabel);
+            SafeBeginInvoke(UpdateStatusLabel);
             return;
         }
         if (e.Type == StateTypeScreen)   { HandleScreenPush(e); return; }
@@ -406,7 +421,7 @@ public class FBWA380MCDUForm : Form
         // footer/scratchpad message.
         string title = e.Data.TryGetValue("title", out var t) ? (t ?? "").Trim() : "";
         string footer = e.Data.TryGetValue("scratchpad", out var s) ? (s ?? "").Trim() : "";
-        if (IsHandleCreated) BeginInvoke(() => ApplyScreenMeta(title, footer));
+        SafeBeginInvoke(() => ApplyScreenMeta(title, footer));
     }
 
     private void ApplyScreenMeta(string title, string footer)
@@ -454,7 +469,7 @@ public class FBWA380MCDUForm : Form
             }
         }
         _elements = byPos.Values.ToList();
-        if (IsHandleCreated) BeginInvoke(RefreshDisplay);
+        SafeBeginInvoke(RefreshDisplay);
     }
 
     private void UpdateStatusLabel()
@@ -519,7 +534,15 @@ public class FBWA380MCDUForm : Form
                 _display.Items[i] = lines[i];
         _display.EndUpdate();
 
-        if (_resetSelection && _display.Items.Count > 0)
+        // Only honor the page-change reset once the NEW page's content has actually arrived.
+        // A stale old-page elements push renders the same lines it already showed, so its signature
+        // is unchanged — in that case keep the reset pending instead of jumping to line 0 of the old
+        // list (the wrong-line-after-page-change bug).
+        string signature = string.Join("", lines);
+        bool contentChanged = signature != _lastRenderedSignature;
+        _lastRenderedSignature = signature;
+
+        if (_resetSelection && contentChanged && _display.Items.Count > 0)
         {
             _display.SelectedIndex = 0;
             _resetSelection = false;
@@ -588,9 +611,6 @@ public class FBWA380MCDUForm : Form
     private void SendCommand(string command) => _bridgeServer.EnqueueCommand(command);
     private void SendTypeKey(string key) =>
         _bridgeServer.EnqueueCommand("type_key", new Dictionary<string, string> { ["key"] = key });
-    private void SendNavigate(string label, string key) =>
-        _bridgeServer.EnqueueCommand("navigate",
-            new Dictionary<string, string> { ["label"] = label, ["key"] = key });
 
     /// <summary>
     /// Navigate by clicking the MFD page-selector menu item with the stable id
@@ -793,11 +813,18 @@ public class FBWA380MCDUForm : Form
             PerformClear();
             e.Handled = true; e.SuppressKeyPress = true;
         }
-        else if (e.KeyCode == Keys.F5)
+    }
+
+    // F5 = manual re-fetch, form-wide (works from any control, not just the display
+    // list). The window otherwise auto-updates live on every MFD state change.
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == Keys.F5)
         {
             _bridgeServer.EnqueueCommand("get_mcdu_elements");
-            e.Handled = true;
+            return true;
         }
+        return base.ProcessCmdKey(ref msg, keyData);
     }
 
     // Re-fetch the MFD page a short moment after a mutating action (a click, a

@@ -519,12 +519,7 @@ public sealed class FBWA380RmpForm : Form
         if (_message.Length > 0) sb.AppendLine($"Message: {_message}");
 
         string text = sb.ToString().TrimEnd();
-        if (_display.Text != text)
-        {
-            int caret = _display.SelectionStart;
-            _display.Text = text;
-            _display.SelectionStart = Math.Min(caret, _display.TextLength);
-        }
+        DisplayText.SetPreserveCaret(_display, text);
     }
 
     private static string Token(string row, string after)
@@ -539,6 +534,9 @@ public sealed class FBWA380RmpForm : Form
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         if (keyData == Keys.Escape) { Hide(); return true; }
+        // F5 = manual re-scrape (the window otherwise updates live via the 300 ms sim poll
+        // + the scrape RowsUpdated event; this forces an immediate fresh read).
+        if (keyData == Keys.F5) { _ = InitialScrape(); return true; }
         return base.ProcessCmdKey(ref msg, keyData);
     }
 

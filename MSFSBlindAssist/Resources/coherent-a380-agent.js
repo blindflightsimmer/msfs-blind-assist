@@ -346,7 +346,18 @@
       var head = (ctx ? ctx + " " : "") + (active || "(state)");
       return other ? head + ", toggle, other option " + other : head + ", toggle";
     }
-    if (kind === "surv" || kind === "survstatus") {
+    if (kind === "surv") {
+      // A SurvButton renders BOTH its labels (e.g. "OFF" and "ON"); the ACTIVE one
+      // carries class mfd-value (green), the inactive one mfd-label. Reading both
+      // ("OFF: ON") hides which is current — a blind pilot can't tell if ALT RPTG /
+      // TERR SYS / GPWS is ON or OFF. Return just the active (mfd-value) label so it
+      // reads its LIVE state ("ON" / "AUTO"). Fall back to both only when the button
+      // is disabled (no green value present).
+      var act = n.querySelector(".mfd-value");
+      if (act) { var at = clean(act.textContent); if (at) return at; }
+      return A.labelValueText(n) || "(button)";
+    }
+    if (kind === "survstatus") {
       return A.labelValueText(n) || "(button)";
     }
     var bt = A.spacedText(n);
@@ -600,16 +611,83 @@
       var hd = headerAbove({ top: rr.top - pageRect.top, left: rr.left - pageRect.left, right: rr.right - pageRect.left });
       if (hd && item.text.indexOf(hd.t + ":") !== 0) { item.text = hd.t + ": " + item.text; own(hd.el); }
     }
+
+    // ---- structural grouping (SURV CONTROLS page only) ----------------------
+    // The page lays XPDR/TCAS side-by-side and the WXR ELEVN/TILT column beside the
+    // WXR grid, so a flat top→bottom, left→right read INTERLEAVES unrelated systems
+    // (an XPDR option, a TCAS option, a bare display-range option, another XPDR
+    // option, a button …). Tag every control with its logical group
+    // (0 XPDR / 1 TCAS / 2 WXR / 3 TAWS / 4 SURV) + an in-group order; a final pass in
+    // enumerateLines re-sorts the page into contiguous, self-labelled groups. We do
+    // NOT touch geometry, so associateInputLabels (pairs SQWK with its label
+    // geometrically, runs later) and the merge/dedupe passes are unaffected.
+    if (!page.querySelector(".mfd-surv-controls-first-section")) return startIdx;  // STATUS & SWITCHING etc. → enrich only
+
+    function itemByIdx(ix) { for (var q = 0; q < items.length; q++) if (items[q].idx === ix) return items[q]; return null; }
+    function tagControls(container, grp, startOrder) {
+      if (!container) return startOrder;
+      var cs = container.querySelectorAll("[data-fbwa380-mcdu-idx]");
+      var ord = startOrder;
+      for (var ci = 0; ci < cs.length; ci++) {
+        if (!A.isVisible(cs[ci])) continue;
+        var it = itemByIdx(parseInt(cs[ci].getAttribute("data-fbwa380-mcdu-idx"), 10));
+        if (it) { it.survGroup = grp; it.survOrder = ord++; }
+      }
+      return ord;
+    }
+    function emitHeading(text, grp, refEl) {
+      var rt = refEl ? (refEl.getBoundingClientRect().top - pageRect.top) : 0;
+      // left=right=0: a zero-width point at the far left so associateInputLabels can
+      // never mistake the heading for a field's left-of-input label. perf:true so the
+      // row-merge skips it — XPDR/TCAS (and TAWS/SURV) sit side-by-side on one visual
+      // row, so without this the two headings merge into "XPDR, TCAS".
+      items.push({ top: rt, left: 0, right: 0, bot: rt, idx: 0, kind: "text", text: text,
+        value: "", disabled: false, survGroup: grp, survOrder: 0, perf: true });
+    }
+    // Own every FBW section heading; we emit our own group headings instead so each
+    // group leads with its name regardless of whether the header was consumed above.
+    var fbwHeads = page.querySelectorAll(".mfd-surv-heading");
+    for (var fh = 0; fh < fbwHeads.length; fh++) own(fbwHeads[fh]);
+
+    var xpdrSec = page.querySelector(".mfd-surv-controls-xpdr-section");
+    var tcasSec = page.querySelector(".mfd-surv-controls-tcas-section");
+    var wxrSec = page.querySelector(".mfd-surv-controls-second-section");
+    var tawsSec = page.querySelector(".mfd-surv-controls-taws-section");
+    var defCont = page.querySelector(".mfd-surv-controls-def-settings-container");
+
+    emitHeading("XPDR", 0, xpdrSec); tagControls(xpdrSec, 0, 1);
+    emitHeading("TCAS", 1, tcasSec); tagControls(tcasSec, 1, 1);
+    emitHeading("WXR", 2, wxrSec); tagControls(wxrSec, 2, 1);
+    emitHeading("TAWS", 3, tawsSec); tagControls(tawsSec, 3, 1);
+    if (defCont) {
+      var sl = defCont.querySelector(".mfd-surv-label"); if (sl) own(sl);
+      emitHeading("SURV", 4, defCont); tagControls(defCont, 4, 1);
+    }
+
+    // TCAS right-hand column (NORM / ABV / BLW) is the traffic-display vertical range
+    // and has NO on-screen header, so it read as bare "NORM"/"ABV"/"BLW" with no idea
+    // what it controls. Qualify it with a "TCAS display" context (strip any stray
+    // "TCAS:" the header pass may have prepended).
+    var tcasRight = page.querySelector(".mfd-surv-controls-tcas-right");
+    if (tcasRight) {
+      var rr2 = tcasRight.querySelectorAll("[data-fbwa380-mcdu-idx]");
+      for (var rj = 0; rj < rr2.length; rj++) {
+        var rit = itemByIdx(parseInt(rr2[rj].getAttribute("data-fbwa380-mcdu-idx"), 10));
+        if (rit) rit.text = "TCAS display: " + rit.text.replace(/^TCAS:\s*/, "");
+      }
+    }
     return startIdx;
   };
 
-  // Decode an F-PLN altitude constraint token: "+N" = at or above N feet, "-N" =
-  // at or below N feet, plain "N" = at N feet. (Speed constraints live in the
-  // speed column, handled separately, not here.)
+  // Decode an F-PLN altitude constraint token, kept terse for a screen reader:
+  // "+N" = "above N" (at or above), "-N" = "below N" (at or below), plain "N" = the
+  // bare hard altitude. The above/below marker is what distinguishes a constraint
+  // from the FMS-predicted altitude (which reads as a bare number). (Speed
+  // constraints live in the speed column, handled separately, not here.)
   A.fplnConstraint = function (c) {
-    if (c.charAt(0) === "+") return "at or above " + c.substring(1) + " feet";
-    if (c.charAt(0) === "-") return "at or below " + c.substring(1) + " feet";
-    return "at " + c + " feet";
+    if (c.charAt(0) === "+") return "above " + c.substring(1);
+    if (c.charAt(0) === "-") return "below " + c.substring(1);
+    return c;
   };
 
   // Build ONE clean line per F-PLN waypoint. The MFD draws the flight plan as a
@@ -699,17 +777,43 @@
         else if (!alt && relX >= 405 && relX < 520 && /^(FL\d{2,3}|\d{3,5})$/.test(pt)) alt = pt;
       }
 
+      // Constraint markers: the "*" the MFD draws immediately to the LEFT of a SPD or
+      // ALT prediction when that value has an entered constraint (SPDLIM, a STAR
+      // altitude window, etc.). Two FBW states (MfdFmsFpln.tsx renderAltitude/renderSpeed):
+      //   .mfd-fms-fpln-leg-constraint-respected  = magenta "*", prediction MEETS it
+      //   .mfd-fms-fpln-leg-constraint-missed     = amber  "*", prediction will MISS it
+      // A blind pilot can't hear the colour, so we keep the "*" (prepended, the on-screen
+      // left-of-value position) for the met case and ADD the word "missed" for the amber
+      // case. Column band (relX) says whether the marker belongs to SPD or ALT.
+      var spdCon = "", altCon = "";   // "" | "met" | "missed"
+      var marks = L.querySelectorAll('[class*="fpln-leg-constraint-respected"], [class*="fpln-leg-constraint-missed"]');
+      for (var st = 0; st < marks.length; st++) {
+        if (clean(marks[st].textContent) !== "*") continue;   // the marker glyph, not the value form (con)
+        var mcls = (marks[st].className && marks[st].className.toString) ? marks[st].className.toString() : "";
+        var mstate = mcls.indexOf("constraint-missed") >= 0 ? "missed" : "met";
+        var stx = marks[st].getBoundingClientRect().left - lr.left;
+        if (stx >= 300 && stx < 405) spdCon = mstate;
+        else if (stx >= 405 && stx < 520) altCon = mstate;
+      }
+
       var parts = [ident];
-      // Keep the procedure/airway name on EVERY leg (NOT deduped) — for a blind
-      // pilot it is situational awareness about which points belong to the SID /
-      // STAR / airway, exactly as the MFD prints it next to each leg.
-      if (anno) parts.push("via " + anno);
-      if (dist) parts.push(dist + " NM");
-      if (track) parts.push("track " + track);
+      // Screen-faithful order (user choice): mirror the MFD's own column layout —
+      // IDENT, airway, then the leg TRACK then DISTANCE (upper row, left→right), then
+      // the waypoint-row columns TIME, SPD, ALT. Terse fragments (no "via"/"track"/
+      // "ETA" prefixes, no "NM"/"knots"/"feet" words). The "*" constraint marker is
+      // kept (a real on-screen cue, not noise); a missed constraint also reads "missed".
+      // A leg reads "FOLET, SERFR4, 343°, 8NM, 00:15, *240kts, *8000" (met) or
+      // "… *240kts missed" (will not make the restriction).
+      if (anno) parts.push(anno);
+      if (track) parts.push(track);               // already carries the ° glyph
+      if (dist) parts.push(dist + "NM");
+      if (eta) parts.push(eta);
+      if (spd) {
+        var spdBase = /^M?\./.test(spd) ? "M" + spd.replace(/^M/, "") : spd + "kts";
+        parts.push(spdCon === "missed" ? "*" + spdBase + " missed" : spdCon === "met" ? "*" + spdBase : spdBase);
+      }
       if (con) parts.push(A.fplnConstraint(con));
-      if (spd) parts.push(/^M?\./.test(spd) ? "Mach " + spd.replace(/^M/, "") : spd + " knots");
-      if (alt) parts.push(/^FL/.test(alt) ? "flight level " + alt.substring(2) : alt + " feet");
-      if (eta) parts.push("ETA " + eta);
+      if (alt) parts.push(altCon === "missed" ? "*" + alt + " missed" : altCon === "met" ? "*" + alt : alt);
 
       // Make the waypoint actionable: its ident cell carries the lateral-revision
       // click handler, so Enter opens the revisions menu (FROM P.POS DIR TO,
@@ -1123,6 +1227,28 @@
       // any opener we never matched in the list: append (safety net)
       for (gk in groups) if (!placed[gk]) { for (var w = 0; w < groups[gk].length; w++) out.push(groups[gk][w]); placed[gk] = true; }
       items = out;
+    }
+
+    // SURV CONTROLS final ordering: the geometric pass interleaves the page's
+    // side-by-side columns, so re-sort the survGroup/survOrder-tagged items (set by
+    // buildSurvControls) into contiguous logical groups (XPDR → TCAS → WXR → TAWS →
+    // SURV). Untagged items (page title, footer) keep their slot; the whole grouped
+    // block is spliced in where the FIRST grouped item sat (right after the title).
+    // Runs last, AFTER merge/dedupe (which need geometric order), so it only reorders
+    // the finished lines — it never re-merges anything.
+    var anySurv = false;
+    for (var qg = 0; qg < items.length; qg++) { if (items[qg].survGroup != null) { anySurv = true; break; } }
+    if (anySurv) {
+      var groupedSurv = [];
+      for (var qa = 0; qa < items.length; qa++) if (items[qa].survGroup != null) groupedSurv.push(items[qa]);
+      groupedSurv.sort(function (a, b) { return (a.survGroup - b.survGroup) || (a.survOrder - b.survOrder); });
+      var reSurv = [], survDone = false;
+      for (var qb = 0; qb < items.length; qb++) {
+        if (items[qb].survGroup != null) {
+          if (!survDone) { for (var qc = 0; qc < groupedSurv.length; qc++) reSurv.push(groupedSurv[qc]); survDone = true; }
+        } else { reSurv.push(items[qb]); }
+      }
+      items = reSurv;
     }
 
     A._mcduElements = items;

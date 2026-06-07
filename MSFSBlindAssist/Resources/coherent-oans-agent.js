@@ -1,431 +1,311 @@
 // coherent-oans-agent.js
 //
-// In-page agent for the FlyByWire A380X ND OANS (Onboard Airport Navigation
-// System) CONTROL PANEL — the airport-map controls used for BTV (Brake-To-
-// Vacate) exit selection, airport/runway/exit search, LDG SHIFT, etc. Installed
-// via the Coherent GT debugger into the ND view (title "A380X_ND_1"/"_2"); NO
-// injection. The OANS control panel is built from the same MFD UI widgets as the
-// MCDU (.mfd-input-field, .mfd-dropdown, .mfd-button, .mfd-top-tab-navigator),
-// so this agent classifies those and exposes them in the SAME element shape the
-// flyPad agent uses — so CoherentNDClient + the WebView2 EFB form render it with
-// no extra mapping.
+// DATA-ONLY, ZERO-RENDER in-page agent for the FlyByWire A380X ND OANS / BTV.
+// Installed via the Coherent GT debugger into the ND view ("A380X_ND_1"); NO injection.
 //
-//   __MSFSBA_OANS.scrape()              -> JSON {ok,page,elements:[...]}
-//   __MSFSBA_OANS.clickElement(index)   -> "ok"|"missing"
-//   __MSFSBA_OANS.setValue(index,text)  -> "ok"|"missing"
-//   __MSFSBA_OANS.ping()                -> "MSFSBA_OANS_OK"
+// CRITICAL: this agent NEVER forces the ND to render the airport map. It does NOT write
+// A32NX_EFIS_L_ND_RANGE, never sets element .style.visibility, and does no DOM scrape.
+// (The earlier "ensureAirportZoom + scrape" design forced a continuous full-airport map
+// render every poll and exhausted host memory.) Everything is read from the live ND JS
+// instance objects + OANS L:vars, and written via btvUtils methods + the msfs-sdk EventBus.
 //
-// Target engine: Coherent GT (Chromium 49). ES5 ONLY.
+//   __MSFSBA_OANS.ping()                      -> "MSFSBA_OANS_OK"
+//   __MSFSBA_OANS.snapshot()                  -> JSON {ok, available, airport, fms, btv, manual, airac}
+//   __MSFSBA_OANS.armRunway(name)             -> status string
+//   __MSFSBA_OANS.armExit(name)               -> status string
+//   __MSFSBA_OANS.clearBtv()                  -> status string
+//   __MSFSBA_OANS.displayAirport(icao)        -> status string (one-shot AMDB load; user action only)
+//   __MSFSBA_OANS.setManualStopDistance(m)    -> status string (no-Navigraph manual BTV)
+//
+// Target engine: Coherent GT (Chromium 49). ES5 ONLY (var, no arrow funcs, no String.includes).
 
 (function () {
   "use strict";
   var A = {};
-  A.STAMP = "data-fbwa380-oans-idx";
 
-  function clean(s) { return (s || "").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, ""); }
-  function lower(s) { return (s || "").toString().toLowerCase(); }
-  A.cls = function (n) { return (n.className && n.className.toString) ? n.className.toString() : ""; };
+  // FeatureType enum (fbw-common amdb.ts): RunwayThreshold=2, runway centerline=4, RunwayExitLine=19.
+  A.FT_RWY_CENTERLINE = 4;
+  A.FT_RWY_THRESHOLD = 2;
+  A.FT_RWY_EXIT_LINE = 19;
 
-  A.isVisible = function (n) {
+  A.oanc = function () {
     try {
-      var st = window.getComputedStyle(n);
-      if (st.display === "none" || st.visibility === "hidden") return false;
-      var r = n.getBoundingClientRect();
-      return r.width > 0 && r.height > 0;
-    } catch (e) { return true; }
+      var nd = document.querySelector("a380x-nd");
+      return (nd && nd.fsInstrument && nd.fsInstrument.oansRef && nd.fsInstrument.oansRef.instance) || null;
+    } catch (e) { return null; }
   };
 
-  // The OANS control panel container on the ND.
-  A.findRoot = function () {
-    return document.querySelector(".oans-control-panel") ||
-           document.querySelector(".mfd-oans") || null;
+  A.bus = function () {
+    try {
+      var nd = document.querySelector("a380x-nd");
+      var o = A.oanc();
+      return (o && o.props && o.props.bus) || (nd && nd.fsInstrument && nd.fsInstrument.bus) || null;
+    } catch (e) { return null; }
   };
 
-  A.INTERACTIVE = [
-    ".mfd-input-field-container", ".mfd-button", ".mfd-icon-button",
-    ".mfd-dropdown-outer", ".mfd-dropdown-menu-element", ".mfd-context-menu-element",
-    ".mfd-top-tab-navigator-bar-element-outer", ".mfd-radio-button"
-  ].join(",");
-
-  A.classify = function (n) {
-    var c = n.classList;
-    if (c.contains("mfd-input-field-container")) return "input";
-    if (c.contains("mfd-radio-button")) return "radio";
-    if (c.contains("mfd-top-tab-navigator-bar-element-outer")) return "tab";
-    if (c.contains("mfd-icon-button")) return "button";
-    if (c.contains("mfd-button")) return "button";
-    if (c.contains("mfd-dropdown-outer")) return "dropdown";
-    if (c.contains("mfd-dropdown-menu-element") || c.contains("mfd-context-menu-element")) return "menu";
-    return "other";
+  A.lvar = function (name) {
+    try { return (typeof SimVar !== "undefined") ? SimVar.GetSimVarValue("L:" + name, "number") : null; }
+    catch (e) { return null; }
   };
 
-  // flyPad-style controlType for the WebView2 renderer.
-  A.controlType = function (kind) {
-    if (kind === "input") return "text";
-    if (kind === "radio") return "checkbox";
-    return ""; // button/dropdown/menu/tab -> rendered as button/link by tag+clickable
+  // ARINC429 raw-double decode: low 32 bits = float32, bits 32-33 = SSM (3=NormalOp, 2=FuncTest).
+  A.arinc = function (raw) {
+    if (typeof raw !== "number" || !isFinite(raw)) return { valid: false, value: 0 };
+    var ssm = Math.floor(raw / 4294967296) % 4;
+    var bits = raw % 4294967296; if (bits < 0) bits += 4294967296;
+    try {
+      var dv = new DataView(new ArrayBuffer(4));
+      dv.setUint32(0, bits >>> 0, false);
+      return { valid: (ssm === 3 || ssm === 2), value: dv.getFloat32(0, false) };
+    } catch (e) { return { valid: false, value: 0 }; }
   };
 
-  A.isClickable = function (kind) {
-    return kind === "button" || kind === "dropdown" || kind === "menu" || kind === "tab";
-  };
+  A.get = function (sub) { try { return (sub && sub.get) ? sub.get() : null; } catch (e) { return null; } };
 
-  A.readInputValue = function (n) {
-    var s = n.querySelector(".mfd-input-field-text-input");
-    return s ? clean(s.textContent) : "";
-  };
-
-  // An OANS InputField shows its empty state as a run of dashes/underscores
-  // (e.g. "------"); surface that as "blank" rather than reading the dashes.
-  A.isBlankValue = function (v) {
-    return !v || /^[\s\-–—_.]+$/.test(v);
-  };
-
-  // The OANS entry fields carry NO .mfd-label sibling in the DOM, so a screen
-  // reader would hear only the value. Label them by the active tab: the ARPT SEL
-  // field is the airport code, the MAP DATA field is the BTV runway/exit entry.
-  A.oansFieldLabel = function () {
-    var tabs = document.querySelectorAll(".mfd-top-tab-navigator-bar-element-outer");
-    for (var i = 0; i < tabs.length; i++) {
-      var lab = tabs[i].querySelector(".mfd-top-tab-navigator-bar-element-label");
-      var on = tabs[i].classList.contains("active") || (lab && lab.classList.contains("active"));
-      if (on && lab) {
-        var t = clean(lab.textContent);
-        if (t.indexOf("ARPT") >= 0) return "Airport";
-        if (t.indexOf("MAP") >= 0) return "Runway or exit";
+  // Runway / exit pick-lists from the loaded AMDB map labels (populated on airport load,
+  // independent of ND zoom — no render needed).
+  A.listByFeat = function (feattype, runwayPattern) {
+    var o = A.oanc(); if (!o || !o.labelManager || !o.labelManager.labels) return [];
+    var L = o.labelManager.labels, seen = {}, out = [];
+    for (var i = 0; i < L.length; i++) {
+      var f = L[i].associatedFeature, t = L[i].text;
+      if (f && f.properties && f.properties.feattype === feattype && t &&
+          (!runwayPattern || /^[0-9]{1,2}[LRC]?$/.test(t)) && !seen[t]) {
+        seen[t] = 1; out.push(t);
       }
     }
-    return "";
+    return out.sort();
   };
 
-  A.directText = function (n) {
-    var s = "";
-    for (var c = 0; c < n.childNodes.length; c++) {
-      if (n.childNodes[c].nodeType === 3) s += n.childNodes[c].nodeValue;
+  A.findLabel = function (feattype, name) {
+    var o = A.oanc(); if (!o || !o.labelManager || !o.labelManager.labels) return null;
+    var L = o.labelManager.labels;
+    for (var i = 0; i < L.length; i++) {
+      var f = L[i].associatedFeature;
+      if (f && f.properties && f.properties.feattype === feattype && L[i].text === name) return L[i];
     }
-    return clean(s);
+    return null;
   };
 
-  A.containsInteractive = function (n) {
-    var kids = n.querySelectorAll(A.INTERACTIVE);
-    return kids.length > 0;
+  A.btvReady = function () {
+    var o = A.oanc();
+    return !!(o && o.btvUtils && o.data && o.data.features && o.labelManager && o.labelManager.labels);
   };
 
-  A.insideStamped = function (n) {
-    var cur = n;
-    while (cur) { if (cur.getAttribute && cur.getAttribute(A.STAMP)) return true; cur = cur.parentElement; }
-    return false;
+  // --- read-only exit-validity (mirrors OansBrakeToVacateSelection.selectExitFromOans) ----------
+  // Pure airport-local-metre geometry; NO canvas draw, NO mutation. Used to filter the exit
+  // pick-list to exits FBW would actually accept for the ARMED runway, so a blind pilot never
+  // picks a silently-rejected exit. (BTV_MIN_TOUCHDOWN_ZONE_DISTANCE = 400 m; same 120deg / 50 m gates.)
+  A.MIN_TDZ = 400;
+  A._r2d = 180 / Math.PI;
+  A._clampAngle = function (a) { a = a % 360; if (a < 0) a += 360; return a; };
+  A._pointAngle = function (x1, y1, x2, y2) { return A._clampAngle(Math.atan2(y2 - y1, x2 - x1) * A._r2d); };
+  A._pointDist = function (x1, y1, x2, y2) { var dx = x2 - x1, dy = y2 - y1; return Math.sqrt(dx * dx + dy * dy); };
+  A._pointToLineDist = function (p, a, b) {
+    var num = Math.abs((b[1] - a[1]) * p[0] - (b[0] - a[0]) * p[1] + b[0] * a[1] - b[1] * a[0]);
+    var den = Math.sqrt((b[1] - a[1]) * (b[1] - a[1]) + (b[0] - a[0]) * (b[0] - a[0]));
+    return den ? num / den : 0;
   };
 
-  // Short label/value for one control line.
-  A.lineText = function (n, kind) {
-    if (kind === "input") { var iv = A.readInputValue(n); return A.isBlankValue(iv) ? "blank" : iv; }
-    if (kind === "dropdown") {
-      var di = n.querySelector(".mfd-dropdown-inner");
-      return clean(di ? di.textContent : n.textContent) || "(choice)";
+  // Returns the exits valid for the currently-armed runway as [{name, dist}] sorted by distance
+  // from the landing threshold (closest first). `dist` is the BTV exit distance in metres (raw
+  // threshold->exit distance minus the 400 m touchdown zone == btvExitDistance for that exit, so
+  // the pick-list and the armed-exit readout report the SAME number). NULL when the armed-runway
+  // threshold references aren't available (caller then falls back to the full, unannotated list).
+  //
+  // A taxiway can contribute MORE THAN ONE exit-line feature under the same name (e.g. KSFO "Q"
+  // has a segment ~230 m off 28R's centerline AND a valid one on it). We accept a NAME if ANY of
+  // its features passes, and report the FIRST passing feature's distance. armExit() then arms that
+  // same valid feature by trying every same-named feature until one is accepted — without this, the
+  // first feature by name (often the off-runway one) was selected and silently rejected.
+  A.validExitsForArmed = function () {
+    var o = A.oanc(); if (!o || !o.btvUtils) return null;
+    var b = o.btvUtils;
+    var thr = b.btvThresholdPositionOansReference, opp = b.btvOppositeThresholdPositionOansReference;
+    if (!thr || !opp || !o.labelManager || !o.labelManager.labels) return null;
+    var L = o.labelManager.labels, seen = {}, out = [];
+    for (var i = 0; i < L.length; i++) {
+      var f = L[i].associatedFeature, t = L[i].text;
+      if (!(f && f.properties && f.properties.feattype === A.FT_RWY_EXIT_LINE && t)) continue;
+      if (seen[t]) continue;
+      var coords = f.geometry && f.geometry.coordinates;
+      if (!coords || coords.length < 2) continue;
+      var last = coords.length - 1, e1 = coords[0], e2 = coords[last];
+      var d1 = A._pointToLineDist(e1, thr, opp), d2 = A._pointToLineDist(e2, thr, opp);
+      var startDist = (d1 < d2) ? A._pointDist(thr[0], thr[1], e1[0], e1[1]) : A._pointDist(thr[0], thr[1], e2[0], e2[1]);
+      var angle = (d1 < d2)
+        ? A._pointAngle(thr[0], thr[1], e1[0], e1[1]) - A._pointAngle(e1[0], e1[1], coords[1][0], coords[1][1])
+        : A._pointAngle(thr[0], thr[1], e2[0], e2[1]) - A._pointAngle(e2[0], e2[1], coords[last - 1][0], coords[last - 1][1]);
+      if (Math.abs(angle) > 120 || Math.min(d1, d2) > 50 || startDist < A.MIN_TDZ) continue; // FBW rejects (off-runway same-named feature)
+      seen[t] = 1; out.push({ name: t, dist: Math.round(startDist - A.MIN_TDZ) });
     }
-    if (kind === "tab") {
-      var lab = n.querySelector(".mfd-top-tab-navigator-bar-element-label");
-      var active = n.classList.contains("active") || (lab && lab.classList.contains("active"));
-      var t = clean(lab ? lab.textContent : n.textContent);
-      return (t || "(tab)") + (active ? " (active tab)" : "");
-    }
-    if (kind === "radio") {
-      var ri = n.querySelector("input[type=radio]");
-      var rt = clean(n.textContent);
-      return (rt || "(option)") + (ri && ri.checked ? " (selected)" : "");
-    }
-    var bt = clean(n.textContent);
-    if (!bt && n.getAttribute) bt = clean(n.getAttribute("aria-label") || n.getAttribute("title") || "");
-    return bt;
-  };
-
-  // Fold the nearest left/preceding .mfd-label into an input's line so it reads
-  // "RWY: 09L" etc. Returns the input's combined label, or "" if none.
-  A.inputLabel = function (n) {
-    var prev = n.previousElementSibling, guard = 0;
-    while (prev && guard < 4) {
-      guard++;
-      if (prev.classList && prev.classList.contains("mfd-label")) {
-        var t = clean(prev.textContent); if (t) return t;
-      }
-      var l = prev.querySelector ? prev.querySelector(".mfd-label") : null;
-      if (l) { var t2 = clean(l.textContent); if (t2) return t2; }
-      prev = prev.previousElementSibling;
-    }
-    // try the parent's preceding sibling (column layout)
-    var par = n.parentElement;
-    if (par && par.previousElementSibling && par.previousElementSibling.querySelector) {
-      var l2 = par.previousElementSibling.querySelector(".mfd-label");
-      if (l2) { var t3 = clean(l2.textContent); if (t3) return t3; }
-    }
-    return "";
-  };
-
-  A.enumerate = function (root) {
-    var stale = root.querySelectorAll("[" + A.STAMP + "]");
-    for (var s = 0; s < stale.length; s++) stale[s].removeAttribute(A.STAMP);
-
-    var rootRect = root.getBoundingClientRect();
-    var items = [];
-    var idx = 1;
-
-    // 1) interactive controls (innermost only).
-    var nodes = root.querySelectorAll(A.INTERACTIVE);
-    for (var i = 0; i < nodes.length && idx <= 300; i++) {
-      var n = nodes[i];
-      if (!A.isVisible(n)) continue;
-      if (A.containsInteractive(n)) continue;     // keep innermost
-      if (A.insideStamped(n)) continue;
-      var kind = A.classify(n);
-      var text = A.lineText(n, kind);
-      if (kind === "input") {
-        var lbl = A.inputLabel(n) || A.oansFieldLabel();
-        var val = A.readInputValue(n);
-        if (A.isBlankValue(val)) val = "blank";
-        text = lbl ? (lbl + ": " + val) : val;
-      }
-      if (!text && kind !== "input") continue;
-      n.setAttribute(A.STAMP, String(idx));
-      var r = n.getBoundingClientRect();
-      items.push({
-        top: r.top - rootRect.top, left: r.left - rootRect.left,
-        idx: idx, kind: kind, tag: n.tagName.toLowerCase(), role: "",
-        text: text, value: kind === "input" ? A.readInputValue(n) : "",
-        controlType: A.controlType(kind), clickable: A.isClickable(kind),
-        level: 0, live: "", disabled: n.classList.contains("disabled"), options: []
-      });
-      idx++;
-    }
-
-    // 2) static-text leaves (labels/readouts: RWY, LDA, BTV STOP DISTANCE, ...).
-    var all = root.getElementsByTagName("*");
-    for (var j = 0; j < all.length && items.length < 400; j++) {
-      var t = all[j];
-      if (!A.isVisible(t)) continue;
-      if (A.insideStamped(t)) continue;
-      if (t.querySelector && t.querySelector(A.INTERACTIVE)) continue;
-      var own = A.directText(t);
-      if (!own || own.length > 60) continue;
-      var tr = t.getBoundingClientRect();
-      items.push({
-        top: tr.top - rootRect.top, left: tr.left - rootRect.left,
-        idx: 0, kind: "text", tag: t.tagName.toLowerCase(), role: "",
-        text: own, value: "", controlType: "", clickable: false,
-        level: 0, live: "", disabled: false, options: []
-      });
-    }
-
-    items.sort(function (a, b) {
-      // The top tab bar (MAP DATA / ARPT SEL / STATUS) reads first, as a single row.
-      var at = (a.kind === "tab") ? 0 : 1, bt = (b.kind === "tab") ? 0 : 1;
-      if (at !== bt) return at - bt;
-      if (at === 0) return a.left - b.left;
-      // OANS pages are laid out in COLUMNS, not rows. ARPT SEL, for example, has the
-      // airport-entry field + ICAO/IATA/CITY-NAME mode radios on the left, DISPLAY
-      // AIRPORT in the centre, and the ORIGIN/DEST/ALTN preset buttons on the right.
-      // Reading zig-zag across rows (the old top-then-left sort) interleaved the radios
-      // with the preset buttons. Read each column top-to-bottom, left column first:
-      // cluster x into ~200px bands, then order by vertical position within the column.
-      var ca = Math.floor(a.left / 200), cb = Math.floor(b.left / 200);
-      if (ca !== cb) return ca - cb;
-      var dy = a.top - b.top;
-      return dy || (a.left - b.left);
-    });
-
-    // de-dup consecutive identical text
-    var out = [];
-    for (var k = 0; k < items.length; k++) {
-      var it = items[k];
-      if (out.length && lower(out[out.length - 1].text) === lower(it.text)) {
-        if (out[out.length - 1].idx === 0 && it.idx > 0) out[out.length - 1] = it;
-        continue;
-      }
-      out.push(it);
-    }
+    out.sort(function (a, c) { return a.dist - c.dist; });
     return out;
   };
 
-  // KEY: the OANS airport map + its control panel only RENDER at the lowest "airport
-  // zoom" ND range. At any normal nav range the whole .oans-control-panel is 0x0 / hidden
-  // and nothing can be read or clicked (live-verified: range 1 -> 0x0; range 0 -> 768x256
-  // with the MAP DATA / ARPT SEL / STATUS tabs visible). A blind pilot can't turn the EFIS
-  // range knob and watch the map appear, so we force the captain ND to the airport zoom
-  // whenever the panel has no geometry. (Harmless when not near an airport — it just zooms
-  // the captain ND, which a screen-reader user doesn't see anyway.)
-  A.AIRPORT_ZOOM = 0;            // lowest ND range = airport map
-  A._emptyZoomedTicks = 0;       // consecutive empty polls while already at the airport zoom
-  // Returns true if the panel HAS geometry (is rendered), false otherwise. Forces the zoom
-  // when needed; the map then takes ~0.5-1 s to draw, so the first poll after a fresh open
-  // is normally still empty (handled by the "loading" message in scrape()).
-  A.ensureAirportZoom = function () {
+  // Cheap, side-effect-free read of the STATUS AIRAC cycle text node (textContent does not
+  // force layout/render; the node exists even while the panel is visibility:hidden).
+  A.airac = function () {
     try {
-      var p = A.findRoot();
-      if (p) {
-        // The control panel lays out at the airport zoom but stays visibility:hidden until
-        // it's "opened" on the ND map — and its controls then INHERIT visibility:hidden, so
-        // they have geometry but fail our isVisible() test (the panel reads but the agent
-        // finds "nothing"). A screen-reader user can't open it on the map, so force it (and
-        // its background) visible. React may re-hide on a re-render, so re-apply every poll;
-        // scrape() forces this then enumerates synchronously, so the controls are visible the
-        // instant we read them.
-        try { p.style.visibility = "visible"; } catch (e1) {}
-        var bg = document.querySelector(".oans-control-panel-background");
-        if (bg) { try { bg.style.visibility = "visible"; } catch (e2) {} }
-        if (p.getBoundingClientRect().width > 1) return true;
-      }
-      if (typeof SimVar !== "undefined") SimVar.SetSimVarValue("L:A32NX_EFIS_L_ND_RANGE", "number", A.AIRPORT_ZOOM);
-    } catch (e) {}
-    return false;
+      var n = document.querySelector(".oans-cp-status-active .mfd-value");
+      return (n && n.textContent) ? n.textContent.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "") : "";
+    } catch (e) { return ""; }
   };
 
-  // Open / reveal the OANS control panel. With the map rendered (see ensureAirportZoom),
-  // the MAP DATA / ARPT SEL / STATUS tab bar is already visible — selecting a tab shows its
-  // content. We just make sure the map is zoomed in; the user drives the tabs via the list.
-  A.openPanel = function () {
-    A._emptyZoomedTicks = 0;     // fresh "loading" window on every open / refresh
-    var rendered = A.ensureAirportZoom();
-    return rendered ? "open" : "zooming";
-  };
-
-  A.hasInteractive = function (els) {
-    for (var i = 0; i < els.length; i++) if (els[i].idx > 0) return true;
-    return false;
-  };
-
-  // A position-aware reason the OANS panel is empty/hidden, so we don't tell a
-  // pilot who has ALREADY aligned the ADIRS to "align the ADIRS". The OANS
-  // (airport map + BTV) only renders on the ground or in the terminal area near
-  // an airport — it's not active in the cruise. Uses SimVar (available in the ND
-  // view); falls back to the generic reason if SimVar is unreadable.
-  A.unavailableReason = function () {
-    var aligned = true, onGround = false;
+  A.snapshot = function () {
     try {
-      var s1 = SimVar.GetSimVarValue("L:A32NX_ADIRS_ADIRU_1_STATE", "number");
-      aligned = (s1 >= 2);  // 0=off, 1=aligning, 2=aligned/NAV
-    } catch (e) {}
-    try { onGround = SimVar.GetSimVarValue("SIM ON GROUND", "bool") > 0; } catch (e2) {}
-    if (!aligned) {
-      return "OANS airport map not available. Align the ADIRS first: set the ADIRS mode selectors to NAV and wait for alignment, then this page shows the airport map and the runway/exit (BTV) controls.";
-    }
-    // ADIRS aligned: it's a position/phase issue, not an ADIRS one.
-    return "OANS airport map not active right now. It's an on-ground and terminal-area tool: the airport map and its runway/exit (BTV) controls appear when you're on the ground or within range of an airport (for example on approach)" +
-      (onGround ? ", or once an airport is selected on the Navigation Display." : ", not in the cruise. Bring up an airport on the Navigation Display first.");
-  };
+      var available = A.lvar("A32NX_OANS_AVAILABLE") ? true : false;
+      var failed = A.lvar("A32NX_OANS_FAILED") ? true : false;
+      var o = A.oanc();
+      var ready = A.btvReady();
+      var b = ready ? o.btvUtils : null;
 
-  // ---- read ----
-  A.scrape = function () {
-    try {
-      // Self-heal: keep the OANS map zoomed in so it stays rendered (it only draws at the
-      // airport zoom). Returns true once the panel actually has geometry.
-      var rendered = A.ensureAirportZoom();
-      var root = A.findRoot();
-      if (!root) return JSON.stringify({ ok: false, error: "OANS not present on this ND view" });
-      var els = A.enumerate(root);
-      if (!A.hasInteractive(els)) {
-        // No controls yet. The map takes ~0.5-1 s to draw after we force the zoom, so the
-        // first poll(s) after opening are normally still empty — show a LOADING message for
-        // the first few seconds and only fall back to the "not available" reason once it's
-        // stayed empty long enough that we're genuinely not near a usable airport.
-        A._emptyZoomedTicks++;
-        var text = (A._emptyZoomedTicks <= 6)
-          ? "Loading the airport map - give it a moment, then press F5 to refresh."
-          : A.unavailableReason();
-        els = [{
-          top: 0, left: 0, idx: 0, kind: "text", tag: "div", role: "",
-          text: text,
-          value: "", controlType: "", clickable: false, level: 0, live: "", disabled: false, options: []
-        }];
-      } else {
-        A._emptyZoomedTicks = 0;
-      }
-      return JSON.stringify({ ok: true, page: "OANS Airport Map / BTV", elements: els });
+      var rwyLenW = A.arinc(A.lvar("A32NX_OANS_RWY_LENGTH"));
+      function m(v) { return (typeof v === "number" && v > 0) ? Math.round(v) : null; }
+
+      var rwy = b ? A.get(b.btvRunway) : null;
+      var exit = b ? A.get(b.btvExit) : null;
+
+      // Exit pick-list (filtered to the armed runway, sorted closest-first) + a parallel distance
+      // array (metres from threshold). Falls back to the full unannotated list if the refs aren't up.
+      var ve = rwy ? A.validExitsForArmed() : null;
+      var exitNames = [], exitDists = [];
+      if (ve) { for (var ei = 0; ei < ve.length; ei++) { exitNames.push(ve[ei].name); exitDists.push(ve[ei].dist); } }
+      else if (rwy) { exitNames = A.listByFeat(A.FT_RWY_EXIT_LINE, false); }
+
+      var dry = A.lvar("A32NX_OANS_BTV_DRY_DISTANCE_ESTIMATED");
+      var wet = A.lvar("A32NX_OANS_BTV_WET_DISTANCE_ESTIMATED");
+      var stop = A.lvar("A32NX_OANS_BTV_STOP_BAR_DISTANCE_ESTIMATED");
+      var computing = (dry > 0) || (wet > 0);
+      var rot = A.arinc(A.lvar("A32NX_BTV_ROT"));
+      var tMax = A.arinc(A.lvar("A32NX_BTV_TURNAROUND_MAX_REVERSE"));
+      var tIdle = A.arinc(A.lvar("A32NX_BTV_TURNAROUND_IDLE_REVERSE"));
+      function ar(w) { return (w.valid && w.value > 0) ? Math.round(w.value) : null; }
+
+      var fms = o && o.fmsDataStore ? {
+        origin: A.get(o.fmsDataStore.origin),
+        dest: A.get(o.fmsDataStore.destination),
+        altn: A.get(o.fmsDataStore.alternate),
+        landingRunway: A.get(o.fmsDataStore.landingRunway)
+      } : { origin: null, dest: null, altn: null, landingRunway: null };
+
+      var reqStop = A.arinc(A.lvar("A32NX_OANS_BTV_REQ_STOPPING_DISTANCE"));
+
+      return JSON.stringify({
+        ok: true,
+        available: available,
+        failed: failed,
+        airport: {
+          icao: o ? A.get(o.dataAirportIcao) : null,
+          name: o ? A.get(o.dataAirportName) : null
+        },
+        fms: fms,
+        btv: {
+          ready: ready,
+          runways: A.listByFeat(A.FT_RWY_CENTERLINE, true),
+          // Exits FBW would accept for the armed runway, sorted closest-first, with a parallel
+          // distance-from-threshold array (exitDists, metres). Empty until a runway is armed.
+          exits: exitNames,
+          exitDists: exitDists,
+          runway: rwy, exit: exit,
+          lda: m(b ? A.get(b.btvRunwayLda) : null),
+          exitDist: m(b ? A.get(b.btvExitDistance) : null),
+          bearing: b ? A.get(b.btvRunwayBearingTrue) : null,
+          dry: m(dry), wet: m(wet), stop: computing ? m(stop) : null,
+          computing: computing,
+          rot: ar(rot), turnMax: ar(tMax), turnIdle: ar(tIdle),
+          rwyAheadQfu: b ? (b.rwyAheadQfu || "") : "",
+          metric: A.lvar("A32NX_EFB_USING_METRIC_UNIT") ? true : false
+        },
+        manual: {
+          runwayLengthM: rwyLenW.valid ? Math.round(rwyLenW.value) : null,
+          manualStopDist: reqStop.valid ? Math.round(reqStop.value) : null,
+          fmsLandingRunwaySelected: fms.landingRunway != null
+        },
+        airac: A.airac()
+      });
     } catch (e) {
       return JSON.stringify({ ok: false, error: (e && e.message) ? e.message : String(e) });
     }
   };
 
-  // ---- drive ----
-  A.findByIdx = function (index) { return document.querySelector('[' + A.STAMP + '="' + index + '"]'); };
-
-  A.clickNode = function (node) {
-    try {
-      if (typeof node.click === "function") node.click();
-      else node.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    } catch (e) {}
-  };
-
-  A.dropdownIsOpen = function (outer) {
-    try {
-      var cont = outer.parentElement;
-      var menu = cont && cont.querySelector(".mfd-dropdown-menu");
-      return menu && window.getComputedStyle(menu).display !== "none";
-    } catch (e) { return false; }
-  };
-
-  A.ancestorWithClass = function (node, c) {
-    var cur = node;
-    while (cur) { if (cur.classList && cur.classList.contains(c)) return cur; cur = cur.parentElement; }
-    return null;
-  };
-
-  A.clickElement = function (index) {
-    var node = A.findByIdx(index);
-    if (!node) return "missing";
-    // A dropdown-wrapped input opens its list when the dropdown is clicked.
-    if (node.classList && node.classList.contains("mfd-input-field-container")) {
-      var dd = A.ancestorWithClass(node, "mfd-dropdown-outer");
-      if (dd) { A.clickNode(dd); return "ok"; }
+  A.armRunway = function (name) {
+    var o = A.oanc(); if (!o || !o.btvUtils) return "OANS not ready";
+    var rl = A.findLabel(A.FT_RWY_CENTERLINE, name), thr = null, feats = (o.data && o.data.features) || [];
+    for (var k = 0; k < feats.length; k++) {
+      // Guard .properties: a malformed/partial AMDB feature can lack it, and this loop runs
+      // OUTSIDE the try below — an unguarded deref would throw uncaught out of armRunway.
+      var pk = feats[k] && feats[k].properties;
+      if (pk && pk.feattype === A.FT_RWY_THRESHOLD && pk.idthr === name) { thr = feats[k]; break; }
     }
-    A.clickNode(node);
-    return "ok";
-  };
-
-  // Real FBW InputField entry: focus the text-input span (click its container),
-  // then dispatch keypress events (keyCode = ASCII of upper-cased char), ENTER=13.
-  A.dispatchKey = function (target, type, code) {
-    var ev;
-    try { ev = new KeyboardEvent(type, { bubbles: true, cancelable: true }); }
-    catch (e) { ev = document.createEvent("Event"); ev.initEvent(type, true, true); }
-    try { Object.defineProperty(ev, "keyCode", { get: function () { return code; } }); } catch (e2) {}
-    try { Object.defineProperty(ev, "which", { get: function () { return code; } }); } catch (e3) {}
-    try { Object.defineProperty(ev, "charCode", { get: function () { return code; } }); } catch (e4) {}
-    target.dispatchEvent(ev);
-  };
-
-  A.focusField = function (span, spanningDiv) {
-    try { var sd = spanningDiv || span; if (sd.click) sd.click(); else sd.dispatchEvent(new MouseEvent("click", { bubbles: true })); } catch (e) {}
-    try { if (span.focus) span.focus(); } catch (e2) {}
+    if (!rl || !thr) return "runway " + name + " not found on map";
     try {
-      var fe; try { fe = new FocusEvent("focus", { bubbles: false }); } catch (e3) { fe = document.createEvent("Event"); fe.initEvent("focus", false, false); }
-      span.dispatchEvent(fe);
-    } catch (e4) {}
+      o.btvUtils.selectRunwayFromOans((A.get(o.dataAirportIcao) || "") + name, rl.associatedFeature, thr);
+      return "Armed BTV runway " + name;
+    } catch (e) { return "ERR " + e; }
   };
 
-  A.typeInto = function (span, text) {
-    var v = String(text == null ? "" : text).toUpperCase();
-    for (var i = 0; i < v.length; i++) {
-      var ch = v.charAt(i);
-      if (!/^[A-Z0-9/.+\- ]$/.test(ch)) continue;
-      A.dispatchKey(span, "keypress", ch.charCodeAt(0));
+  A.armExit = function (name) {
+    var o = A.oanc(); if (!o || !o.btvUtils) return "OANS not ready";
+    var b = o.btvUtils;
+    if (!b.btvRunway || A.get(b.btvRunway) == null) return "Select a BTV runway first";
+    if (!o.labelManager || !o.labelManager.labels) return "exit " + name + " not found on map";
+    // A taxiway can expose MORE THAN ONE exit-line feature under the same name (e.g. KSFO "Q":
+    // one segment off the runway, one valid on it). selectExitFromOans accepts only the
+    // geometrically-valid feature, so try EVERY same-named exit feature until one is accepted —
+    // mirroring a sighted pilot clicking the correct exit label on the map. Picking the first
+    // feature by name silently rejected the valid exit (the user's KSFO 28R / Q bug).
+    var L = o.labelManager.labels, found = false, lastErr = null;
+    for (var i = 0; i < L.length; i++) {
+      var f = L[i].associatedFeature;
+      if (!(f && f.properties && f.properties.feattype === A.FT_RWY_EXIT_LINE && L[i].text === name)) continue;
+      found = true;
+      // Per-feature try/continue: a throw on one same-named feature must NOT abort the loop,
+      // or a malformed earlier feature would block the valid later one (the KSFO 28R / Q bug).
+      try {
+        b.selectExitFromOans(name, f);
+        var got = A.get(b.btvExit);
+        if (got != null) return "Armed BTV exit " + got;
+      } catch (e) { lastErr = e; }
     }
-    A.dispatchKey(span, "keypress", 13);
+    if (!found) return "exit " + name + " not found on map";
+    if (lastErr) return "ERR " + lastErr;
+    return "Exit " + name + " not valid for this runway (wrong side or too close to threshold)";
   };
 
-  A.setValue = function (index, text) {
-    var node = A.findByIdx(index);
-    if (!node) return "missing";
-    var kind = A.classify(node);
-    if (kind !== "input") { A.clickNode(node); return "ok"; }
-    var span = node.querySelector(".mfd-input-field-text-input");
-    if (!span) { A.clickNode(node); return "noinput"; }
-    var spanningDiv = node.querySelector(".mfd-input-field-text-input-container");
-    // DropdownMenu-wrapped input: open the dropdown first (focuses the field).
-    var dd = A.ancestorWithClass(node, "mfd-dropdown-outer");
-    if (dd) { if (!A.dropdownIsOpen(dd)) A.clickNode(dd); A.typeInto(span, text); return "ok"; }
-    A.focusField(span, spanningDiv);
-    A.typeInto(span, text);
-    return "ok";
+  A.clearBtv = function () {
+    var o = A.oanc(); if (!o || !o.btvUtils) return "OANS not ready";
+    try { o.btvUtils.clearSelection(); return "BTV selection cleared"; } catch (e) { return "ERR " + e; }
+  };
+
+  // One-shot AMDB load of a chosen airport. USER ACTION ONLY — never call on a poll. Loads data +
+  // builds the runway/exit labels; does NOT force the ND to render the map.
+  //
+  // We call the Oanc's loadAirportMap() DIRECTLY rather than firing the bus event
+  // `oans_display_airport`, because that event's handler (Oanc.tsx) only sets the ICAO and SKIPS
+  // the load when the OANS is in performance-hide mode (FBW perf mode + the ND not showing the
+  // OANS — the normal case for us since we never render). Direct loadAirportMap() bypasses that
+  // gate and loads deterministically (verified: KLAX → 4789 features / 828 labels, persists).
+  A.displayAirport = function (icao) {
+    if (!icao) return "no icao";
+    var name = String(icao).toUpperCase();
+    var o = A.oanc();
+    if (o && typeof o.loadAirportMap === "function") {
+      try { o.loadAirportMap(name); return "loading " + name; }   // async; next snapshot poll sees the data
+      catch (e) { /* fall through to the bus path */ }
+    }
+    var bus = A.bus(); if (!bus) return "no bus";
+    try { bus.pub("oans_display_airport", name, true); return "displaying " + name; }
+    catch (e2) { return "ERR " + e2; }
+  };
+
+  // No-Navigraph manual BTV: publish the requested stopping distance (metres). The fallback
+  // BTV consumes oansManualStoppingDistance; user must also select the landing runway in the FMS.
+  A.setManualStopDistance = function (metres) {
+    var bus = A.bus(); if (!bus) return "no bus";
+    var v = parseFloat(metres); if (!isFinite(v) || v <= 0) return "bad value";
+    try { bus.pub("oansManualStoppingDistance", v, true); return "manual stop distance " + Math.round(v) + " m"; }
+    catch (e) { return "ERR " + e; }
   };
 
   A.ping = function () { return "MSFSBA_OANS_OK"; };

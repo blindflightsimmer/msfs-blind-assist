@@ -120,20 +120,6 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             };
             _momentaryButtons.Add(key);
         }
-        // Push-BUTTON whose click is handled by a DEDICATED HandleUIVariableSet branch (fires a
-        // stock K-event etc.) rather than the generic _momentaryButtons L:var pulse. Used for
-        // synthetic action keys (ground services) that have no backing L:var to pulse — NOT
-        // added to _momentaryButtons so HandleUIVariableSet falls through to their event branch.
-        void EvtBtn(string key, string display)
-        {
-            vars[key] = new SimVarDefinition
-            {
-                Name = key, DisplayName = display, Type = SimVarType.LVar,
-                UpdateFrequency = UpdateFrequency.OnRequest, IsAnnounced = false,
-                ValueDescriptions = new Dictionary<double, string> { [0] = "Off", [1] = "Activate" },
-                RenderAsButton = true
-            };
-        }
         // Latching/momentary PB L:var as a combo (Released / Pressed).
         void Press(string key, string display) =>
             Sel(key, display, new Dictionary<double, string> { [0] = "Released", [1] = "Pressed" });
@@ -641,6 +627,23 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         Btn("PUSH_OVHD_CALLS_FWD", "Call Forward");
         Btn("PUSH_OVHD_CALLS_AFT", "Call Aft");
         Btn("PUSH_OVHD_CALLS_MECH", "Call Mechanic");
+        // "Signal Cabin Ready" — discoverable action button. A32NX_CABIN_READY is a
+        // READ-ONLY FWS status (a direct var write is IGNORED by the sim — live-verified:
+        // wrote 0, it stayed 1). The real cockpit trigger is a CALLS pushbutton: FwsCore
+        // sets CABIN_READY=1 whenever CALLS ALL/FWD/AFT is pressed. So this button pulses
+        // PUSH_OVHD_CALLS_ALL via a dedicated HandleUIVariableSet branch (NOT added to
+        // _momentaryButtons — that generic path would pulse the synthetic key itself).
+        // It replaces the old dead "Cabin Ready" combo that used to sit in p["Calls"]
+        // (a settable-looking box whose write did nothing). The read-only status stays in
+        // d["Cockpit"] + the A32NX_CABIN_READY Mon auto-announce.
+        vars["A380X_MSFSBA_SIGNAL_CABIN_READY"] = new SimVarDefinition
+        {
+            Name = "A380X_MSFSBA_SIGNAL_CABIN_READY", DisplayName = "Signal Cabin Ready",
+            Type = SimVarType.LVar, UpdateFrequency = UpdateFrequency.OnRequest,
+            IsAnnounced = false,
+            ValueDescriptions = new Dictionary<double, string> { [0] = "Off", [1] = "Activate" },
+            RenderAsButton = true
+        };
 
         // ---- SIGNS ----
         // Seat-belt sign: the REAL state is the stock simvar CABIN SEATBELTS ALERT
@@ -1003,11 +1006,20 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         // status-box force-read of that key auto-announced gross weight every refresh. A distinct
         // display key avoids the collision; the W/Shift+W hotkeys read the separate GW_KG_CACHE.
         Stock("PFD_GROSS_WEIGHT", "TOTAL WEIGHT", "Gross Weight", "kilograms");
-        // PFD read-out additions (source-confirmed missing). All OnRequest stock simvars
-        // (NOT continuous) so they add nothing to the monitoring batch / aircraft detection.
-        Stock("PFD_V1", "AIRLINER V1 SPEED", "V1", "knots");
-        Stock("PFD_VR", "AIRLINER VR SPEED", "VR", "knots");
-        Stock("PFD_V2", "AIRLINER V2 SPEED", "V2", "knots");
+        // PFD read-out additions (source-confirmed missing). V1/VR/V2 come from the FBW
+        // FMS as L:vars (the MFD PERF page writes L:AIRLINER_V1/VR/V2_SPEED in knots). The
+        // stock "AIRLINER V1 SPEED" simvars are NEVER written by the A380 -> always 0
+        // ("not set"). Read the L:vars instead; the keys stay PFD_V* so the panel set +
+        // TryGetDisplayOverride ("not set" on 0) are unchanged.
+        //   These three are Continuous + IsAnnounced (knots) so MSFSBA AUTO-ANNOUNCES the
+        // value the instant the pilot enters/changes it on the MFD PERF page — "V1: 125
+        // knots" — mirroring the Fenix MCDU V-speed entry confirmation. FormatVariableValue
+        // appends "knots" from Units; the simVarMonitor baseline + connect-grace keep the
+        // initial values silent. Listed in the Ctrl+M monitor for opt-out like every other
+        // announced var. (Was OnRequest/display-only before the Fenix-parity pass.)
+        vars["PFD_V1"] = new SimVarDefinition { Name = "AIRLINER_V1_SPEED", DisplayName = "V1", Type = SimVarType.LVar, UpdateFrequency = UpdateFrequency.Continuous, IsAnnounced = true, Units = "knots" };
+        vars["PFD_VR"] = new SimVarDefinition { Name = "AIRLINER_VR_SPEED", DisplayName = "VR", Type = SimVarType.LVar, UpdateFrequency = UpdateFrequency.Continuous, IsAnnounced = true, Units = "knots" };
+        vars["PFD_V2"] = new SimVarDefinition { Name = "AIRLINER_V2_SPEED", DisplayName = "V2", Type = SimVarType.LVar, UpdateFrequency = UpdateFrequency.Continuous, IsAnnounced = true, Units = "knots" };
         Stock("PFD_MACH", "AIRSPEED MACH", "Mach", "mach");          // decoded in TryGetDisplayOverride
         Stock("PFD_TRACK", "GPS GROUND MAGNETIC TRACK", "Track", "degrees");
         Stock("PFD_ILS_FREQ", "NAV ACTIVE FREQUENCY:3", "ILS Frequency", "MHz");
@@ -1242,9 +1254,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         Read("A32NX_RADIO_RECEIVER_GS_IS_VALID", "Glideslope Valid");
         Read("A32NX_RADIO_RECEIVER_GS_DEVIATION", "Glideslope Deviation");
 
-        var windowReadVars = Forms.FBWA380.FBWA380SystemDisplayForm.AllVariableNames()
-            .Concat(Forms.FBWA380.FBWA380NavDisplayForm.AllVariableNames())
-            .Concat(Forms.FBWA380.FBWA380ISISForm.AllVariableNames());
+        var windowReadVars = Forms.FBWA380.EisDisplayVars.All();
         foreach (var sdVar in windowReadVars)
         {
             if (vars.ContainsKey(sdVar)) continue;
@@ -1542,7 +1552,15 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         };
         Read("A32NX_APU_EGT", "APU EGT", "celsius");
         Read("A32NX_APU_FLAP_OPEN_PERCENTAGE", "APU Inlet Flap", "percent");
-        Read("A32NX_APU_FUEL_USED", "APU Fuel Used", "kilograms");
+        // APU fuel used is an ARINC429 word (FBW SD useArinc429Var) — the old plain Read
+        // showed the raw ~13.9-billion SSM word. Decode it to kg.
+        vars["A32NX_APU_FUEL_USED"] = new SimVarDefinition
+        {
+            Name = "A32NX_APU_FUEL_USED", DisplayName = "APU Fuel Used",
+            Type = SimVarType.LVar, UpdateFrequency = UpdateFrequency.OnRequest,
+            IsArinc429 = true, Arinc429Unit = "kg", Arinc429Format = "0",
+            Arinc429NotAvailableText = "not available"
+        };
 
         // HYDRAULICS
         for (int n = 1; n <= 4; n++)
@@ -1819,7 +1837,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         Mon("A32NX_FMA_VERTICAL_ARMED", "Armed Vertical Modes", new Dictionary<double, string>());
         Mon("A32NX_FMA_LATERAL_ARMED", "Armed Lateral Modes", new Dictionary<double, string>());
         Read("A32NX_FMA_CRUISE_ALT_MODE", "Cruise Altitude Mode");
-        Read("A32NX_PFD_LINEAR_DEVIATION_ACTIVE", "Linear Deviation Active");
+        Read("A32NX_PFD_LINEAR_DEVIATION_ACTIVE", "Vertical Deviation");
         // FMS vertical-profile target altitude at the current position — the basis for
         // the PFD linear (V/DEV) deviation: deviation = current altitude − this, shown
         // only while LINEAR_DEVIATION_ACTIVE (managed climb/descent / FINAL APP).
@@ -2295,9 +2313,15 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         for (int n = 1; n <= 4; n++)
         {
             Read($"A32NX_ENGINE_OIL_QTY:{n}", $"Engine {n} Oil Quantity", "quarts");
-            // Per-engine fuel used since start (kg) — the post-flight even-burn check
-            // (#107 transcript: "fuel used for each engine"). Stock indexed simvar.
-            Stock($"ENG_FUEL_USED:{n}", $"GENERAL ENG FUEL USED SINCE START:{n}", $"Engine {n} Fuel Used", "kilograms");
+            // Per-engine fuel used since start (kg) — the post-flight even-burn check.
+            // MUST read the FBW L:var A32NX_FUEL_USED:n (what the SD ENGINE page uses) — the
+            // stock GENERAL ENG FUEL USED SINCE START:n is NEVER populated by the FBW A380
+            // (it runs its own FQMS) so it read a permanent 0. Key stays ENG_FUEL_USED:n.
+            vars[$"ENG_FUEL_USED:{n}"] = new SimVarDefinition
+            {
+                Name = $"A32NX_FUEL_USED:{n}", DisplayName = $"Engine {n} Fuel Used",
+                Type = SimVarType.LVar, UpdateFrequency = UpdateFrequency.OnRequest, Units = "kilograms"
+            };
             Stock($"ENG_VIBRATION:{n}", $"TURB ENG VIBRATION:{n}", $"Engine {n} Vibration", "number");
         }
 
@@ -2371,6 +2395,27 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         Stock("GEAR_CENTER_POS", "GEAR CENTER POSITION", "Center Gear Position", "percent");
         Stock("GEAR_RIGHT_POS", "GEAR RIGHT POSITION", "Right Gear Position", "percent");
         ReadEnum("A32NX_AUTOBRAKES_RTO_ARMED", "RTO Armed", new Dictionary<double, string> { [0] = "No", [1] = "Armed" });
+
+        // Engine mode selector — monitored via ENGINE 1's ignition switch so the MainForm
+        // watchdog can mirror it onto engines 3+4. The FBW cockpit ENG START knob template
+        // defaults ENGINE_COUNT=2 (A320 inheritance) on some installed builds, so turning it
+        // only fans TURBINE_IGNITION_SWITCH_SET to engines 1+2 — engines 3+4 then motor but
+        // never get ignition ("3/4 spin but don't light"). The knob DOES set engine 1's
+        // ignition switch (TURB ENG IGNITION SWITCH EX1:1); MainForm mirrors that onto 3+4
+        // via SET3/SET4 (live-verified to address + light the outboard engines). EX1:1 is
+        // used (not XMLVAR_ENG_MODE_SEL) because XMLVAR is force-driven by the physical knob
+        // and reverts external writes — EX1:1 is the reliable, settable, monitorable signal.
+        // Also auto-announces the selector position so a blind pilot hears it move.
+        vars["ENG_MODE_SEL_POS"] = new SimVarDefinition
+        {
+            Name = "TURB ENG IGNITION SWITCH EX1:1",
+            DisplayName = "Engine Mode Selector",
+            Type = SimVarType.SimVar,
+            UpdateFrequency = UpdateFrequency.Continuous,
+            IsAnnounced = true,
+            Units = "enum",
+            ValueDescriptions = new Dictionary<double, string> { [0] = "Crank", [1] = "Norm", [2] = "Ignition / Start" }
+        };
 
         // ENGINE master / ignition position readbacks (we only sent before).
         for (int n = 1; n <= 4; n++)
@@ -2500,26 +2545,30 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             ValueDescriptions = new Dictionary<double, string> { [0] = "Removed", [1] = "Placed" }
         };
 
-        // External-power availability per receptacle (read-only; the actual connect
-        // is the overhead EXT PWR pushbuttons or a ground-handling add-on like GSX).
-        // Announces when external power becomes available at the stand.
+        // External-power availability per receptacle (read-only; the connect/disconnect
+        // is done on the flyPad Ground page, the overhead EXT PWR pushbuttons, or GSX).
+        // Announces when ground power is connected/available or disconnected at the stand.
         //
-        // Read the FBW availability L-var A32NX_OVHD_ELEC_EXT_PWR_n_PB_IS_AVAILABLE
-        // (the overhead EXT PWR "AVAIL" light), NOT the stock simvar EXTERNAL POWER
-        // AVAILABLE:n. The stock simvar means only "a GPU exists at this stand" — it
-        // sits at 1 at any suitable gate regardless of whether power is actually
-        // connected to the aircraft (verified live: it read 1 with engines running and
-        // no power feeding the jet), so watching it never fired on a real GSX connect/
-        // disconnect. The FBW aspect var reflects the actual AVAIL annunciation the
-        // pilot sees and is what GSX drives through the electrical model (verified live
-        // it read 0 in the same no-power state). It is colon-free, so the data-def read
-        // is reliable (the OLD note avoided the colon-INDEXED source var
-        // A32NX_EXT_PWR_AVAIL:n — this aspect var is the readable copy of it).
+        // Read the FBW SOURCE L-var A32NX_EXT_PWR_AVAIL:n (1 = GPU connected/available at
+        // receptacle n, 0 = disconnected). This is the SINGLE source of truth that BOTH the
+        // flyPad GPU button (fbw GPUManagement.ts) and GSX (GsxSync.ts) write — verified live
+        // by toggling the flyPad GPU: A32NX_EXT_PWR_AVAIL:n flips 1<->0 exactly with it, while
+        // every other candidate stayed put.
+        //
+        // Do NOT read A32NX_OVHD_ELEC_EXT_PWR_n_PB_IS_AVAILABLE (the overhead AVAIL light) —
+        // verified live it stays 0 even while the GPU is connected (it needs the receptacle
+        // contactor / power-quality conditions, not met just by plugging in), so it NEVER fired
+        // for the flyPad path: that was the long-standing "GPU connect not announced" bug. The
+        // stock simvar EXTERNAL POWER AVAILABLE:n is useless too (stuck at 1 at any suitable
+        // gate regardless of actual connection, verified live).
+        //
+        // The name is colon-indexed; it registers as an L-var via the same L:{name} data-def
+        // path as A32NX_AUTOTHRUST_TLA:n (which reads fine), so the read is reliable.
         for (int n = 1; n <= 4; n++)
         {
             vars[$"A380X_GND_GPU_AVAIL_{n}"] = new SimVarDefinition
             {
-                Name = $"A32NX_OVHD_ELEC_EXT_PWR_{n}_PB_IS_AVAILABLE", DisplayName = $"External Power {n} Available",
+                Name = $"A32NX_EXT_PWR_AVAIL:{n}", DisplayName = $"External Power {n} Available",
                 Type = SimVarType.LVar, Units = "Bool",
                 UpdateFrequency = UpdateFrequency.Continuous, IsAnnounced = true,
                 ValueDescriptions = new Dictionary<double, string> { [0] = "No", [1] = "Yes" }
@@ -2668,7 +2717,10 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         p["Calls"] = new List<string>
         {
             "A32NX_CALLS_EMER_ON", "A32NX_EVAC_COMMAND_TOGGLE", "A32NX_EVAC_CAPT_TOGGLE",
-            "A32NX_CABIN_READY",
+            // "Signal Cabin Ready" action button (pulses CALLS ALL → FWS sets CABIN_READY).
+            // Replaces the old read-only A32NX_CABIN_READY combo that did nothing when set;
+            // the live status stays the read-only readout in d["Cockpit"].
+            "A380X_MSFSBA_SIGNAL_CABIN_READY",
             "PUSH_OVHD_CALLS_ALL", "PUSH_OVHD_CALLS_FWD", "PUSH_OVHD_CALLS_AFT", "PUSH_OVHD_CALLS_MECH"
         };
         // UNIFIED Cockpit panel — the cockpit door, the sliding windows + shades, and the
@@ -3199,6 +3251,10 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             "AIRSPEED INDICATED", "INDICATED ALTITUDE",
             "A32NX_PFD_MSG_SET_HOLD_SPEED", "A32NX_PFD_MSG_TD_REACHED",
             "A32NX_PFD_MSG_CHECK_SPEED_MODE", "A32NX_PFD_LINEAR_DEVIATION_ACTIVE", "A32NX_PFD_TARGET_ALTITUDE",
+            // Glideslope (ILS) vertical deviation — the OTHER vertical deviation, used on an
+            // ILS approach (FMS V/DEV is only active in managed descent). Cached for the PFD
+            // window's combined V/DEV readout.
+            "A32NX_RADIO_RECEIVER_GS_IS_VALID", "A32NX_RADIO_RECEIVER_GS_DEVIATION",
             // Source-confirmed PFD additions: weight/CG, takeoff V-speeds, Mach, track, ILS.
             "PFD_GROSS_WEIGHT", "A32NX_AIRFRAME_GW_CG_PERCENT_MAC",
             "PFD_V1", "PFD_VR", "PFD_V2", "PFD_MACH", "PFD_TRACK",
@@ -3360,6 +3416,15 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
     private bool _tlaBaselineDone;   // suppress the startup "thrust 1/2/3/4 / all" spam
     private readonly HashSet<string> _rowRopActive = new();   // active ROW/ROP/OANS warning bits
 
+    // Icing conditions: the cockpit ice-accretion "stick" indicator is a CONTINUOUS
+    // 0..1 ratio, not a 0/1 flag — so it's announced as a discrete state with
+    // hysteresis (entered icing / cleared), not as a spammy raw value. _icingActive
+    // holds the debounced state; _icingBaselineDone silences the first sample.
+    private bool _icingActive;
+    private bool _icingBaselineDone;
+    private const double ICING_DETECT_RATIO = 0.05;   // rising edge → "icing conditions"
+    private const double ICING_CLEAR_RATIO = 0.02;    // falling edge → "icing conditions cleared"
+
     // BTV (Brake-To-Vacate) rollout call-outs: current BTV state (gate) and which
     // distance thresholds have already been spoken this landing (reset between).
     private int _btvState = 0;
@@ -3452,6 +3517,28 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         if (varName == "A32NX_EFIS_L_TO_WPT_IDENT_0") _ndIdent0 = value;
         else if (varName == "A32NX_EFIS_L_TO_WPT_IDENT_1") _ndIdent1 = value;
         else if (varName == "A32NX_BETA_TARGET_ACTIVE") _betaTargetActive = value > 0.5;
+
+        // Icing conditions — A32NX_ICING_STATE_ICING_STICK_INDICATOR is the cockpit
+        // ice-accretion "stick" (the visual ice-evidence probe): a CONTINUOUS 0..1
+        // ratio (ice builds over ~120 s in icing conditions, melts over ~200 s), NOT a
+        // 0/1 flag. The old Mon {0:None,1:Icing} mapping never matched the fractional
+        // value, so the generic monitor spoke the raw number on EVERY change — the
+        // "Icing Conditions 0.1, 0.2, …" spam. Convert to a debounced discrete state and
+        // announce ONLY the transition. Honours the Ctrl+M "Icing Conditions" mute; the
+        // panel readout shows the live percentage via TryGetDisplayOverride. Returning
+        // true suppresses the generic raw-value announce.
+        if (varName == "A32NX_ICING_STATE_ICING_STICK_INDICATOR")
+        {
+            bool nowIcing = _icingActive ? value > ICING_CLEAR_RATIO : value >= ICING_DETECT_RATIO;
+            if (!_icingBaselineDone) { _icingActive = nowIcing; _icingBaselineDone = true; return true; }
+            if (nowIcing != _icingActive)
+            {
+                _icingActive = nowIcing;
+                if (!Settings.SettingsManager.Current.A380DisabledMonitorVariables.Contains(varName))
+                    announcer.Announce(nowIcing ? "Icing conditions" : "Icing conditions cleared");
+            }
+            return true;
+        }
 
         // RMP active VHF frequency — auto-announce on change so a blind pilot hears the new
         // ACTIVE frequency after a transfer/swap (the standby stays an on-request panel readout,
@@ -3961,6 +4048,12 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         // read-out switches to metres; let the generic monitor announce On/Off.
         if (varName == "A32NX_METRIC_ALT_TOGGLE") { _metricAlt = value > 0.5; return false; }
 
+        // Suppress the side-effect "Altitude Increment: 100" announce that a window-driven
+        // SetFCUAltitudeValue fires to force 100-ft granularity (the user set an altitude, not
+        // the increment). Time-boxed, so a deliberate later increment change still speaks.
+        if (varName == "XMLVAR_AUTOPILOT_ALTITUDE_INCREMENT" && DateTime.UtcNow < _altIncrAnnounceSuppressUntil)
+            return true;
+
         // ---- FCU readouts: value + managed-indicator pairs ----
         // Each Read* hotkey requests the value var(s) and the managed indicator
         // and force-updates them; we announce once the pair (or, for VS, the
@@ -4088,6 +4181,24 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         if (_seatButtonMap.TryGetValue(varKey, out var seatBtn) && value > 0.5)
         {
             ToggleSeatMotor(seatBtn.PosVar, seatBtn.Dir, simConnect, announcer);
+            return true;
+        }
+        // "Signal Cabin Ready" — A32NX_CABIN_READY can't be written directly (FWS-owned,
+        // verified). FwsCore sets it to 1 while a CALLS pushbutton is pressed, so pulse
+        // CALLS ALL (1→0). The read-only A32NX_CABIN_READY Mon then auto-announces
+        // "Cabin Ready: Ready" once the FWS flips it. Handled here (not via the generic
+        // _momentaryButtons pulse) so the real CALLS var is pulsed, not the synthetic key.
+        if (varKey == "A380X_MSFSBA_SIGNAL_CABIN_READY")
+        {
+            if (value > 0.5)
+            {
+                simConnect.ExecuteCalculatorCode("1 (>L:PUSH_OVHD_CALLS_ALL)");
+                _ = Task.Run(async () =>
+                {
+                    try { await Task.Delay(250); simConnect.ExecuteCalculatorCode("0 (>L:PUSH_OVHD_CALLS_ALL)"); } catch { }
+                });
+                announcer.Announce("Cabin ready signalled");
+            }
             return true;
         }
         // Continuous-axis SLIDERS (cockpit seats, armrests, sunshades, forward visors, fine
@@ -4698,6 +4809,13 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
     public override bool TryGetDisplayOverride(string varKey, double value, out string displayText)
     {
         displayText = "";
+        // Icing conditions: the ice-accretion "stick" is a 0..1 ratio. Render a clean
+        // state + live level ("Icing, 30 percent" / "None") instead of a raw "0.3".
+        if (varKey == "A32NX_ICING_STATE_ICING_STICK_INDICATOR")
+        {
+            displayText = value >= ICING_DETECT_RATIO ? $"Icing, {value * 100:0} percent" : "None";
+            return true;
+        }
         // Crew-seat position read-outs: show a spoken-style band + percent, not a raw "50".
         if (_seatMotorMeta.TryGetValue(varKey, out var sm))
         {
@@ -4819,6 +4937,36 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         if (varKey == "PFD_ILS_FREQ") { displayText = value < 100 ? "none" : $"{value:0.000} MHz"; return true; }
         // ILS/LS course — -1 (or any negative) means no course is set.
         if (varKey == "A32NX_FM_LS_COURSE") { displayText = value < 0 ? "no course set" : $"{value:000} degrees"; return true; }
+        // Vertical deviation (this var is "Vertical Deviation" in the panel) — show the actual
+        // deviation, not a 0/1 flag: glideslope dots on an ILS approach (GS_DEVIATION deg/0.4,
+        // >0 = above), else the FMS linear V/DEV in feet during managed descent (altitude −
+        // TARGET_ALTITUDE, >0 = above), else no guidance. Reads the sibling vars from the panel
+        // sim handle (all in the PFD cache group). Matches the PFD window's combined readout.
+        if (varKey == "A32NX_PFD_LINEAR_DEVIATION_ACTIVE")
+        {
+            var s = _displaySim;
+            bool gsValid = (s?.GetCachedVariableValue("A32NX_RADIO_RECEIVER_GS_IS_VALID") ?? 0) > 0.5;
+            if (gsValid)
+            {
+                double dots = (s?.GetCachedVariableValue("A32NX_RADIO_RECEIVER_GS_DEVIATION") ?? 0) / 0.4;
+                displayText = Math.Abs(dots) < 0.05 ? "on the glideslope"
+                    : $"{Math.Abs(dots):0.0} dots {(dots > 0 ? "above" : "below")} glideslope";
+            }
+            else if (value > 0.5)
+            {
+                double? tgt = s?.GetCachedVariableValue("A32NX_PFD_TARGET_ALTITUDE");
+                double? alt = s?.GetCachedVariableValue("INDICATED ALTITUDE");
+                if (tgt.HasValue && alt.HasValue && tgt.Value != 0)
+                {
+                    double dev = alt.Value - tgt.Value;
+                    displayText = Math.Abs(dev) < 10 ? "on profile"
+                        : $"{Math.Abs(dev):0} feet {(dev >= 0 ? "above" : "below")} profile";
+                }
+                else displayText = "active";
+            }
+            else displayText = "no vertical guidance";
+            return true;
+        }
         // Cross-track error — magnitude in NM with left/right of track (FBW sign: positive = right).
         if (varKey == "A32NX_FG_CROSS_TRACK_ERROR")
         {
@@ -5079,7 +5227,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
     private int _sdRefreshSeq;   // bumped per SD-page refresh; "latest request wins" guard
     private static readonly Dictionary<int, string> _sdPageNames = new()
     {
-        [-1] = "Default automatic page", [0] = "Engine", [1] = "APU", [2] = "Bleed", [3] = "Air Cond",
+        [-1] = "Default automatic", [0] = "Engine", [1] = "APU", [2] = "Bleed", [3] = "Air Cond",
         [4] = "Pressurization", [5] = "Doors", [6] = "Electrical AC", [7] = "Electrical DC",
         [8] = "Fuel", [9] = "Wheel", [10] = "Hydraulics", [11] = "Flight Controls",
         [12] = "Circuit Breakers", [13] = "Cruise", [14] = "Status", [15] = "Video",
@@ -5125,6 +5273,9 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
     // Render-time SimConnect handle so A380SdRows fmt closures can read sibling ARINC words
     // (B1→B4 CPCS source selection, SEC1↔SEC3 rudder-trim) at paint time.
     private SimConnectManager? _sdRender;
+    // Sim handle captured when any display panel is shown, so sibling-reading display
+    // overrides (e.g. the computed Vertical Deviation) can read the PFD cache off-render.
+    private SimConnectManager? _displaySim;
 
     private async void RefreshSdPageDisplayAsync(SimConnectManager simConnect, int pageIndex = -99, bool ewd = false)
     {
@@ -5371,6 +5522,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
     // down/up to get content on first display.
     public override void OnDisplayPanelShown(string panelKey, SimConnectManager simConnect)
     {
+        if (simConnect.IsConnected) _displaySim = simConnect;   // for sibling-reading overrides (V/DEV)
         if (panelKey != "ECAM Control Panel" || !simConnect.IsConnected) return;
         int idx = (int)Math.Round(simConnect.GetCachedVariableValue("A32NX_ECAM_SD_CURRENT_PAGE_INDEX") ?? -1);
         RefreshSdPageDisplayAsync(simConnect, idx, ewd: idx == 16);
@@ -5434,6 +5586,11 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             return "not available";
         };
         var r = new List<(string, string, Func<double, string>)>();
+        // "Default automatic page" (-1) shows the ENGINE page on the ground (what the SD
+        // auto-selects when no failure forces another page) — decode it as ENGINE so it
+        // reads as clean per-engine rows instead of falling through to the interleaved
+        // schematic DOM scrape ("0. 0. N2 % 0. 0." that the user reported).
+        if (page == -1) page = 0;
         switch (page)
         {
             case 0: // ENGINE
@@ -5855,17 +6012,19 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             // A320 H-events — firing the H-event does NOTHING (this is why one push of the ALT
             // knob "did nothing" and you had to push again: the first push was the dead H-event).
             // Route through FireFCUButton, exactly like the FCU window Push/Pull buttons, so a
-            // single push actually fires (and re-reads the value). Event names match the windows.
-            case HotkeyAction.FCUHeadingPush: FireFCUButton("A32NX.FCU_TO_AP_HDG_PUSH", simConnect, announcer); return true;
-            case HotkeyAction.FCUHeadingPull: FireFCUButton("A32NX.FCU_TO_AP_HDG_PULL", simConnect, announcer); return true;
-            case HotkeyAction.FCUSpeedPush: FireFCUButton("A32NX.FCU_SPD_PUSH", simConnect, announcer); return true;
-            case HotkeyAction.FCUSpeedPull: FireFCUButton("A32NX.FCU_SPD_PULL", simConnect, announcer); return true;
-            case HotkeyAction.FCUAltitudePush: FireFCUButton("A32NX.FCU_ALT_PUSH", simConnect, announcer); return true;
-            case HotkeyAction.FCUAltitudePull: FireFCUButton("A32NX.FCU_ALT_PULL", simConnect, announcer); return true;
+            // single push actually fires. readback:false keeps the actuation SILENT (Fenix-style)
+            // — only the managed-state monitor speaks, and only on a real Managed<->Selected
+            // transition. (The FCU value-entry windows still pass readback:true.)
+            case HotkeyAction.FCUHeadingPush: FireFCUButton("A32NX.FCU_TO_AP_HDG_PUSH", simConnect, announcer, readback: false); return true;
+            case HotkeyAction.FCUHeadingPull: FireFCUButton("A32NX.FCU_TO_AP_HDG_PULL", simConnect, announcer, readback: false); return true;
+            case HotkeyAction.FCUSpeedPush: FireFCUButton("A32NX.FCU_SPD_PUSH", simConnect, announcer, readback: false); return true;
+            case HotkeyAction.FCUSpeedPull: FireFCUButton("A32NX.FCU_SPD_PULL", simConnect, announcer, readback: false); return true;
+            case HotkeyAction.FCUAltitudePush: FireFCUButton("A32NX.FCU_ALT_PUSH", simConnect, announcer, readback: false); return true;
+            case HotkeyAction.FCUAltitudePull: FireFCUButton("A32NX.FCU_ALT_PULL", simConnect, announcer, readback: false); return true;
             // The A380X V/S knob is pull-to-engage (managed vertical is armed via the ALT knob),
             // so VS push is a no-op on the jet; fire the K-event anyway for consistency.
-            case HotkeyAction.FCUVSPush: FireFCUButton("A32NX.FCU_VS_PUSH", simConnect, announcer); return true;
-            case HotkeyAction.FCUVSPull: FireFCUButton("A32NX.FCU_TO_AP_VS_PULL", simConnect, announcer); return true;
+            case HotkeyAction.FCUVSPush: FireFCUButton("A32NX.FCU_VS_PUSH", simConnect, announcer, readback: false); return true;
+            case HotkeyAction.FCUVSPull: FireFCUButton("A32NX.FCU_TO_AP_VS_PULL", simConnect, announcer, readback: false); return true;
 
             case HotkeyAction.ReadFlaps:
             {
@@ -5992,14 +6151,8 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         }
     }
 
-    // PFD/FMA readout window — reuses the shared A32NX PFDForm, which reads the
-    // current aircraft's PFD-panel vars by name (FMA modes, approach capability,
-    // PFD messages, MDA, QNH — all shared A32NX_ names the A380 now defines).
-    private void ShowPFDWindow(ScreenReaderAnnouncer announcer, SimConnectManager simConnect)
-    {
-        var dialog = new Forms.A32NX.PFDForm(announcer, simConnect) { CurrentAircraft = this };
-        dialog.Show();
-    }
+    // (The dedicated PFD/FMA readout WINDOW was removed — those flight values live on
+    // the PFD panel + the individual readout hotkeys; only the Alt+E E/WD window remains.)
 
     // Read ALL current upper-ECAM (E/WD) memo/warning lines on demand (Alt+E),
     // decoded via EWDMessageLookupA380. Reads the live cache of line codes
@@ -6032,6 +6185,51 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
     // + reversers + bleed + IDLE memo + the live ECAM memo / warning lines. Self-contained
     // (mirrors the SD "Upper E/WD" decode at the ECAM-CP combo) so the always-on SD path is
     // never touched. Requests the engine vars, gives the WASM a moment, then reads the cache.
+    // Active FWS content, pushed in by the CoherentFwsFailureClient (reads the FwsCore
+    // directly). Two blocks matching where the real A380 shows them:
+    //   _activeFwsFailures = E/WD block  — warnings/cautions + abnormal procedures
+    //   _activeFwsStatus   = STATUS block — inoperative systems, limitations, deferred
+    // The STATUS page can't be driven on the FBW SD (it rejects page index 14), so both are
+    // surfaced in the E/WD window — warnings at the top, STATUS clearly separated below.
+    // Volatile ref-swap = safe lock-free read from the window's build thread.
+    private volatile List<string> _activeFwsFailures = new();
+    private volatile List<string> _activeFwsStatus = new();
+    // Normalised core texts of the active E/WD warnings (e.g. "SURV XPDR STBY"), cached on
+    // each update so the live memo call-out path can suppress a memo that is ALSO an active
+    // warning (audio dedup, mirroring the E/WD-window display dedup).
+    private volatile HashSet<string> _warnCore = new(StringComparer.OrdinalIgnoreCase);
+    public void SetActiveFwsFailures(List<string> ewd, List<string> status)
+    {
+        _activeFwsFailures = ewd ?? new List<string>();
+        _activeFwsStatus = status ?? new List<string>();
+        var wc = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var w in _activeFwsFailures)
+        {
+            if (string.IsNullOrWhiteSpace(w) || w.EndsWith(":") || w.Contains("):")) continue; // header lines
+            string t = w;
+            int ci = t.LastIndexOf(',');
+            if (ci > 0) t = t.Substring(0, ci);                       // drop ", Amber"
+            int pi = t.IndexOf(": ", StringComparison.Ordinal);       // drop any "Prefix: "
+            if (pi >= 0 && pi <= 22) t = t.Substring(pi + 2);
+            wc.Add(System.Text.RegularExpressions.Regex.Replace(t, "\\s+", " ").Trim());
+        }
+        _warnCore = wc;
+    }
+
+    /// <summary>True if <paramref name="text"/> (a live memo call-out) is already shown as an
+    /// active E/WD warning, so it isn't spoken twice. Whole-phrase match so short memos
+    /// ("T.O") aren't eaten by longer warnings ("T.O SPEEDS NOT INSERTED").</summary>
+    public bool IsTextAnActiveWarning(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        string m = System.Text.RegularExpressions.Regex.Replace(text, "\\s+", " ").Trim();
+        var wc = _warnCore;
+        foreach (var w in wc)
+            if (w.Equals(m, StringComparison.OrdinalIgnoreCase) || w.EndsWith(" " + m, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
     public async Task<string> BuildEwdWindowTextAsync(SimConnectManager simConnect)
     {
         if (!simConnect.IsConnected) return "(not connected to the simulator)";
@@ -6104,6 +6302,10 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         int idleEngs = engs.Count(e => { var n1 = simConnect.GetCachedVariableValue($"A32NX_ENGINE_N1:{e}"); return n1.HasValue && n1.Value <= idleLim + 2; });
         if (fmgcPhase.HasValue && fmgcPhase.Value >= 4 && idleEngs >= 3) lines.Add("IDLE");
 
+        // Core texts of the active E/WD warnings (cached in SetActiveFwsFailures) so a memo
+        // that is ALSO an active warning (e.g. XPDR STBY) isn't listed twice in the window.
+        var warnCore = _warnCore;
+
         var memos = new List<string>();
         foreach (var lr in new[] { "LEFT", "RIGHT" })
             for (int i = 1; i <= 10; i++)
@@ -6112,6 +6314,12 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
                     string mtext = EWDMessageLookupA380.GetMessage(code);
                     if (!string.IsNullOrWhiteSpace(mtext) && !mtext.Equals("NORMAL", StringComparison.OrdinalIgnoreCase))
                     {
+                        // Skip if this memo is already shown as an active warning (whole-phrase
+                        // match, so short memos like "T.O" aren't wrongly eaten by "T.O SPEEDS…").
+                        string mnorm = System.Text.RegularExpressions.Regex.Replace(mtext, "\\s+", " ").Trim();
+                        if (warnCore.Any(wc => wc.Equals(mnorm, StringComparison.OrdinalIgnoreCase)
+                                            || wc.EndsWith(" " + mnorm, StringComparison.OrdinalIgnoreCase)))
+                            continue;
                         string priority = EWDMessageLookupA380.GetMessagePriority(code);
                         memos.Add(string.IsNullOrEmpty(priority) ? mtext : $"{mtext} ({priority})");
                     }
@@ -6119,17 +6327,41 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         lines.Add("");
         lines.Add(memos.Count == 0 ? "Memo / warnings: none" : "Memo / warnings:");
         lines.AddRange(memos);
-        return string.Join("\r\n", lines);
+
+        // Active FWS warnings + status (authoritative, from the FwsCore) at the TOP — the
+        // CoherentFwsFailureClient supplies a grouped, already-named block (Active warnings /
+        // Procedures / Inoperative systems / Limitations). Prepend it verbatim.
+        var fwsBlock = _activeFwsFailures;
+        var outLines = new List<string>();
+        if (fwsBlock.Count > 0) outLines.AddRange(fwsBlock);
+        else outLines.Add("Active warnings: none");
+        outLines.Add("");
+        outLines.AddRange(lines);
+        // STATUS block (inoperative systems / limitations / deferred procedures) — the real
+        // A380 shows these on the SD STATUS page, but the FBW SD rejects that page index, so
+        // they ride here as a clearly-separated section. Shown only when there's something.
+        var statusBlock = _activeFwsStatus;
+        if (statusBlock.Count > 0)
+        {
+            outLines.Add("");
+            outLines.Add("===== STATUS =====");
+            outLines.AddRange(statusBlock);
+        }
+        // Procedure steps (live-scraped from the E/WD: each procedure's title + its action-
+        // item STEPS) — placed at the ABSOLUTE BOTTOM, under everything else, per request, so
+        // the warnings/engine/memos/status read first and the (longest) steps come last.
+        var procLines = EwdMonitor?.ActiveProcedureLines;
+        if (procLines != null && procLines.Count > 0)
+        {
+            outLines.Add("");
+            outLines.Add("Procedure");
+            outLines.AddRange(procLines);
+        }
+        return string.Join("\r\n", outLines);
     }
 
-    // ECAM System Display (SD) window — decodes the FQMS/PRESS/APU ARINC429 words
-    // + plain SD scalars (Fuel/Engine/Press/APU/Elec/Hyd/Cond). Opened from
-    // ShowStatusPage and ShowECAM (the A380 also announces E/WD live).
-    private void ShowSystemDisplayWindow(ScreenReaderAnnouncer announcer, SimConnectManager simConnect)
-    {
-        var dialog = new Forms.FBWA380.FBWA380SystemDisplayForm(announcer, simConnect);
-        dialog.Show();
-    }
+    // (The ECAM System Display readout WINDOW was removed — SD content reads via the ECAM
+    // Control Panel "System Display Page" combo + status box; only Alt+E remains a window.)
 
     public void RequestFCUHeadingWithStatus(SimConnectManager s)
     {
@@ -6214,7 +6446,11 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
     {
         if (!s.IsConnected) { a.AnnounceImmediate("Not connected to simulator."); return false; }
         s.SendEvent("A32NX.FCU_HDG_SET", (uint)hdg);
-        RequestFCUHeadingWithStatus(s);
+        // Clean Fenix-style readback (NOT the racy RequestFCUHeadingWithStatus, which read the
+        // cache via forceUpdate and spoke the STALE value first): announce the value we just
+        // set plus the cached managed dot, once. The window's SelectAll gives the field echo.
+        string hdgStatus = (s.GetCachedVariableValue("A32NX_FCU_HDG_MANAGED_DASHES") ?? 0) > 0.5 ? "managed" : "selected";
+        a.AnnounceImmediate($"FCU heading {hdg:000}, {hdgStatus}");
         return true;
     }
 
@@ -6223,24 +6459,49 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
     {
         if (!s.IsConnected) { a.AnnounceImmediate("Not connected to simulator."); return false; }
         s.SendEvent("A32NX.FCU_SPD_SET", (uint)internalSpeed);
-        RequestFCUSpeedWithStatus(s);
+        // Clean Fenix-style readback (NOT the racy RequestFCUSpeedWithStatus): the value we set
+        // plus the cached managed dot, once. internalSpeed < 100 is Mach*100 (e.g. 78 = 0.78).
+        string spdStatus = (s.GetCachedVariableValue("A32NX_FCU_SPD_MANAGED_DOT") ?? 0) > 0.5 ? "managed" : "selected";
+        if (internalSpeed < 100)
+            a.AnnounceImmediate($"FCU speed mach {internalSpeed / 100.0:0.00}, {spdStatus}");
+        else
+            a.AnnounceImmediate($"FCU speed {internalSpeed}, {spdStatus}");
         return true;
     }
+
+    // Brief window after a window-driven altitude set during which the side-effect
+    // "Altitude Increment: 100" auto-announce is suppressed (the user set an altitude,
+    // not the increment). Only armed when SetFCUAltitudeValue actually changes the increment.
+    private DateTime _altIncrAnnounceSuppressUntil = DateTime.MinValue;
 
     // feet: already converted from metres by the caller if metric.
     public bool SetFCUAltitudeValue(double feet, SimConnectManager s, ScreenReaderAnnouncer a)
     {
         if (!s.IsConnected) { a.AnnounceImmediate("Not connected to simulator."); return false; }
         uint rounded = (uint)(Math.Round(feet / 100) * 100);
-        s.SendEvent("A32NX.FCU_ALT_INCREMENT_SET", 100);
-        System.Threading.Thread.Sleep(50);
+        // FCU_ALT_SET snaps the target onto the current knob increment (100/1000 ft), so a
+        // non-thousand altitude (e.g. 4500) would land on the 1000-grid. Force 100-ft
+        // granularity FIRST — but ONLY when the target isn't already a 1000-multiple, so the
+        // common FLxx0 case (e.g. 36000) never needlessly fires the increment. When we do
+        // change it, suppress its "Altitude Increment: 100" side-effect auto-announce.
+        if (rounded % 1000 != 0)
+        {
+            _altIncrAnnounceSuppressUntil = DateTime.UtcNow.AddMilliseconds(750);
+            s.SendEvent("A32NX.FCU_ALT_INCREMENT_SET", 100);
+            System.Threading.Thread.Sleep(50);
+        }
         s.SendEvent("A32NX.FCU_ALT_SET", rounded);
+        // Fenix-style readback: speak the FCU altitude + managed/selected state once, using the
+        // value we just set (no racy cache re-read) plus the cached managed dot — mirroring the
+        // "FCU altitude 36000, managed/selected" Fenix announces. The window's SelectAll
+        // separately gives NVDA's "36000 selected" field echo.
+        string altStatus = (s.GetCachedVariableValue("A32NX_FCU_ALT_MANAGED") ?? 0) > 0.5 ? "managed" : "selected";
         if (_metricAlt)
         {
             int m = (int)Math.Round(rounded * 0.3048);
-            a.AnnounceImmediate($"Altitude set to {m} metres, {rounded} feet");
+            a.AnnounceImmediate($"FCU altitude {m} metres, {altStatus}");
         }
-        else a.AnnounceImmediate($"Altitude set to {rounded} feet");
+        else a.AnnounceImmediate($"FCU altitude {rounded}, {altStatus}");
         return true;
     }
 
@@ -6251,13 +6512,24 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         if (!s.IsConnected) { a.AnnounceImmediate("Not connected to simulator."); return false; }
         int toSend = Math.Abs(value) < 100 ? (int)(value * 100) : (int)value;
         s.ExecuteCalculatorCode($"{toSend} (>K:A32NX.FCU_VS_SET)");
-        a.AnnounceImmediate($"Vertical speed set to {value}");
+        // Consistent Fenix-style readback (V/S has no managed/selected dot, so just the value).
+        if (Math.Abs(value) < 100)
+            a.AnnounceImmediate($"FCU flight path angle {value:0.0}");
+        else
+            a.AnnounceImmediate($"FCU vertical speed {value:0}");
         return true;
     }
 
-    // Fire a push/pull/toggle event and speak the resulting value (readback routed
-    // through OnPanelButtonFired's switch — heading/speed/alt/vs/trk-fpa/spd-mach).
-    public void FireFCUButton(string evt, SimConnectManager s, ScreenReaderAnnouncer a)
+    // Fire a push/pull/toggle event. When readback is true (the default — used by
+    // the dedicated FCU value-entry windows, where a value confirmation is wanted),
+    // also speak the resulting value via OnPanelButtonFired's switch. The input-mode
+    // FCU hotkey chords (Ctrl/Shift+1-4) pass readback:false so the knob actuates
+    // SILENTLY and only the always-on managed-state monitor (Mon "…_MANAGED…" ->
+    // "Heading/Speed/Altitude Mode: Managed/Selected", which fires only on a REAL
+    // transition) speaks — the Fenix-style behaviour the user asked for. The old
+    // unconditional readback spoke the full value on EVERY press, identical to the
+    // output-mode read query and far too verbose for a knob nudge.
+    public void FireFCUButton(string evt, SimConnectManager s, ScreenReaderAnnouncer a, bool readback = true)
     {
         if (!s.IsConnected) { a.AnnounceImmediate("Not connected to simulator."); return; }
         if (evt == "A32NX.FCU_SPD_MACH_TOGGLE_PUSH") s.ExecuteCalculatorCode(SpdMachToggleRpn);
@@ -6269,7 +6541,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         // conditional RPN above; TRK/FPA toggle goes through here too — verify it separately.)
         else if (evt.StartsWith("A32NX.FCU_", StringComparison.Ordinal)) s.ExecuteCalculatorCode($"(>K:{evt})");
         else s.SendEvent(evt);
-        OnPanelButtonFired(evt, s, a);
+        if (readback) OnPanelButtonFired(evt, s, a);
     }
 
     // ---- Smooth slider ramp (motorised cockpit seats / armrests / sunshades / visors) ----
@@ -6412,8 +6684,6 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         }
         if (_seatMotorDir.Count == 0) _seatMotorTimer?.Stop();
     }
-
-    private void StopSeatMotor() { _seatMotorDir.Clear(); _seatMotorTimer?.Stop(); }
 
     // The user asked, after the seat stops, to hear WHERE it is as a position (not just a number).
     // Spoken band + percent, derived from the approximate tracked position. Queued (not Immediate)

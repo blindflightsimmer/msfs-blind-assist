@@ -38,6 +38,12 @@ namespace MSFSBlindAssist.SimConnect
         private readonly SynchronizationContext? _syncContext;
         private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(4) };
         private readonly SemaphoreSlim _sendLock = new(1, 1);
+        // Serializes EnsureConnected: the background RunLoop poll AND the public ScrapeNowAsync (called
+        // from the UI thread by F5 / the RMP form's debounce timer) both call EnsureConnected. Without
+        // this, two threads could tear down _ws and ConnectAsync concurrently, opening a SECOND inspector
+        // socket to the same Coherent page — which Coherent GT rejects (one socket per page), the exact
+        // "display frozen / not refreshing" failure. _sendLock only covers SendAsync, not connection setup.
+        private readonly SemaphoreSlim _connectLock = new(1, 1);
         private readonly System.Collections.Concurrent.ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pending = new();
 
         private CancellationTokenSource? _cts;
@@ -101,6 +107,7 @@ namespace MSFSBlindAssist.SimConnect
         /// <summary>Force a one-shot scrape now and return the rows (used by F5 refresh).</summary>
         public async Task<List<string>> ScrapeNowAsync()
         {
+            if (_disposed) return _lastRows;   // can be called from a form's F5/poll after Dispose()
             try
             {
                 if (!await EnsureConnected(_cts?.Token ?? CancellationToken.None)) return _lastRows;
@@ -164,6 +171,13 @@ namespace MSFSBlindAssist.SimConnect
 
         private async Task<bool> EnsureConnected(CancellationToken ct)
         {
+            if (_disposed) return false;
+            // Fast path: steady-state (already connected) needs no lock.
+            if (_ws != null && _ws.State == WebSocketState.Open && _agentInstalled) return true;
+            await _connectLock.WaitAsync(ct);
+            try
+            {
+            // Re-check under the lock: a concurrent caller may have just (re)connected.
             if (_ws != null && _ws.State == WebSocketState.Open && _agentInstalled) return true;
 
             // Socket still OPEN but the agent went missing (an eval timed out / the page re-evaluated
@@ -202,6 +216,8 @@ namespace MSFSBlindAssist.SimConnect
             _agentInstalled = install.IndexOf("MSFSBA_DISP_INSTALLED", StringComparison.Ordinal) >= 0;
             _connected = _agentInstalled;
             return _agentInstalled;
+            }
+            finally { _connectLock.Release(); }
         }
 
         private async Task<int?> ResolvePageId(CancellationToken ct)
@@ -339,6 +355,10 @@ namespace MSFSBlindAssist.SimConnect
             _cts?.Dispose();
             _http.Dispose();
             _sendLock.Dispose();
+            // Intentionally NOT disposing _connectLock: the background RunLoop is not joined here and
+            // may be pending on WaitAsync — disposing a SemaphoreSlim with waiters is hazardous.
+            // We never access its AvailableWaitHandle, so there is no handle to leak; Stop() cancels
+            // _cts, which makes the pending WaitAsync(ct) unblock with OperationCanceledException.
         }
 
         private sealed class ScrapeResult

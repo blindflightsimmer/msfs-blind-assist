@@ -60,12 +60,27 @@ namespace MSFSBlindAssist.SimConnect
         /// <summary>Set by the checklist window: poll + raise ECL rows only while open.</summary>
         public bool EclActive { get; set; }
 
+        /// <summary>
+        /// When false, the FAILURE/abnormal warning lines scraped from the E/WD DOM are
+        /// NOT announced here — the authoritative <see cref="CoherentFwsFailureClient"/>
+        /// (reading the FwsCore directly) owns failure call-outs, so this avoids double
+        /// speech. Memos / PFD lines / status boxes are still announced from this scrape.
+        /// Baseline + recur bookkeeping still tracks the warning lines either way.
+        /// </summary>
+        public bool AnnounceWarnings { get; set; } = true;
+
         /// <summary>True once the shared A380X_EWD connection + agents are installed.</summary>
         public bool IsConnected => _connected && _agentInstalled;
 
         private readonly SynchronizationContext? _syncContext;
         private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(4) };
         private readonly SemaphoreSlim _sendLock = new(1, 1);
+        // Serializes EnsureConnected. This client exposes public on-demand scrapes (ScrapeEclAsync from
+        // the checklist form, ScrapeDisplayAsync from the A380 def) that run on the UI thread WHILE the
+        // background RunLoop also calls EnsureConnected. Without this, two threads could ConnectAsync to
+        // the same A380X_EWD page at once, opening a SECOND inspector socket — rejected by Coherent GT
+        // (one socket per page), the exact failure this shared-socket design exists to prevent.
+        private readonly SemaphoreSlim _connectLock = new(1, 1);
         private readonly System.Collections.Concurrent.ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pending = new();
 
         // Lines already spoken (or present at baseline) — kills the scroll/re-render
@@ -78,6 +93,14 @@ namespace MSFSBlindAssist.SimConnect
         // appear vs clear (these persist, unlike one-shot failure/memo lines, so
         // they are announced on BOTH transitions rather than deduped by text).
         private HashSet<string> _lastStatus = new(StringComparer.OrdinalIgnoreCase);
+
+        // The full active abnormal/warning PROCEDURE block (each procedure's title + its
+        // action-item steps) from the latest scrape, for the Alt+E window's "Procedure"
+        // section — so a blind pilot gets the STEPS TO ACTION, not just the failure title.
+        private readonly object _procLock = new();
+        private List<string> _activeProcedureLines = new();
+        /// <summary>Snapshot of the current E/WD procedure lines (titles + indented steps).</summary>
+        public List<string> ActiveProcedureLines { get { lock (_procLock) return new List<string>(_activeProcedureLines); } }
 
         // The fixed ABN-PROC manual-procedure menu categories (shown only when the
         // pilot opens the ABN PROC page) — exact-match so they are not mistaken for
@@ -186,6 +209,13 @@ namespace MSFSBlindAssist.SimConnect
 
         private async Task<bool> EnsureConnected(CancellationToken ct)
         {
+            if (_disposed) return false;
+            // Fast path: steady-state (already connected) needs no lock.
+            if (_ws != null && _ws.State == WebSocketState.Open && _agentInstalled) return true;
+            await _connectLock.WaitAsync(ct);
+            try
+            {
+            // Re-check under the lock: a concurrent caller may have just (re)connected.
             if (_ws != null && _ws.State == WebSocketState.Open && _agentInstalled) return true;
 
             int? pageId = await ResolveEwdPageId(ct);
@@ -222,6 +252,8 @@ namespace MSFSBlindAssist.SimConnect
             _baselineDone = false;
             _lastEclHash = "";
             return _agentInstalled;
+            }
+            finally { _connectLock.Release(); }
         }
 
         private async Task<int?> ResolveEwdPageId(CancellationToken ct)
@@ -270,38 +302,49 @@ namespace MSFSBlindAssist.SimConnect
             // CLEARS and later RECURS is announced again (the old behaviour kept it in
             // _seen forever, so the second occurrence was silently swallowed).
             var currentLines = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var procBlock = new List<string>();                 // title + indented steps, for Alt+E
             foreach (var w in result.warnings ?? new List<Warning>())
             {
                 string clean = Clean(w.text);
                 if (clean.Length == 0) continue;
                 string key = WipTag.Replace(clean, "").Trim();
                 if (MenuLines.Contains(key)) continue;          // the ABN-PROC menu, not a failure
-                currentLines.Add(clean);
-                if (!_seen.Add(clean)) continue;                // already spoken / at baseline
-                fresh.Add(clean);
+                // Append the EWD colour name so the auto-announce reads the colour a sighted pilot
+                // sees, the same way the on-demand viewer does (the agent classifies it from the
+                // EclLine CSS class).
+                string spoken = WithColour(clean, w.colour);
+                // Full procedure block: a headline is a procedure TITLE, the rest are its
+                // action-item STEPS (indented) — surfaced in the Alt+E "Procedure" section.
+                procBlock.Add(w.headline ? spoken : "  " + spoken);
+                currentLines.Add(spoken);
+                if (!_seen.Add(spoken)) continue;               // already spoken / at baseline
+                if (AnnounceWarnings) fresh.Add(spoken);         // else: FwsFailureClient owns failure call-outs
             }
+            lock (_procLock) { _activeProcedureLines = procBlock; }
             // Memos (PARK BRK ON, ELEC EXT PWR, …) — announced from the SAME scrape so
             // the whole E/WD auto-call-out comes from one source (the SimVar
             // EWD_LOWER decode auto-announce is disabled while this monitor runs).
-            foreach (var m in result.memos ?? new List<string>())
+            foreach (var m in result.memos ?? new List<Labelled>())
             {
-                string clean = Clean(m);
+                string clean = Clean(m.text);
                 if (clean.Length == 0) continue;
-                currentLines.Add(clean);
-                if (!_seen.Add(clean)) continue;
-                fresh.Add(clean);
+                string spoken = WithColour(clean, m.colour);
+                currentLines.Add(spoken);
+                if (!_seen.Add(spoken)) continue;
+                fresh.Add(spoken);
             }
             // PFD memo + limitations lines (SET HOLD SPD, SPEED LIM, …). These are FBW
             // 'string' SimVars the agent reads from the JS context — MSFSBA's numeric
             // SimConnect can't (it reads 0), so this scrape is the only way to surface
             // them. Announced on change, same baseline + dedup.
-            foreach (var p in result.pfd ?? new List<string>())
+            foreach (var p in result.pfd ?? new List<Labelled>())
             {
-                string clean = Clean(p);
+                string clean = Clean(p.text);
                 if (clean.Length == 0) continue;
-                currentLines.Add(clean);
-                if (!_seen.Add(clean)) continue;
-                fresh.Add(clean);
+                string spoken = WithColour(clean, p.colour);
+                currentLines.Add(spoken);
+                if (!_seen.Add(spoken)) continue;
+                fresh.Add(spoken);
             }
 
             // EWD status-area indications (STS / ADV / FAILURE PENDING) + display
@@ -364,6 +407,7 @@ namespace MSFSBlindAssist.SimConnect
         /// </summary>
         public async Task<List<EclRow>?> ScrapeEclAsync()
         {
+            if (_disposed) return null;   // can be called from the checklist form after an aircraft-swap Dispose()
             try
             {
                 var ct = _cts?.Token ?? CancellationToken.None;
@@ -395,6 +439,7 @@ namespace MSFSBlindAssist.SimConnect
         /// </summary>
         public async Task<List<string>?> ScrapeDisplayAsync()
         {
+            if (_disposed) return null;   // can be called from the A380 def after an aircraft-swap Dispose()
             try
             {
                 var ct = _cts?.Token ?? CancellationToken.None;
@@ -547,6 +592,12 @@ namespace MSFSBlindAssist.SimConnect
             else LineAnnounced?.Invoke(line);
         }
 
+        // Append the EWD colour name to a spoken line (", Red" / ", Amber" / ...). The agent
+        // supplies the colour from the EclLine CSS class (warnings/memos) or the FWC colour code
+        // (PFD lines). No-op when there's no colour.
+        private static string WithColour(string text, string? colour)
+            => string.IsNullOrEmpty(colour) ? text : $"{text}, {colour}";
+
         private void RaiseError(string message)
         {
             if (_syncContext != null) _syncContext.Post(_ => Error?.Invoke(message), null);
@@ -567,6 +618,10 @@ namespace MSFSBlindAssist.SimConnect
             _cts?.Dispose();
             _http.Dispose();
             _sendLock.Dispose();
+            // Intentionally NOT disposing _connectLock: the background RunLoop is not joined here and
+            // may be pending on WaitAsync — disposing a SemaphoreSlim with waiters is hazardous. We
+            // never access its AvailableWaitHandle, so nothing leaks; Stop() cancels _cts, unblocking
+            // the pending WaitAsync(ct) with OperationCanceledException.
         }
 
         private sealed class ScrapeResult
@@ -574,8 +629,8 @@ namespace MSFSBlindAssist.SimConnect
             public bool ok { get; set; }
             public string? error { get; set; }
             public List<Warning>? warnings { get; set; }
-            public List<string>? memos { get; set; }
-            public List<string>? pfd { get; set; }
+            public List<Labelled>? memos { get; set; }
+            public List<Labelled>? pfd { get; set; }
             public List<string>? status { get; set; }
         }
 
@@ -583,8 +638,16 @@ namespace MSFSBlindAssist.SimConnect
         {
             public string? text { get; set; }
             public string? sev { get; set; }
+            public string? colour { get; set; }   // EWD colour name (Red/Amber/Cyan/White/Green)
             public bool headline { get; set; }
             public bool selected { get; set; }
+        }
+
+        // A memo / PFD line carrying its EWD colour name so the auto-announce reads it.
+        private sealed class Labelled
+        {
+            public string? text { get; set; }
+            public string? colour { get; set; }
         }
 
         private sealed class EclScrapeResult

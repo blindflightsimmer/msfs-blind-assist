@@ -23,18 +23,27 @@ This application uses Windows standard controls, screen reader announcements and
 - Airport and runway lookup
 - Much more
 
+## Requirements
+
+### MobiFlight WASM module
+
+To operate cockpit switches and knobs on the **FlyByWire (A32NX and A380X)** and **Fenix A320** aircraft, MSFS Blind Assist needs the free **MobiFlight WASM module** installed. The app uses it to reliably set the aircraft's internal variables; without it, many controls on these aircraft will not respond (reading and announcements still work). PMDG and HorizonSim aircraft do not require it.
+
+Download it from the [MobiFlight WASM module download page](https://mobiflight.com/download/thank-you), then place the module in your MSFS Community folder (the same place your add-on aircraft live) and restart the simulator.
+
 ## Supported Aircraft
 
 ### FlyByWire Airbus A320neo
 
-- Important! The EFB (Electronic Flight Bag) is not accessible. You need mouse coordinates to be able to load your flight, payload and fuel. We hope the FBW team exposes their EFB to SimBridge, like the MCDU.
-- Panels fully supported, with some non-critical switches missing.
-- All upper ECAM messages readable, thanks to FBW's exposed variables
-- FMA (Flight Mode Annunciator) announcements
-- Text-based navigation display
-- All FCU controls accessible
-- Fuel, payload, weight and balance details fully supported
-- MCDU accessible through FBW SimBridge
+Full accessibility support for the free FlyByWire A32NX.
+- Panels fully supported across the overhead, glareshield, main instrument and pedestal sections, with read-only status fields that list live system readouts.
+- All upper ECAM (E/WD) messages, cautions and memos readable and auto-announced, thanks to FBW's exposed variables; FMA (Flight Mode Annunciator) announcements.
+- The PFD, ND, ISIS and System Display pages are read through the accessible panel status boxes; the E/WD also opens as a pop-out window (Alt+E).
+- All FCU controls accessible, with dedicated value-entry windows (speed, heading, altitude, V/S, autopilot, altimeter) and knob push/pull.
+- Fuel, payload, weight and balance details fully supported.
+- MCDU accessible directly through FBW's SimBridge for full FMS programming.
+- Accessible flyPad EFB (Electronic Flight Bag), opened with Shift+T: the live flyPad tablet is rendered as a browsable document you read and operate with your screen reader — Dashboard, Ground Services, Payload, Fuel, Settings, Navigraph, Checklists and more. (This supersedes the old mouse-coordinate workaround — the EFB is now fully accessible.)
+- All our shared features are integrated as well, including taxi guidance, the landing exit planner, hand-fly and visual landing guidance, route viewer, gate/runway teleport, METAR report, location info and text-based map.
 
 ### Fenix A320 CEO
 
@@ -138,8 +147,9 @@ Developed and maintained by Hadi Rezaei
 Navdata Reader command-line tool by Alexander Barthel to build the airport and navigation databases.
 
 ## Contributors
-- Francesco Tissera ([@francescotissera1211](https://github.com/francescotissera1211)) — lead contributor: turn-by-turn taxi guidance, landing exit planner, ActiveSky weather radar integration, ActiveSky weather-update auto-announce, PMDG 777 enhancements (announcement monitor, FMC settings, alternate LSK keys, Nav Rad button, enhanced PROG-page distance), time hotkeys, hard-pan / invert-pan tone options, landing rollout phase
+- Francesco Tissera ([@francescotissera1211](https://github.com/francescotissera1211)) — lead contributor and the project's most prolific author. Originated and built the bulk of the FlyByWire A380X accessibility integration (overhead / electrical / hydraulic / fuel / bleed / condition / pressurization / fire panels, decoded System Display pages, the ported 1507-entry ECAM message database with colour-aware E/WD auto-announce, the accessible MCDU with full-page scraping and go-to-page navigation, OANS/BTV and RMP/audio control panels, FCU push/pull with read-back, PFD/ND/ISIS display read-outs, EGPWS and stall-warning safety aurals, ROW/ROP protection, weight units, Ground Services, and the HTML manual + checklist), plus the FlyByWire A32NX parity panels (split EFIS, ADIRS, ELEC, pressurization, ventilation, source switching, audio, thrust levers, wipers, clock and flight-control-computers panels, the Ctrl+M monitor manager, and system auto-announce). Built the Visual Landing Guidance dual-tone glideslope system (per-aircraft profiles, live-AoA nominal pitch, per-runway glideslope calibration, flare tuning, PMDG 777 FMC VREF) and its HandFly integration; turn-by-turn taxi guidance, landing exit planner and rollout phase; ActiveSky weather-radar integration and weather-update auto-announce; PMDG 777 enhancements (announcement monitor, FMC settings, alternate LSK keys, Nav Rad button, enhanced PROG-page distance); the Cold Temperature Altitude Correction calculator; time hotkeys; and hard-pan / invert-pan tone options
 - Tobias Heath ([@heath-toby](https://github.com/heath-toby), &lt;heathtobias@gmail.com&gt;) — accessibility testing and bug fixes: taxiway connectivity at KSFO and similar airports, KPHX 07R ILS spatial fallback, landing-exit activation freshness, taxi steering tone pulse / continuous transition, ground-speed announcer rounding and source-field correction, turn direction from aircraft heading, ActiveSky visibility unit preservation, PMDG PROG event-path fix
+- Gus Pacleb ([@kn4iee](https://github.com/kn4iee), &lt;augustu.pacleb@gmail.com&gt;) — FlyByWire accessibility contributor: the shared accessible flyPad EFB for both FBW jets (WebView2 browser mode over the Coherent DevTools transport — Ground Services / Payload / Fuel, Settings, Quick Controls, door open/closed states, throttle calibration), the FlyByWire A32NX accessible MCDU (SimBridge relay), the FlyByWire A32NX cockpit parity audit pass (decoded SD pages and Upper E/WD, weight-unit and distance/top-of-descent hotkeys, light-switch and V-speed fixes, safety aurals), and the data-only OANS/BTV rework, Fenix-style FCU windows (speed / heading / altitude / V-S / autopilot / baro), screen-faithful MFD F-PLN/PERF/SURV/D-ATIS read-outs and colour-aware E/WD auto-announce on the A380X; plus A380X systems fixes (engine-start ignition fan-out, hydraulics, fuel pumps, seats, cabin lighting, GPU and ground-service announcements, ROW/ROP and BTV rollout call-outs, distance/time-to-destination hotkeys), HorizonSim 787-9 FMC bridge FS2024 support (in-place patching, community-folder detection), PMDG 777 center/right CDU index fixes, and the Coherent-debugger developer tooling
 
 ## Usage and Documentation
 MSFS Blind Assist is available to download in the releases page. It is currently in active development and a small group of testers are using it daily. A thorough documentation is in the works and a hotkey list is included in the application.

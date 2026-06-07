@@ -102,6 +102,11 @@ public class SimConnectManager
     private ConcurrentDictionary<string, int> variableDataDefinitions = new ConcurrentDictionary<string, int>();  // Maps variable keys to data definition IDs
     private ConcurrentDictionary<int, string> pendingRequests = new ConcurrentDictionary<int, string>();  // Track pending requests
     private HashSet<string> forceUpdateVariables = new HashSet<string>();  // Track variables that should always fire updates
+    // H:/dotted events fired while the MobiFlight WASM bridge is still connecting (the brief window
+    // right after aircraft load). These have NO working TransmitClientEvent fallback, so they are queued
+    // here and flushed when the bridge connects rather than dropped. Bounded + cleared on teardown.
+    private readonly Queue<(string eventName, uint data)> pendingCalcEvents = new();
+    private const int MaxPendingCalcEvents = 64;
     private ConcurrentDictionary<string, double> lastVariableValues = new ConcurrentDictionary<string, double>();  // Cache last values for change detection
     private int nextDataDefinitionId = 1000;  // Start IDs from 1000 to avoid conflicts
     private static int nextTempDefId = 50000;  // Counter for temporary definition IDs (SetLVar/SetSimVar)
@@ -2737,11 +2742,21 @@ public class SimConnectManager
                             hasChanged = Math.Abs(lastValue - value) > 0.001; // Small tolerance for floating point
                         }
 
+                        // Honor a pending forceUpdate (RequestVariable(key, forceUpdate:true)). Batch-covered
+                        // vars (Continuous+IsAnnounced) no longer have an individual data def, so a force-read
+                        // is delivered HERE via the batch stream, not via ProcessIndividualVariableResponse —
+                        // without this a force-read of an UNCHANGED batch-covered value would never fire.
+                        bool isForceUpdate;
+                        lock (forceUpdateVariables)
+                        {
+                            isForceUpdate = forceUpdateVariables.Remove(varKey);
+                        }
+
                         // Update cache
                         lastVariableValues[varKey] = value;
 
-                        // Only fire event if value changed (or it's the first time we're seeing it)
-                        if (hasChanged || !lastVariableValues.ContainsKey(varKey))
+                        // Only fire event if value changed, was force-requested, or it's the first time we see it
+                        if (hasChanged || isForceUpdate || !lastVariableValues.ContainsKey(varKey))
                         {
                             // Check if we should only announce matches to ValueDescriptions (e.g., thrust lever detents)
                             if (varDef.OnlyAnnounceValueDescriptionMatches &&
@@ -2782,16 +2797,13 @@ public class SimConnectManager
                 }  // end fixed
             }  // end unsafe
         }
-        catch (ExecutionEngineException ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"[ProcessContinuousBatch] CRITICAL: ExecutionEngineException caught! This is a serious CLR error.");
-            System.Diagnostics.Debug.WriteLine($"[ProcessContinuousBatch]   Message: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"[ProcessContinuousBatch]   Variable count: {continuousVariableIndexMap.Count}");
-            System.Diagnostics.Debug.WriteLine($"[ProcessContinuousBatch] Skipping this batch to prevent crash. Please report this issue.");
-            return;  // Abort processing this batch to prevent crash
-        }
         catch (Exception ex)
         {
+            // NOTE: a fatal CLR error during the unsafe marshalling of a received batch
+            // (heap-corruption AccessViolation → 0x80131506 ExecutionEngineException, e.g. the
+            // struct over-read fixed in 8cbb502) is NOT catchable by managed try/catch and will
+            // FailFast regardless — there is intentionally no ExecutionEngineException catch here
+            // (it is obsolete/never-raised on .NET 9). This handler covers ordinary exceptions.
             System.Diagnostics.Debug.WriteLine($"[ProcessContinuousBatch] UNEXPECTED EXCEPTION in unsafe block: {ex.GetType().Name}");
             System.Diagnostics.Debug.WriteLine($"[ProcessContinuousBatch]   Message: {ex.Message}");
             System.Diagnostics.Debug.WriteLine($"[ProcessContinuousBatch]   Stack trace: {ex.StackTrace}");
@@ -3360,6 +3372,21 @@ public class SimConnectManager
             return;
         }
 
+        // Record the force flag BEFORE the individual-def check below. Batch-covered vars
+        // (Continuous+IsAnnounced, no ExcludeFromBatch) have NO individual data def, so they take
+        // the early-return — but the continuous batch stream still delivers them and
+        // ProcessContinuousBatch honors forceUpdateVariables. Recording the flag here is what makes
+        // a force-read of an UNCHANGED batch-covered value actually re-fire (it previously sat after
+        // the early-return, so the flag was never set for batch-covered vars). Individual-def vars
+        // still have it consumed by ProcessIndividualVariableResponse exactly as before.
+        if (forceUpdate)
+        {
+            lock (forceUpdateVariables)
+            {
+                forceUpdateVariables.Add(varKey);
+            }
+        }
+
         if (!variableDataDefinitions.ContainsKey(varKey))
         {
             return;
@@ -3367,15 +3394,6 @@ public class SimConnectManager
 
         try
         {
-            // Track if this should force an update
-            if (forceUpdate)
-            {
-                lock (forceUpdateVariables)
-                {
-                    forceUpdateVariables.Add(varKey);
-                }
-            }
-
             int dataDefId = variableDataDefinitions[varKey];
             simConnect.RequestDataOnSimObject((DATA_REQUESTS)dataDefId,
                 (DATA_DEFINITIONS)dataDefId, SIMCONNECT_OBJECT_ID_USER,
@@ -3897,6 +3915,29 @@ public class SimConnectManager
     {
         if (!IsConnected || simConnect == null) return;
 
+        // GLOBAL WRITE ROUTING: prefer the MobiFlight calculator path for real L:vars.
+        // The data-definition write below (AddToDataDefinition + SetDataOnSimObject) is UNRELIABLE for
+        // many add-on L:vars (FlyByWire L:vars in particular silently revert a frame later) -- which is
+        // why dozens of A380/A32NX controls had to be hand-routed through the calc path one prefix at a
+        // time in each aircraft def's HandleUIVariableSet catch-all. Routing every L:var write that
+        // reaches this fallback through the calc path fixes them all globally. Guardrails:
+        //   * Only when MobiFlight is actually connected (IsMobiFlightConnected checks
+        //     mobiFlightWasm.IsConnected) -- otherwise fall through to the data-def write so users without
+        //     the WASM module keep working. (Fenix's data-def write also remains intact if MobiFlight is
+        //     absent; with MobiFlight present, the calc path is live-verified to set Fenix L:vars too.)
+        //   * Only for TRUE L:vars: a name with a space or colon is a stock-SimVar shape
+        //     (e.g. "TRANSPONDER STATE:1", "INTERACTIVE POINT OPEN:0") and must NOT be written as (>L:..).
+        //     SetLVar always prepends "L:" to varName, so a real caller never passes such a name here.
+        if (IsMobiFlightConnected
+            && !string.IsNullOrEmpty(varName)
+            && varName.IndexOf(' ') < 0
+            && varName.IndexOf(':') < 0)
+        {
+            ExecuteCalculatorCode(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "{0} (>L:{1})", value, varName));
+            return;
+        }
+
         // For setting LVars, we'll need to use a workaround
         // Create a temporary data definition for this specific LVar
         // Use thread-safe counter to generate unique IDs (fixes crash from ID collision)
@@ -3981,18 +4022,25 @@ public class SimConnectManager
         //      EFIS baro STD/QNH push-pull and similar.
         //   2. Dotted custom input events (e.g. A32NX.FCU_HDG_SET,
         //      A32NX.FCU_AP_1_PUSH) — the whole A380/A320 FCU/AP/ATHR.
-        if (mobiFlightWasm != null)
+        if (mobiFlightWasm != null
+            && (eventName.StartsWith("H:", StringComparison.Ordinal) || eventName.Contains('.')))
         {
-            if (eventName.StartsWith("H:", StringComparison.Ordinal))
+            if (IsMobiFlightConnected)
             {
-                ExecuteCalculatorCode($"(>{eventName})");   // momentary; no param
-                return;
+                FireCalcEvent(eventName, data);
             }
-            if (eventName.Contains('.'))
+            else
             {
-                ExecuteCalculatorCode($"{data} (>K:{eventName})");
-                return;
+                // The WASM module exists but hasn't finished connecting yet (brief post-load window).
+                // Unlike SetLVar's L:var write, these events have NO TransmitClientEvent fallback, so
+                // falling through would silently DROP them — queue and flush on connect instead.
+                lock (pendingCalcEvents)
+                {
+                    if (pendingCalcEvents.Count < MaxPendingCalcEvents)
+                        pendingCalcEvents.Enqueue((eventName, data));
+                }
             }
+            return;
         }
 
         // Map the event name to an ID if not already mapped
@@ -4008,6 +4056,30 @@ public class SimConnectManager
         simConnect.TransmitClientEvent(SIMCONNECT_OBJECT_ID_USER,
             (EVENTS)eventIds[eventName], data, GROUP_PRIORITY.HIGHEST,
             SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY);
+    }
+
+    // Fire a calculator-path event via the MobiFlight bridge. H: events are momentary (no param);
+    // dotted custom events take the data param. Caller guarantees the bridge is connected.
+    private void FireCalcEvent(string eventName, uint data)
+    {
+        if (eventName.StartsWith("H:", StringComparison.Ordinal))
+            ExecuteCalculatorCode($"(>{eventName})");
+        else
+            ExecuteCalculatorCode($"{data} (>K:{eventName})");
+    }
+
+    // Flush any H:/dotted events queued while the WASM bridge was still connecting. Called from the
+    // MobiFlight ConnectionStatusChanged handler once IsMobiFlightConnected becomes true.
+    private void FlushPendingCalcEvents()
+    {
+        (string eventName, uint data)[] toFire;
+        lock (pendingCalcEvents)
+        {
+            if (pendingCalcEvents.Count == 0) return;
+            toFire = pendingCalcEvents.ToArray();
+            pendingCalcEvents.Clear();
+        }
+        foreach (var e in toFire) FireCalcEvent(e.eventName, e.data);
     }
 
     public void ProcessWindowMessage(ref Message m)
@@ -4142,6 +4214,8 @@ public class SimConnectManager
             mobiFlightWasm.ConnectionStatusChanged += (sender, status) =>
             {
                 System.Diagnostics.Debug.WriteLine($"[SimConnectManager] MobiFlight status: {status}");
+                // Flush any H:/dotted events fired during the connect window (see SendEvent).
+                if (IsMobiFlightConnected) FlushPendingCalcEvents();
             };
 
             mobiFlightWasm.LVarUpdated += MobiFlightWasm_LVarUpdated;
@@ -4397,6 +4471,7 @@ public class SimConnectManager
             mobiFlightWasm.Disconnect();
             mobiFlightWasm.Dispose();
             mobiFlightWasm = null;
+            lock (pendingCalcEvents) pendingCalcEvents.Clear();   // don't carry queued events across a teardown
             System.Diagnostics.Debug.WriteLine("[SimConnectManager] MobiFlight WASM module disconnected");
         }
 
