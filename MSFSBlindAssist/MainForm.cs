@@ -616,11 +616,11 @@ public partial class MainForm : Form
         // FBW A380 engine-mode-selector watchdog: the cockpit ENG START knob only fans
         // ignition to engines 1+2 on builds whose template defaults ENGINE_COUNT=2 (the
         // A320 inheritance), so engines 3+4 motor but never light. The knob updates
-        // XMLVAR_ENG_MODE_SEL (monitored as ENG_MODE_SEL_POS); mirror its position onto
+        // XMLVAR_ENG_MODE_SEL (monitored as ENGINE_MODE_SELECTOR); mirror its position onto
         // engines 3+4 via TURBINE_IGNITION_SWITCH_SET3/4 (live-verified to address + light
         // the outboard engines). Keys on the selector var only → no feedback loop; harmless
         // when MSFSBA's own Engine Mode Selector combo is used (it already fires SET1-4).
-        if (currentAircraft?.AircraftCode == "FBW_A380" && e.VarName == "ENG_MODE_SEL_POS")
+        if (currentAircraft?.AircraftCode == "FBW_A380" && e.VarName == "ENGINE_MODE_SELECTOR")
         {
             int igPos = (int)Math.Round(e.Value);
             if (igPos >= 0 && igPos <= 2)
@@ -628,7 +628,7 @@ public partial class MainForm : Form
                 simConnectManager?.ExecuteCalculatorCode($"{igPos} (>K:TURBINE_IGNITION_SWITCH_SET3)");
                 simConnectManager?.ExecuteCalculatorCode($"{igPos} (>K:TURBINE_IGNITION_SWITCH_SET4)");
             }
-            // Fall through so ENG_MODE_SEL_POS still auto-announces its position.
+            // Fall through so ENGINE_MODE_SELECTOR still auto-announces its position.
         }
 
         // Step 2: Handle special one-off announcements (terminal cases only)
@@ -1357,14 +1357,16 @@ public partial class MainForm : Form
                     else if (varDef.ValueDescriptions != null && varDef.ValueDescriptions.Count > 0)
                     {
                         // Mirror the build-time button-label logic (the RenderAsButton branch):
-                        // a momentary push-button (ECAM-CP keys, calls, acks, tests) has no
-                        // meaningful RESTING state, so the value 0 (Released / Off / Idle) must
-                        // NOT be appended — otherwise this live update relabels e.g. "ECAM All"
-                        // to "ECAM All: Released", which the screen reader reads aloud. Only
-                        // append a non-zero (active / latched) state; reset to the plain
-                        // DisplayName on the resting value. The functional dispatch keys on the
-                        // var name/events, never the label, so this is purely cosmetic.
-                        string newLabel = (value != 0 && varDef.ValueDescriptions.TryGetValue(value, out string? stateText))
+                        // resting-state (value 0) suppression is OPT-IN via
+                        // SuppressRestingButtonState, set only by the FBW momentary-button
+                        // helpers (ECAM-CP keys, calls, acks, tests) — a momentary push-button
+                        // has no meaningful RESTING state, so relabelling e.g. "ECAM All" to
+                        // "ECAM All: Released" reads as noise. By DEFAULT the value-0 label
+                        // shows: on PMDG ("LNAV: Off") and HS787 ("Baro STD: QNH") it IS
+                        // meaningful state and must not be silenced. The functional dispatch
+                        // keys on the var name/events, never the label, so this is cosmetic.
+                        string newLabel = ((value != 0 || !varDef.SuppressRestingButtonState)
+                                           && varDef.ValueDescriptions.TryGetValue(value, out string? stateText))
                             ? $"{varDef.DisplayName}: {stateText}"
                             : varDef.DisplayName;
                         if (btn.Text != newLabel)
@@ -1940,7 +1942,7 @@ public partial class MainForm : Form
                 }
                 else
                 {
-                    announcer.Announce("The Radio Management Panel window is only available on the A380.");
+                    announcer.AnnounceImmediate("The Radio Management Panel window is only available on the A380.");
                 }
                 break;
             case HotkeyAction.ShowOANS:
@@ -1950,7 +1952,7 @@ public partial class MainForm : Form
                 }
                 else
                 {
-                    announcer.Announce("OANS airport map is only available on the A380.");
+                    announcer.AnnounceImmediate("OANS airport map is only available on the A380.");
                 }
                 break;
             case HotkeyAction.ShowTrackFixWindow:
@@ -2028,7 +2030,7 @@ public partial class MainForm : Form
                 AnnounceWhereAmI();
                 break;
             case HotkeyAction.AnnounceGroundTraffic:
-                announcer.AnnounceImmediate(groundTrafficMonitor.GetNearestTrafficSummary());
+                groundTrafficMonitor.AnnounceNearestTrafficSummary();
                 break;
             case HotkeyAction.LandingExitPlanner:
                 ShowLandingExitForm();
@@ -2093,6 +2095,7 @@ public partial class MainForm : Form
             announcer.AnnounceImmediate("Access GSX: not connected to the simulator.");
             return;
         }
+        _gsxService.RefreshTooltip();
         string tooltip = _gsxService.LastTooltip;
         if (string.IsNullOrWhiteSpace(tooltip))
         {
@@ -2694,8 +2697,14 @@ public partial class MainForm : Form
             else
             {
                 double? dd = Num("distToDest");
+                double? ddSecs = Num("timeToDest");   // FMS time-to-go (seconds), null if the profile hasn't computed it
                 if (dd.HasValue && dd.Value >= 0)
-                    announcer.AnnounceImmediate($"{Math.Round(dd.Value)} miles to destination");
+                {
+                    // Match the TOD readout format: "1355 miles to destination: 02:54:33"
+                    // (the ": HH:MM:SS" suffix is omitted when the FMS supplies no time).
+                    string eta = ddSecs.HasValue ? FormatEtaSeconds(ddSecs.Value) : "";
+                    announcer.AnnounceImmediate($"{Math.Round(dd.Value)} miles to destination{eta}");
+                }
                 else
                     announcer.AnnounceImmediate("Destination distance not available");
             }
@@ -2844,9 +2853,12 @@ public partial class MainForm : Form
         coherentFwsFailureClient.Start();
     }
 
-    private void StopA380EWDMonitor()
+    private void StopA380EWDMonitor(IAircraftDefinition? owner = null)
     {
-        if (currentAircraft is FlyByWireA380Definition a380def) a380def.EwdScrapeHandlesAnnounce = false;
+        // `owner` lets the aircraft-swap cleanup clear the flag on the OUTGOING def —
+        // by the time the cleanup runs, currentAircraft is already the NEW aircraft,
+        // so the no-arg form would silently no-op when leaving the A380.
+        if ((owner ?? currentAircraft) is FlyByWireA380Definition a380def) a380def.EwdScrapeHandlesAnnounce = false;
         coherentFwsFailureClient?.Dispose();
         coherentFwsFailureClient = null;
         if (coherentEWDClient == null) return;
@@ -3229,16 +3241,8 @@ public partial class MainForm : Form
             pmdgEFBForm = null;
         }
 
-        if (fbwA380MCDUForm != null && !fbwA380MCDUForm.IsDisposed)
-        {
-            fbwA380MCDUForm.Dispose();
-            fbwA380MCDUForm = null;
-        }
-        if (fbwEfbForm != null && !fbwEfbForm.IsDisposed)
-        {
-            fbwEfbForm.Dispose();
-            fbwEfbForm = null;
-        }
+        // NOTE: fbwA380MCDUForm / fbwEfbForm are Coherent-client-driven, not bridge-server-driven —
+        // their disposal lives in the SwitchAircraft cleanup path (above this call), not here.
 
         efbBridgeServer?.Stop();
     }
@@ -4333,6 +4337,15 @@ public partial class MainForm : Form
 
     private void SwitchAircraft(IAircraftDefinition newAircraft)
     {
+        // Capture the OUTGOING definition BEFORE reassignment — several cleanup steps
+        // below must act on the old instance (its motion timers, its EWD-announce flag),
+        // and `currentAircraft` already points at the new aircraft by the time the
+        // cleanup block runs.
+        var oldAircraft = currentAircraft;
+        // Halt the old A380 def's seat-motor / slider-ramp timers — they keep firing
+        // calc-path L:var writes at the new aircraft otherwise (sim stays connected).
+        (oldAircraft as FlyByWireA380Definition)?.StopAllMotion();
+
         // Update the aircraft instance
         currentAircraft = newAircraft;
 
@@ -4368,6 +4381,13 @@ public partial class MainForm : Form
             simConnectManager.ReregisterAllVariables();
             simConnectManager.RestartContinuousMonitoring();
 
+            // First-detect announcer grace for a mid-session switch TO the A380 — the
+            // connect handler arms this on initial connection, but a swap reaches the
+            // A380's direct-announce ProcessSimVarUpdate branches (E/WD memo codes,
+            // flight phase) during batch re-registration without it. AnnounceImmediate
+            // (user hotkeys) is unaffected.
+            if (newAircraft is FlyByWireA380Definition) announcer.Suppressed = true;
+
             // Start grace period for new aircraft variables to populate
             // This prevents announcement flood when hundreds of continuous variables send initial values
             System.Windows.Forms.Timer gracePeriodTimer = new System.Windows.Forms.Timer();
@@ -4378,6 +4398,9 @@ public partial class MainForm : Form
                 gracePeriodTimer.Dispose();
                 simVarMonitor.EnableAnnouncements();
                 simConnectManager.EnableECAMAnnouncements();
+                // Unconditional: clearing an already-false flag is harmless, and NOT
+                // clearing it would mute every queued announce forever.
+                announcer.Suppressed = false;
                 System.Diagnostics.Debug.WriteLine("[MainForm] Aircraft switch grace period ended - announcements enabled");
             };
             gracePeriodTimer.Start();
@@ -4498,7 +4521,31 @@ public partial class MainForm : Form
             fbwA380OansForm.Dispose();
             fbwA380OansForm = null;
         }
-        StopA380EWDMonitor();
+        // The RMP window owns its own CoherentDisplayClient + three timers and hides
+        // (not closes) on user-close, so it survives a swap polling the old aircraft's
+        // view — and on return it would be reused bound to the DISCARDED def instance.
+        // Its Dispose(bool) override runs the full teardown.
+        if (fbwA380RmpForm != null && !fbwA380RmpForm.IsDisposed)
+        {
+            fbwA380RmpForm.Dispose();
+            fbwA380RmpForm = null;
+        }
+        // The ECL checklist form is bound (readonly ctor field) to the CoherentEWDClient
+        // that StopA380EWDMonitor disposes below; left alive it would be reused on the
+        // next A380 load permanently blank against the dead client.
+        if (fbwA380ChecklistForm != null && !fbwA380ChecklistForm.IsDisposed)
+        {
+            fbwA380ChecklistForm.Dispose();
+            fbwA380ChecklistForm = null;
+        }
+        // A32NX monitor manager — same stale-snapshot reason as its A380/Fenix/PMDG
+        // siblings, which are already disposed in this block.
+        if (fbwA320MonitorManagerForm != null && !fbwA320MonitorManagerForm.IsDisposed)
+        {
+            fbwA320MonitorManagerForm.Dispose();
+            fbwA320MonitorManagerForm = null;
+        }
+        StopA380EWDMonitor(oldAircraft);
 
         // Dispose HS 787 forms when switching aircraft
         if (hs787FMCForm != null && !hs787FMCForm.IsDisposed)
@@ -5217,12 +5264,16 @@ public partial class MainForm : Form
                 }
                 else if (varDef.ValueDescriptions != null && varDef.ValueDescriptions.Count >= 2 && currentSimVarValues.ContainsKey(varKey))
                 {
-                    // Fallback for non-Fenix buttons that still use ValueDescriptions. Skip the
-                    // RESTING state (value 0 = Off/Idle): a momentary push-button has no
-                    // meaningful resting value, so appending it read as noise ("Chronometer
-                    // Start / Stop: Idle, button"). Only show a non-zero (active/latched) state.
+                    // Fallback for non-Fenix buttons that still use ValueDescriptions.
+                    // Resting-state (value 0 = Off/Idle) suppression is OPT-IN via
+                    // SuppressRestingButtonState, set only by the FBW momentary-button helpers
+                    // — a momentary push-button has no meaningful resting value, so appending
+                    // it read as noise ("Chronometer Start / Stop: Idle, button"). By DEFAULT
+                    // the value-0 label shows: PMDG 777 MCP buttons ("LNAV: Off") and the
+                    // HS787 Baro STD ("QNH") use value-0 descriptions that ARE meaningful state.
                     double val = currentSimVarValues[varKey];
-                    if (val != 0 && varDef.ValueDescriptions.TryGetValue(val, out string? stateText))
+                    if ((val != 0 || !varDef.SuppressRestingButtonState)
+                        && varDef.ValueDescriptions.TryGetValue(val, out string? stateText))
                         buttonText = $"{varDef.DisplayName}: {stateText}";
                 }
 
@@ -5366,10 +5417,12 @@ public partial class MainForm : Form
                     combo.Items.Add("NORM");
                     combo.Items.Add("IGN");
                     
-                    // Set initial value from sim if we have it
-                    if (currentSimVarValues.ContainsKey("TURB ENG IGNITION SWITCH EX1:1"))
+                    // Set initial value from sim if we have it.
+                    // Cache is keyed by the DICT KEY (SimVarUpdated carries VarName = varKey),
+                    // not the SimVar Name — on the A380 that key is ENGINE_MODE_SELECTOR.
+                    if (currentSimVarValues.ContainsKey(varKey))
                     {
-                        double currentValue = currentSimVarValues["TURB ENG IGNITION SWITCH EX1:1"];
+                        double currentValue = currentSimVarValues[varKey];
                         combo.SelectedIndex = (int)currentValue;
                     }
                     else
@@ -5398,8 +5451,12 @@ public partial class MainForm : Form
                             simConnectManager?.SendEvent("TURBINE_IGNITION_SWITCH_SET1", mode);
                             simConnectManager?.SendEvent("TURBINE_IGNITION_SWITCH_SET2", mode);
                             simConnectManager?.ExecuteCalculatorCode($"{mode} (>L:XMLVAR_ENG_MODE_SEL)");
-                            currentSimVarValues["TURB ENG IGNITION SWITCH EX1:1"] = mode;
-                            MarkUiSet("TURB ENG IGNITION SWITCH EX1:1", mode);
+                            // Suppress the echo under the SAME identifier the monitor uses:
+                            // SimVarUpdated carries VarName = varKey (the dict key), NOT
+                            // varDef.Name — storing under the Name never matched, so the
+                            // monitor re-announced every user combo change on the A380.
+                            currentSimVarValues[varKey] = mode;
+                            MarkUiSet(varKey, mode);
                         }
                     };
                     
@@ -6514,6 +6571,9 @@ public partial class MainForm : Form
 
         weatherAnnouncementTimer?.Stop();
         weatherAnnouncementTimer?.Dispose();
+
+        _sdAutoRefreshTimer?.Stop();
+        _sdAutoRefreshTimer?.Dispose();
 
         // Clean up taxi guidance and ground traffic monitor
         taxiGuidanceManager?.Dispose();

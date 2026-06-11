@@ -116,7 +116,8 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
                 // L:var 1→0 and speaks "<name> pressed".
                 IsAnnounced = false,
                 ValueDescriptions = new Dictionary<double, string> { [0] = "Off", [1] = "Activate" },
-                RenderAsButton = true
+                RenderAsButton = true,
+                SuppressRestingButtonState = true
             };
             _momentaryButtons.Add(key);
         }
@@ -139,7 +140,8 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
                 // 2026-06). The click routes through _momentaryButtons → pulse 1→0 + speak
                 // "<name> pressed". MSFSBA's own ECL/SD code pulses these via the calculator
                 // path directly (not HandleUIVariableSet), so those internal pulses stay silent.
-                RenderAsButton = true
+                RenderAsButton = true,
+                SuppressRestingButtonState = true
             };
             _momentaryButtons.Add(key);
         }
@@ -469,12 +471,25 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
 
         // ---- ANTI-ICE ----
         OnOff("A32NX_MAN_PITOT_HEAT", "Probe / Window Heat");
-        // Wing anti-ice: the cockpit button is momentary, but its underlying
-        // selected-state L:var is a plain writable toggle (verified live #56 — the
-        // momentary XMLVAR_..._PRESSED pulse did NOT actuate; writing _SYSTEM_SELECTED
-        // does and sticks). SYSTEM_ON (the actual valve-open output) is read-only and
-        // shown separately as "Wing Anti-Ice Flowing".
-        OnOff("A32NX_PNEU_WING_ANTI_ICE_SYSTEM_SELECTED", "Wing Anti-Ice");
+        // Wing anti-ice (CORRECTED 2026-06 — the old _SYSTEM_SELECTED combo was DEAD on
+        // the A380X). Live-verified against the running build: writing
+        // A32NX_PNEU_WING_ANTI_ICE_SYSTEM_SELECTED is read by NOTHING — the stock
+        // STRUCTURAL DEICE SWITCH stayed 0 and _SYSTEM_ON stayed 0 (even airborne), so
+        // the combo actuated nothing. The A380's real wing anti-ice is the stock
+        // STRUCTURAL DEICE SWITCH (the EWD reads it via 'A:STRUCTURAL DEICE SWITCH'),
+        // and the only working actuator is the stock TOGGLE_STRUCTURAL_DEICE event
+        // (live-verified 0->1; the absolute STRUCTURAL_DEICE_SET event is a no-op on
+        // this build). So back the combo on the stock SimVar and toggle-if-differs via
+        // HandleUIVariableSet — same pattern as the ENG GEN / taxi-light combos.
+        // NOTE: source/WASM grep could NOT have found this (the FBW consumer is in the
+        // compiled systems.wasm / base avionics); only live downstream testing did.
+        vars["WING_ANTI_ICE_OVHD"] = new SimVarDefinition
+        {
+            Name = "STRUCTURAL DEICE SWITCH", DisplayName = "Wing Anti-Ice",
+            Type = SimVarType.SimVar, Units = "bool",
+            UpdateFrequency = UpdateFrequency.Continuous, IsAnnounced = true,
+            ValueDescriptions = onOff
+        };
         for (int n = 1; n <= 4; n++)
         {
             // Settable On/Off combo — fires K:ANTI_ICE_SET_ENGn via
@@ -577,7 +592,8 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         void SeatBtn(string key, string display) => vars[key] = new SimVarDefinition
         {
             Name = key, DisplayName = display, Type = SimVarType.LVar,
-            UpdateFrequency = UpdateFrequency.OnRequest, IsAnnounced = false, RenderAsButton = true
+            UpdateFrequency = UpdateFrequency.OnRequest, IsAnnounced = false, RenderAsButton = true,
+            SuppressRestingButtonState = true
         };
         // The real 0..100 position vars, registered read-only so the motor can seed its tracked
         // position from a fresh cache (force-read on start/stop) for an accurate spoken read-out.
@@ -642,7 +658,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             Type = SimVarType.LVar, UpdateFrequency = UpdateFrequency.OnRequest,
             IsAnnounced = false,
             ValueDescriptions = new Dictionary<double, string> { [0] = "Off", [1] = "Activate" },
-            RenderAsButton = true
+            RenderAsButton = true, SuppressRestingButtonState = true
         };
 
         // ---- SIGNS ----
@@ -712,9 +728,9 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         // (>H:VAR) on press (checked before the generic _momentaryButtons pulse path, so
         // the H-event mechanism runs instead of a no-op L:var pulse).
         vars["A32NX_CHRONO_TOGGLE"] = new SimVarDefinition
-        { Name = "A32NX_CHRONO_TOGGLE", DisplayName = "Chronometer Start / Stop", Type = SimVarType.LVar, UpdateFrequency = UpdateFrequency.OnRequest, IsAnnounced = false, ValueDescriptions = new Dictionary<double, string> { [0] = "Idle", [1] = "Activate" }, RenderAsButton = true };
+        { Name = "A32NX_CHRONO_TOGGLE", DisplayName = "Chronometer Start / Stop", Type = SimVarType.LVar, UpdateFrequency = UpdateFrequency.OnRequest, IsAnnounced = false, ValueDescriptions = new Dictionary<double, string> { [0] = "Idle", [1] = "Activate" }, RenderAsButton = true, SuppressRestingButtonState = true };
         vars["A32NX_CHRONO_RST"] = new SimVarDefinition
-        { Name = "A32NX_CHRONO_RST", DisplayName = "Chronometer Reset", Type = SimVarType.LVar, UpdateFrequency = UpdateFrequency.OnRequest, IsAnnounced = false, ValueDescriptions = new Dictionary<double, string> { [0] = "Idle", [1] = "Activate" }, RenderAsButton = true };
+        { Name = "A32NX_CHRONO_RST", DisplayName = "Chronometer Reset", Type = SimVarType.LVar, UpdateFrequency = UpdateFrequency.OnRequest, IsAnnounced = false, ValueDescriptions = new Dictionary<double, string> { [0] = "Idle", [1] = "Activate" }, RenderAsButton = true, SuppressRestingButtonState = true };
 
         // ---- AUDIO CONTROL PANEL (ACP) — receive selectors, RMP 1 ----
         // Which sources the captain hears (#107 transcript: "ensure VHF1 + cabin
@@ -758,10 +774,13 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         OnOff("A380X_RMP_1_HF_TX_2", "HF 2 Transmit");
         OnOff("A380X_RMP_1_TEL_TX_1", "TEL 1 Transmit");
         OnOff("A380X_RMP_1_TEL_TX_2", "TEL 2 Transmit");
-        OnOff("A380X_RMP_1_INT_TX_1", "Interphone Transmit");
-        OnOff("A380X_RMP_1_CAB_TX_1", "Cabin Interphone Transmit");
-        OnOff("A380X_RMP_1_PA_TX_1", "PA Transmit");
-        OnOff("A380X_RMP_1_NAV_TX_1", "Navaid Transmit");
+        // INT/CAB/PA transmit: single channels — the real vars have NO "_1" index suffix
+        // (build-verified in the installed rmp.js: _INT_TX/_CAB_TX/_PA_TX exist, the _1
+        // forms do not). NAV transmit removed — A380X_RMP_n_NAV_TX exists nowhere in the
+        // build (you don't transmit on a navaid). VHF/HF/TEL transmit ARE indexed (kept).
+        OnOff("A380X_RMP_1_INT_TX", "Interphone Transmit");
+        OnOff("A380X_RMP_1_CAB_TX", "Cabin Interphone Transmit");
+        OnOff("A380X_RMP_1_PA_TX", "PA Transmit");
 
         // ---- AUDIO CONTROL PANEL — First Officer (RMP 2), captain/F-O split ----
         // The RMP is identical hardware per seat; all RMP-2 switches live-verified to
@@ -795,10 +814,9 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         OnOff("A380X_RMP_2_HF_TX_2", "HF 2 Transmit");
         OnOff("A380X_RMP_2_TEL_TX_1", "TEL 1 Transmit");
         OnOff("A380X_RMP_2_TEL_TX_2", "TEL 2 Transmit");
-        OnOff("A380X_RMP_2_INT_TX_1", "Interphone Transmit");
-        OnOff("A380X_RMP_2_CAB_TX_1", "Cabin Interphone Transmit");
-        OnOff("A380X_RMP_2_PA_TX_1", "PA Transmit");
-        OnOff("A380X_RMP_2_NAV_TX_1", "Navaid Transmit");
+        OnOff("A380X_RMP_2_INT_TX", "Interphone Transmit");
+        OnOff("A380X_RMP_2_CAB_TX", "Cabin Interphone Transmit");
+        OnOff("A380X_RMP_2_PA_TX", "PA Transmit");
 
         // ---- RADIO MANAGEMENT PANEL (RMP) ----
         // The A380 RMP (VHF + transponder tuning — the only two pages the FBW dev build models)
@@ -965,7 +983,12 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         Sel("A32NX_EIS_DMC_SWITCHING_KNOB", "EIS / DMC Source", srcSw);
         // Magnetic vs True heading reference (the ND/FMS TRUE REF pushbutton). The
         // pilot must confirm MAG unless TRUE is required. (#107 transcript gap.)
-        Sel("A32NX_FMGC_TRUE_REF", "Heading Reference", new Dictionary<double, string> { [0] = "Magnetic", [1] = "True" });
+        // CORRECTED 2026-06: the control + state var the A380 instruments (PFD/ND/FCU)
+        // actually read is A32NX_PUSH_TRUE_REF, NOT A32NX_FMGC_TRUE_REF (what MSFSBA used
+        // before). Live-verified: writing FMGC_TRUE_REF=1 left PUSH_TRUE_REF (the consumed
+        // var) at 0 and changed nothing; writing PUSH_TRUE_REF=1 latched and is what the
+        // displays read. FMGC_TRUE_REF is an FMGC-internal output, not the pilot control.
+        Sel("A32NX_PUSH_TRUE_REF", "Heading Reference", new Dictionary<double, string> { [0] = "Magnetic", [1] = "True" });
         Sel("A32NX_CHRONO_ET_SWITCH_POS", "Elapsed Time",
             new Dictionary<double, string> { [0] = "Run", [1] = "Stop", [2] = "Reset" });
 
@@ -1095,7 +1118,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         ArincUnit("A32NX_ADIRS_IR_1_WIND_DIRECTION_BNR", "A32NX_ADIRS_IR_1_WIND_DIRECTION_BNR", "Wind direction", "degrees");
         ArincUnit("A32NX_ADIRS_IR_1_WIND_SPEED_BNR", "A32NX_ADIRS_IR_1_WIND_SPEED_BNR", "Wind speed", "knots");
         // ND heading reference (magnetic vs true) — auto-announced on change.
-        ReadEnum("A32NX_FMGC_TRUE_REF", "Heading reference",
+        ReadEnum("A32NX_PUSH_TRUE_REF", "Heading reference",
             new Dictionary<double, string> { [0] = "magnetic", [1] = "true" });
         // ISIS speed-bugs active flag (the bug VALUES are JS-only on the FBW ISIS, no L-var;
         // the ATT-10s realign flag is likewise scrape-only). Friendly label for the status box.
@@ -1799,7 +1822,9 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         // ported from the A320, shared A32NX_ names). The 3 PFD messages are
         // announced live (meaningful callouts); the rest are window-only readouts.
         Mon("A32NX_PFD_MSG_SET_HOLD_SPEED", "Set Hold Speed", onOff);
-        Mon("A32NX_PFD_MSG_TD_REACHED", "Top of Descent Reached", onOff);
+        // Speak the real PFD message text ("T/D REACHED") on reaching the top of
+        // descent, matching the A32NX, instead of the generic on/off wording.
+        Mon("A32NX_PFD_MSG_TD_REACHED", "Top of Descent Reached", new Dictionary<double, string> { [0] = "Not shown", [1] = "T/D REACHED" });
         Mon("A32NX_PFD_MSG_CHECK_SPEED_MODE", "Check Speed Mode", onOff);
         // Autothrust mode — FMA column 1 (what the thrust automation is doing).
         // The third core automation cue alongside the vertical & lateral modes;
@@ -1825,13 +1850,30 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         {
             [0] = "None", [1] = "CLB", [2] = "MCT", [3] = "FLEX", [4] = "TOGA", [5] = "Max Reverse"
         });
-        // Flight Director 1 / 2 (captain + F/O FD command bars). The engage-state
-        // L:vars are DIRECTLY settable and STICK via the calculator path (live-verified
-        // they hold for seconds, unlike the stock TOGGLE_FLIGHT_DIRECTOR event used in
-        // an earlier attempt, which did not map) — written through the A32NX_ catch-all
-        // in HandleUIVariableSet. Continuous + announced, so FD on/off speaks on change.
-        OnOff("A32NX_FCU_EFIS_L_FD_ACTIVE", "Flight Director 1");
-        OnOff("A32NX_FCU_EFIS_R_FD_ACTIVE", "Flight Director 2");
+        // Flight Director 1 / 2 (CORRECTED 2026-06). The A32NX_FCU_EFIS_L/R_FD_ACTIVE
+        // L:vars are DEAD on the A380X — live-verified the FD stayed ON with the lvar at
+        // 0 (fully decoupled), and writing the lvar actuated nothing (the earlier
+        // "sticks via the calculator path" note was the stickiness trap — it holds but
+        // drives nothing). The real control is the cockpit FD button, which fires
+        // K:TOGGLE_FLIGHT_DIRECTOR with the SIDE as the PARAMETER (1 = Capt, 2 = F/O) —
+        // live-verified: param 1 flips FD1, param 2 flips FD2, per-side. (The earlier
+        // attempt used param 0, which only ever turned the FD off and never on.) Back
+        // the combos on the stock AUTOPILOT FLIGHT DIRECTOR ACTIVE:n and toggle-if-differs
+        // via HandleUIVariableSet — same pattern as ENG GEN / taxi light.
+        vars["FD_1_CTL"] = new SimVarDefinition
+        {
+            Name = "AUTOPILOT FLIGHT DIRECTOR ACTIVE:1", DisplayName = "Flight Director 1",
+            Type = SimVarType.SimVar, Units = "bool",
+            UpdateFrequency = UpdateFrequency.Continuous, IsAnnounced = true,
+            ValueDescriptions = onOff
+        };
+        vars["FD_2_CTL"] = new SimVarDefinition
+        {
+            Name = "AUTOPILOT FLIGHT DIRECTOR ACTIVE:2", DisplayName = "Flight Director 2",
+            Type = SimVarType.SimVar, Units = "bool",
+            UpdateFrequency = UpdateFrequency.Continuous, IsAnnounced = true,
+            ValueDescriptions = onOff
+        };
         // Monitored (so ProcessSimVarUpdate sees changes) + Ctrl+M-muteable; the raw
         // generic announce is suppressed by the decoded handler returning true.
         Mon("A32NX_FMA_VERTICAL_ARMED", "Armed Vertical Modes", new Dictionary<double, string>());
@@ -1909,25 +1951,11 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         // (The A380X_EFIS_CP_BARO_PUSH/PULL H-events are NON-functional on the
         //  A380X — verified live — removed. STD/QNH is the IS_STD combo above.)
 
-        // ============================ RADIOS (RMP) ============================
-        // The A380 RMPs manage the radios on-screen, but the aircraft sits on
-        // standard MSFS COM radios — the stock COM events/SimVars (as used by
-        // the A320 RMP panel) drive and read them. Standby is the editable box;
-        // swap moves it to active.
-        for (int n = 1; n <= 3; n++)
-        {
-            vars[$"COM_STANDBY_FREQUENCY_SET:{n}"] = new SimVarDefinition
-            {
-                Name = "COM_STANDBY_FREQUENCY_SET", DisplayName = $"VHF {n} Standby (set)",
-                Type = SimVarType.Event, EventParam = (uint)n
-            };
-            Act($"COM{n}_RADIO_SWAP", $"VHF {n} Swap", new Dictionary<double, string> { [0] = "Idle", [1] = "Swap active and standby" });
-            // Units "kHz" (NOT "MHz"): the stock COM freq simvars return kHz, and MainForm's
-            // formatter only has a "kHz" case (÷1000, 3 decimals -> "122.800 MHz"). "MHz" fell to
-            // the default integer format -> "123". Matches the A320.
-            Stock($"COM_ACTIVE_FREQUENCY:{n}", $"COM ACTIVE FREQUENCY:{n}", $"VHF {n} Active", "kHz");
-            Stock($"COM_STANDBY_FREQUENCY:{n}", $"COM STANDBY FREQUENCY:{n}", $"VHF {n} Standby", "kHz");
-        }
+        // (The legacy stock-COM "Radios" registrations — COM_STANDBY_FREQUENCY_SET:{n},
+        //  COM{n}_RADIO_SWAP, COM_*_FREQUENCY:{n} — were removed: the FBW A380 IGNORES
+        //  the stock COM events (live-verified), and the panel that referenced them is
+        //  long gone. All tuning is RMP-only; the RMP window + the COM_ACTIVE_{n}/
+        //  COM_STANDBY_{n} read-out keys cover it.)
 
         // ============================ TRANSPONDER / ATC ============================
         // "BCO16" makes SimConnect decode the BCD-packed code to the 4-digit squawk
@@ -2226,7 +2254,11 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         Sel("A32NX_GPWS_GS_OFF", "GPWS Glideslope Mode", normOff);
         Sel("A32NX_GPWS_FLAPS_OFF", "GPWS Flap Mode", normOff);
         Sel("A32NX_GPWS_TERR_OFF", "GPWS Terrain", normOff);
-        Sel("A32NX_GPWS_FLAPS3", "Landing Flap 3", new Dictionary<double, string> { [0] = "Off", [1] = "On" });
+        // "Landing Flap 3" (A32NX_GPWS_FLAPS3) REMOVED 2026-06 — it is an A320 *pedestal*
+        // GPWS control with NO A380 equivalent. Verified live: the A380's GPWS/TAWS UI
+        // (MFD SURV CONTROLS) exposes exactly TERR SYS / GPWS / G/S MODE / FLAP MODE — all
+        // four already covered above (FLAP MODE = A32NX_GPWS_FLAPS_OFF). There is no flap-3
+        // selector on the A380, and A32NX_GPWS_FLAPS3 is read by nothing on this build.
         OnOff("A32NX_GPWS_TEST", "GPWS Test");   // HOLD self-test: On runs the test audio, Off ends it
 
         // Aircraft-preset LOAD selector — registered OnRequest, NOT announced. The panel that
@@ -2395,27 +2427,6 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         Stock("GEAR_CENTER_POS", "GEAR CENTER POSITION", "Center Gear Position", "percent");
         Stock("GEAR_RIGHT_POS", "GEAR RIGHT POSITION", "Right Gear Position", "percent");
         ReadEnum("A32NX_AUTOBRAKES_RTO_ARMED", "RTO Armed", new Dictionary<double, string> { [0] = "No", [1] = "Armed" });
-
-        // Engine mode selector — monitored via ENGINE 1's ignition switch so the MainForm
-        // watchdog can mirror it onto engines 3+4. The FBW cockpit ENG START knob template
-        // defaults ENGINE_COUNT=2 (A320 inheritance) on some installed builds, so turning it
-        // only fans TURBINE_IGNITION_SWITCH_SET to engines 1+2 — engines 3+4 then motor but
-        // never get ignition ("3/4 spin but don't light"). The knob DOES set engine 1's
-        // ignition switch (TURB ENG IGNITION SWITCH EX1:1); MainForm mirrors that onto 3+4
-        // via SET3/SET4 (live-verified to address + light the outboard engines). EX1:1 is
-        // used (not XMLVAR_ENG_MODE_SEL) because XMLVAR is force-driven by the physical knob
-        // and reverts external writes — EX1:1 is the reliable, settable, monitorable signal.
-        // Also auto-announces the selector position so a blind pilot hears it move.
-        vars["ENG_MODE_SEL_POS"] = new SimVarDefinition
-        {
-            Name = "TURB ENG IGNITION SWITCH EX1:1",
-            DisplayName = "Engine Mode Selector",
-            Type = SimVarType.SimVar,
-            UpdateFrequency = UpdateFrequency.Continuous,
-            IsAnnounced = true,
-            Units = "enum",
-            ValueDescriptions = new Dictionary<double, string> { [0] = "Crank", [1] = "Norm", [2] = "Ignition / Start" }
-        };
 
         // ENGINE master / ignition position readbacks (we only sent before).
         for (int n = 1; n <= 4; n++)
@@ -2594,7 +2605,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             {
                 "ELEC", "APU", "Fuel", "Hydraulics", "Bleed Air", "Air Conditioning",
                 "Pressurization", "Ventilation", "Cargo Air", "Anti Ice", "Fire", "Oxygen",
-                "Calls", "Signs", "Wipers", "ADIRS", "Flight Control Computers", "Engine Start",
+                "Calls", "Signs", "Wipers", "ADIRS", "Flight Control Computers", "Engine FADEC and Manual Start",
                 "Recorder and Misc", "GPWS", "Reset", "Interior Lighting", "Exterior Lighting"
             },
             ["Glareshield"] = new List<string> { "FCU", "EFIS Captain", "EFIS First Officer", "Warnings", "OIT" },
@@ -2696,7 +2707,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         };
         p["Anti Ice"] = new List<string>
         {
-            "A32NX_MAN_PITOT_HEAT", "A32NX_PNEU_WING_ANTI_ICE_SYSTEM_SELECTED",
+            "A32NX_MAN_PITOT_HEAT", "WING_ANTI_ICE_OVHD",
             "ENG1_ANTI_ICE", "ENG2_ANTI_ICE", "ENG3_ANTI_ICE", "ENG4_ANTI_ICE"
         };
         p["Fire"] = new List<string>
@@ -2773,18 +2784,26 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             "A32NX_RUDDER_TRIM_RESET", "RUDDER_TRIM_LEFT", "RUDDER_TRIM_RIGHT",
             "A32NX_TILLER_PEDAL_DISCONNECT"
         };
-        p["Engine Start"] = new List<string>
+        // Overhead engine panel — both groups are physically on the A380 overhead
+        // (FBW model nodes PUSH_OVHD_ENG_FADEC1..4 under "ENG FADEC GND PWR", and
+        // PUSH_OVHD_ENGMANSTART_1..4 + ALTN in the Eng_Man_Start group). Named to
+        // reflect BOTH families (the FADEC ground-power PBs are not "start" controls).
+        p["Engine FADEC and Manual Start"] = new List<string>
         {
             "A32NX_OVHD_FADEC_1", "A32NX_OVHD_FADEC_2", "A32NX_OVHD_FADEC_3", "A32NX_OVHD_FADEC_4",
             "A32NX_ENGMANSTART1_TOGGLE", "A32NX_ENGMANSTART2_TOGGLE",
-            "A32NX_ENGMANSTART3_TOGGLE", "A32NX_ENGMANSTART4_TOGGLE"
+            "A32NX_ENGMANSTART3_TOGGLE", "A32NX_ENGMANSTART4_TOGGLE",
+            // ALTN manual start belongs to the same overhead Eng_Man_Start group
+            // (node PUSH_OVHD_ENGMANSTARTALTN), not "Recorder and Misc".
+            "A32NX_ENGMANSTARTALTN_TOGGLE"
         };
         p["Recorder and Misc"] = new List<string>
         {
             "A32NX_RCDR_GROUND_CONTROL_ON", "A32NX_ELT_ON", "A32NX_AVIONICS_COMPLT_ON",
             "A380X_OVHD_STORM_LT",   // cockpit door video moved to the unified p["Cockpit"]
             "A32NX_ACMS_TRIGGER_ON", "A32NX_CREW_HEAD_SET", "A32NX_SVGEINT_OVRD_ON",
-            "A32NX_ENGMANSTARTALTN_TOGGLE", "A32NX_ENTERTAINMENT_CWS_OFF",
+            // ENGMANSTARTALTN moved to the "Engine FADEC and Manual Start" overhead panel.
+            "A32NX_ENTERTAINMENT_CWS_OFF",
             "A32NX_ENTERTAINMENT_IFEC_OFF", "A380X_REMOTE_CB_CTRL",
         };
         p["Audio Control Panel Captain"] = new List<string>
@@ -2800,7 +2819,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             "A380X_RMP_1_PA_VOL_RX_SWITCH", "A380X_RMP_1_NAV_VOL_RX_SWITCH",
             "A380X_RMP_1_VHF_TX_1", "A380X_RMP_1_VHF_TX_2", "A380X_RMP_1_VHF_TX_3",
             "A380X_RMP_1_HF_TX_1", "A380X_RMP_1_HF_TX_2", "A380X_RMP_1_TEL_TX_1", "A380X_RMP_1_TEL_TX_2",
-            "A380X_RMP_1_INT_TX_1", "A380X_RMP_1_CAB_TX_1", "A380X_RMP_1_PA_TX_1", "A380X_RMP_1_NAV_TX_1"
+            "A380X_RMP_1_INT_TX", "A380X_RMP_1_CAB_TX", "A380X_RMP_1_PA_TX"
         };
         p["Audio Control Panel First Officer"] = new List<string>
         {
@@ -2815,7 +2834,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             "A380X_RMP_2_PA_VOL_RX_SWITCH", "A380X_RMP_2_NAV_VOL_RX_SWITCH",
             "A380X_RMP_2_VHF_TX_1", "A380X_RMP_2_VHF_TX_2", "A380X_RMP_2_VHF_TX_3",
             "A380X_RMP_2_HF_TX_1", "A380X_RMP_2_HF_TX_2", "A380X_RMP_2_TEL_TX_1", "A380X_RMP_2_TEL_TX_2",
-            "A380X_RMP_2_INT_TX_1", "A380X_RMP_2_CAB_TX_1", "A380X_RMP_2_PA_TX_1", "A380X_RMP_2_NAV_TX_1"
+            "A380X_RMP_2_INT_TX", "A380X_RMP_2_CAB_TX", "A380X_RMP_2_PA_TX"
         };
         // (Radio Management Panel removed — the RMP is now the dedicated accessible RMP WINDOW,
         // Ctrl+Shift+R in input mode → FBWA380RmpForm, scraping A380X_RMP_1/2 + firing the keypad H-events.)
@@ -2852,7 +2871,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             // Flight Director 1 (captain). The earlier removal said writes "fail",
             // but the engage-state L:var IS settable and HOLDS via the calculator
             // path (re-verified live: set 1 → still 1 after 2.5 s).
-            "A32NX_FCU_EFIS_L_FD_ACTIVE"
+            "FD_1_CTL"
         };
         p["EFIS First Officer"] = new List<string>
         {
@@ -2863,7 +2882,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             "A32NX_EFIS_R_NAVAID_1_MODE", "A32NX_EFIS_R_NAVAID_2_MODE",
             "A32NX_FCU_RIGHT_EIS_BARO_IS_STD", "FO_QNH_SET", "XMLVAR_Baro_Selector_HPA_2",
             "A32NX_EFIS_R_OANS_RANGE",
-            "A32NX_FCU_EFIS_R_FD_ACTIVE"   // Flight Director 2 (F/O) — see captain side
+            "FD_2_CTL"   // Flight Director 2 (F/O) — see captain side
         };
         p["FCU"] = new List<string>
         {
@@ -2897,7 +2916,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         p["Source Switching"] = new List<string>
         {
             "A32NX_ATT_HDG_SWITCHING_KNOB", "A32NX_AIR_DATA_SWITCHING_KNOB",
-            "A32NX_EIS_DMC_SWITCHING_KNOB", "A32NX_FMGC_TRUE_REF"
+            "A32NX_EIS_DMC_SWITCHING_KNOB", "A32NX_PUSH_TRUE_REF"
         };
         // Clock panel: the chronometer start/stop + reset buttons and the elapsed-time
         // (ET) Run/Stop/Reset knob are the controls; the elapsed-time readouts are the
@@ -2913,7 +2932,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             // ENG MASTER 1-4 are now Off/On combos (state from the fuel-valve SimVar,
             // set fires FUELSYSTEM_VALVE_OPEN/CLOSE) — no separate On/Off buttons.
             "ENG_VALVE_SWITCH:1", "ENG_VALVE_SWITCH:2", "ENG_VALVE_SWITCH:3", "ENG_VALVE_SWITCH:4"
-            // ENG MAN START 1-4 live in the overhead "Engine Start" panel (not duplicated here).
+            // ENG MAN START 1-4 live in the overhead "Engine FADEC and Manual Start" panel (not duplicated here).
         };
         p["Thrust Levers"] = new List<string>
         {
@@ -2987,7 +3006,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         p["GPWS"] = new List<string>
         {
             "A32NX_GPWS_SYS_OFF", "A32NX_GPWS_GS_OFF", "A32NX_GPWS_FLAPS_OFF",
-            "A32NX_GPWS_TERR_OFF", "A32NX_GPWS_FLAPS3", "A32NX_GPWS_TEST"
+            "A32NX_GPWS_TERR_OFF", "A32NX_GPWS_TEST"
         };
         // "PFD" is NOT a navigable control panel — it's the variable set the PFD
         // window (ShowPFD hotkey) requests/reads. Intentionally absent from
@@ -3287,7 +3306,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             // Velocities + wind + heading reference (ARINC, decoded; "not available" on the ground).
             "A32NX_ADIRS_IR_1_GROUND_SPEED", "A32NX_ADIRS_ADR_1_TRUE_AIRSPEED",
             "A32NX_ADIRS_IR_1_WIND_DIRECTION_BNR", "A32NX_ADIRS_IR_1_WIND_SPEED_BNR",
-            "A32NX_FMGC_TRUE_REF"
+            "A32NX_PUSH_TRUE_REF"
         };
         d["Oxygen"] = new List<string> { "A32NX_OXYGEN_TMR_RESET_FAULT" };
         d["Calls"] = new List<string> { "A32NX_SLIDES_ARMED", "A32NX_EVAC_COMMAND_FAULT" };
@@ -3982,9 +4001,17 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             bool? prev = capt ? _baroStdL : _baroStdR;
             if (capt) _baroStdL = std; else _baroStdR = std;
             if (prev.HasValue && prev.Value != std) // skip the baseline read
+            {
+                int last = capt ? _lastBaroL : _lastBaroR;
+                // Guard like the unit-change branch below: _lastBaroL/R start at -1 and
+                // are seeded only by a valid HPA word — STD->QNH before any valid sample
+                // would otherwise speak "QNH -1 hectopascals".
                 announcer.Announce(std
                     ? $"{(capt ? "Captain" : "First officer")} altimeter standard"
-                    : BaroPhrase(capt, capt ? _lastBaroL : _lastBaroR, true));
+                    : (last > 0
+                        ? BaroPhrase(capt, last, true)
+                        : $"{(capt ? "Captain" : "First officer")} altimeter QNH"));
+            }
             return true;
         }
         // EFIS baro UNIT lives on XMLVAR_Baro_Selector_HPA_{1,2} (1=hPa, 0=inHg) —
@@ -4201,8 +4228,18 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             }
             return true;
         }
-        // Continuous-axis SLIDERS (cockpit seats, armrests, sunshades, forward visors, fine
-        // speed-brake) are FBW L:vars. Don't SNAP them to the target in one write — the 3-D
+        // Speed-brake FINE slider — a 0-16383 SPOILERS *axis*, not an L:var position.
+        // MUST run BEFORE the generic RenderAsSlider branch below, which ramps the
+        // synthetic L:var (that nothing in the sim reads) and clamps to the slider's
+        // position range — i.e. the slider would do nothing to the aircraft.
+        if (varKey == "A380X_MSFSBA_SPEEDBRAKE_SLIDER")
+        {
+            int sbAxis = Math.Max(0, Math.Min(16383, (int)Math.Round(value)));
+            simConnect.ExecuteCalculatorCode($"{sbAxis} (>K:SPOILERS_SET)");
+            return true;
+        }
+        // Continuous-axis SLIDERS (cockpit seats, armrests, sunshades, forward visors)
+        // are FBW L:vars. Don't SNAP them to the target in one write — the 3-D
         // model jumps there and you only hear a single "tick" of the motor. A real motorised
         // seat moves gradually while you hold the switch, so we RAMP the L:var toward the
         // target a few units per 40 ms (calc path, on the UI thread). The FBW then plays the
@@ -4210,7 +4247,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         // avoids SetLVar's data-def write, which is unreliable for FBW L:vars.)
         if (varDef.RenderAsSlider)
         {
-            RampSliderTo(varDef.Name, value, simConnect);
+            RampSliderTo(varDef.Name, value, simConnect, varDef.SliderMin, varDef.SliderMax);
             return true;
         }
         // FCU SPD/MACH toggle from a panel button: the legacy dotted event is inert on the A380's
@@ -4352,13 +4389,6 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             simConnect.ExecuteCalculatorCode($"{axis[pos]} (>K:SPOILERS_SET)");
             return true;
         }
-        // Speed-brake FINE slider — the TrackBar already maps 0-100% to 0-16383; fire SPOILERS_SET.
-        if (varKey == "A380X_MSFSBA_SPEEDBRAKE_SLIDER")
-        {
-            int axis = Math.Max(0, Math.Min(16383, (int)Math.Round(value)));
-            simConnect.ExecuteCalculatorCode($"{axis} (>K:SPOILERS_SET)");
-            return true;
-        }
         // Ground-spoiler arm: synthetic Disarm/Arm combo -> SPOILERS_ARM_OFF / _ON.
         if (varKey == "A380X_MSFSBA_SPOILERS_ARM")
         {
@@ -4429,11 +4459,6 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         // Momentary ACTION combos: fire only when the action option (value 1) is
         // chosen; the idle option (0) does nothing.
         if (varKey == "XPNDR_IDENT_ON") { if (value > 0.5) simConnect.SendEvent("XPNDR_IDENT_ON"); return true; }
-        if (varKey.StartsWith("COM", StringComparison.Ordinal) && varKey.EndsWith("_RADIO_SWAP", StringComparison.Ordinal))
-        {
-            if (value > 0.5) simConnect.SendEvent(varKey);   // key == event name
-            return true;
-        }
         // Air-cond/cargo target temperature: user enters degrees C; the FBW
         // selector knob is 0-300 over the zone's range (cockpit/cabin 18-30 C,
         // cargo 5-25 C), so knob = (temp - lo) / (hi - lo) * 300.
@@ -4444,8 +4469,11 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
                 announcer.AnnounceImmediate($"Temperature must be between {ts.Lo} and {ts.Hi} degrees Celsius.");
                 return true;
             }
-            // Calculator path (not SetLVar — the data-def write is unreliable for FBW L:vars).
-            simConnect.ExecuteCalculatorCode($"{(value - ts.Lo) / (ts.Hi - ts.Lo) * 300.0} (>L:{ts.Knob})");
+            // Invariant fixed-point: raw interpolation used CurrentCulture — a fractional
+            // temperature on a comma-decimal locale emitted "87,5 (>L:...)", broken RPN.
+            simConnect.ExecuteCalculatorCode(
+                ((value - ts.Lo) / (ts.Hi - ts.Lo) * 300.0).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                + $" (>L:{ts.Knob})");
             announcer.Announce($"{ts.Label} temperature set to {value:0} degrees");
             return true;
         }
@@ -4588,18 +4616,37 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             simConnect.ExecuteCalculatorCode($"{(int)Math.Round(value)} (>L:{varKey})");
             return true;
         }
-        // #56 — Wing anti-ice + probe/window heat (live-verified 2026-05).
-        // ENGINE anti-ice needs K:ANTI_ICE_SET_ENGn (handled above; the L:var/XMLVAR
-        // don't drive it). For WING anti-ice the momentary XMLVAR_..._PRESSED pulse
-        // does NOT actuate the system — write the selected-state L:var directly
-        // instead (verified: 0/1 both stick and drive _SYSTEM_ON when conditions
-        // allow). PROBE/WINDOW heat toggles A32NX_MAN_PITOT_HEAT (the same var the
-        // cockpit button toggles); note it auto-forces ON whenever AC2 is powered or
-        // an engine is running, so a "set Off" reverts — that is real A380 behaviour
-        // (probe heat is automatic), and the Mon auto-announce re-reads the true
-        // state. Both go through the reliable MobiFlight calculator path.
-        if (varKey == "A32NX_PNEU_WING_ANTI_ICE_SYSTEM_SELECTED"
-            || varKey == "A32NX_MAN_PITOT_HEAT")
+        // Flight Director 1 / 2 (CORRECTED 2026-06): state is the stock
+        // AUTOPILOT FLIGHT DIRECTOR ACTIVE:n; the working actuator is the cockpit FD
+        // button's event K:TOGGLE_FLIGHT_DIRECTOR with the SIDE as the parameter
+        // (1 = Capt FD, 2 = F/O FD — live-verified per-side). Toggle only when the
+        // desired state differs from the live SimVar. The old _FD_ACTIVE L:var was DEAD.
+        if (varKey == "FD_1_CTL" || varKey == "FD_2_CTL")
+        {
+            uint side = varKey == "FD_1_CTL" ? 1u : 2u;
+            bool desiredOn = value > 0.5;
+            bool currentOn = (simConnect.GetCachedVariableValue(varKey) ?? (desiredOn ? 0.0 : 1.0)) > 0.5;
+            if (desiredOn != currentOn) simConnect.SendEvent("TOGGLE_FLIGHT_DIRECTOR", side);
+            return true;
+        }
+        // Wing anti-ice (CORRECTED 2026-06): the A380's real control is the stock
+        // STRUCTURAL DEICE SWITCH, actuated by TOGGLE_STRUCTURAL_DEICE (toggle only when
+        // the desired state differs from the live SimVar — the absolute STRUCTURAL_DEICE_SET
+        // is a no-op on this build). The old A32NX_PNEU_WING_ANTI_ICE_SYSTEM_SELECTED
+        // L:var write was DEAD (read by nothing on the A380X — live-verified). Same
+        // toggle-if-differs pattern as ENG GEN / taxi light.
+        if (varKey == "WING_ANTI_ICE_OVHD")
+        {
+            bool desiredOn = value > 0.5;
+            bool currentOn = (simConnect.GetCachedVariableValue("WING_ANTI_ICE_OVHD") ?? (desiredOn ? 0.0 : 1.0)) > 0.5;
+            if (desiredOn != currentOn) simConnect.SendEvent("TOGGLE_STRUCTURAL_DEICE");
+            return true;
+        }
+        // Probe/window heat: A32NX_MAN_PITOT_HEAT is the var the cockpit button toggles
+        // (verified live #56). It auto-forces ON whenever AC2 is powered or an engine is
+        // running, so a "set Off" reverts — real A380 behaviour (probe heat is automatic);
+        // the Mon auto-announce re-reads the true state. Routed via the calculator path.
+        if (varKey == "A32NX_MAN_PITOT_HEAT")
         {
             simConnect.ExecuteCalculatorCode($"{(value > 0.5 ? 1 : 0)} (>L:{varKey})");
             return true;
@@ -5037,12 +5084,6 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
                 displayText = $"{h}:{m:D2}:{s2:D2} UTC";
                 return true;
             }
-            case "A32NX_FG_CROSS_TRACK_ERROR":
-            {
-                double nm = value / 1852.0;
-                displayText = Math.Abs(nm) < 0.01 ? "On track" : $"{Math.Abs(nm):F2} NM {(nm > 0 ? "right" : "left")}";
-                return true;
-            }
             case "A32NX_RADIO_RECEIVER_LOC_DEVIATION":
             case "A32NX_RADIO_RECEIVER_GS_DEVIATION":
                 displayText = $"{value:F2} degrees";
@@ -5460,15 +5501,20 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             List<string>? rows;
             if (ewd)
             {
-                // Fallback only (decode above returned nothing). The A380X_EWD view allows
-                // only ONE inspector socket, owned by the always-on CoherentEWDClient
-                // failure monitor — so scrape THROUGH it, never a second client (that
-                // rejection was the "content not available" bug).
-                rows = EwdMonitor != null ? await EwdMonitor.ScrapeDisplayAsync() : null;
-                if (rows == null)
+                // The A380X_EWD view allows only ONE inspector socket, owned by the
+                // always-on CoherentEWDClient failure monitor — scrape THROUGH it.
+                // While a monitor EXISTS, never construct a second client against the
+                // view: it can never connect (one-socket rule) and just churns. A null
+                // scrape here means a transient miss; the next refresh retries via the
+                // monitor (whose sub-agent now self-heals — see ScrapeDisplayAsync).
+                if (EwdMonitor != null)
                 {
-                    // No monitor running (shouldn't happen on the A380) → legacy direct
-                    // client, which only works when nothing else owns the socket.
+                    rows = await EwdMonitor.ScrapeDisplayAsync();
+                }
+                else
+                {
+                    // No monitor running (non-standard path) → legacy direct client,
+                    // which only works when nothing else owns the socket.
                     if (_ewdScrapeClient == null)
                     {
                         _ewdScrapeClient = new SimConnect.CoherentDisplayClient("A380X_EWD");
@@ -6429,11 +6475,6 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
             case "A32NX.FCU_SPD_MACH_TOGGLE_PUSH": RequestFCUSpeedWithStatus(simConnect); break;
             // HDG·V/S <-> TRK·FPA toggle: re-read heading (its label flips HDG<->TRK).
             case "A32NX.FCU_TRK_FPA_TOGGLE_PUSH": RequestFCUHeadingWithStatus(simConnect); break;
-            // VHF active/standby swap: announce the swap (the new active is then on
-            // the "VHF N Active" read-out in the panel).
-            case "COM1_RADIO_SWAP": announcer.Announce("VHF 1 active and standby swapped"); break;
-            case "COM2_RADIO_SWAP": announcer.Announce("VHF 2 active and standby swapped"); break;
-            case "COM3_RADIO_SWAP": announcer.Announce("VHF 3 active and standby swapped"); break;
         }
     }
 
@@ -6553,14 +6594,19 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
     // once a slider is first touched (seeded from the cache) so the ramp stays smooth.
     private readonly Dictionary<string, double> _sliderTarget = new();
     private readonly Dictionary<string, double> _sliderCurrent = new();
+    private readonly Dictionary<string, double> _sliderStep = new();
     private System.Windows.Forms.Timer? _sliderRampTimer;
     private SimConnectManager? _sliderRampSim;
 
-    private void RampSliderTo(string lvar, double target, SimConnectManager simConnect)
+    private void RampSliderTo(string lvar, double target, SimConnectManager simConnect,
+                              double rangeMin = 0.0, double rangeMax = 100.0)
     {
         _sliderRampSim = simConnect;
-        target = Math.Max(0.0, Math.Min(100.0, target));
+        target = Math.Max(rangeMin, Math.Min(rangeMax, target));
         _sliderTarget[lvar] = target;
+        // Step scales with the var's range so a 0-1 slider ramps over the same ~1.3 s
+        // as a 0-100 one (fixed 3.0 snapped 0-1 sliders to the target in one tick).
+        _sliderStep[lvar] = Math.Max(0.0005, (rangeMax - rangeMin) * 0.03);
         if (!_sliderCurrent.ContainsKey(lvar))
             _sliderCurrent[lvar] = simConnect.GetCachedVariableValue(lvar) ?? target;
         if (_sliderRampTimer == null)
@@ -6575,20 +6621,45 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
     {
         var sim = _sliderRampSim;
         if (sim == null || !sim.IsConnected) { StopSliderRamp(); return; }
-        const double step = 3.0;   // ~100 units in ~1.3 s — a believable seat-motor speed
         foreach (var lvar in _sliderTarget.Keys.ToList())
         {
+            double step = _sliderStep.TryGetValue(lvar, out var st) ? st : 3.0;
             double target = _sliderTarget[lvar];
             double cur = _sliderCurrent.TryGetValue(lvar, out var c) ? c : target;
             if (Math.Abs(target - cur) <= step) { cur = target; _sliderTarget.Remove(lvar); }
             else cur += Math.Sign(target - cur) * step;
             _sliderCurrent[lvar] = cur;
-            sim.ExecuteCalculatorCode(cur.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + " (>L:" + lvar + ")");
+            sim.ExecuteCalculatorCode(cur.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture) + " (>L:" + lvar + ")");
         }
         if (_sliderTarget.Count == 0) StopSliderRamp();
     }
 
     private void StopSliderRamp() { _sliderRampTimer?.Stop(); _sliderRampTimer?.Dispose(); _sliderRampTimer = null; }
+
+    /// <summary>
+    /// Halt the seat-motor and slider-ramp timers immediately. Called by MainForm on
+    /// aircraft swap — these UI-thread timers stop themselves only on target-reached /
+    /// sim-disconnect / the 8 s cap, and sim.IsConnected stays TRUE across a swap, so
+    /// a discarded def instance kept firing (>L:SEAT_...) calc writes at the NEW
+    /// aircraft for up to ~8 s.
+    /// </summary>
+    public void StopAllMotion()
+    {
+        try
+        {
+            _seatMotorTimer?.Stop();
+            _seatMotorTimer?.Dispose();
+            _seatMotorTimer = null;
+            _seatMotorDir.Clear();
+        }
+        catch { }
+        try
+        {
+            StopSliderRamp();
+            _sliderTarget.Clear();
+        }
+        catch { }
+    }
 
     // ---- Crew-seat START/STOP motor ----
     // A seat motor RUNS while a direction is selected and HALTS on "Stopped". The motor SOUND is a
@@ -6722,8 +6793,7 @@ public class FlyByWireA380Definition : BaseAircraftDefinition,
         foreach (var v in new[] {
             "A32NX_AUTOPILOT_1_ACTIVE", "A32NX_AUTOPILOT_2_ACTIVE",
             "A32NX_FCU_LOC_MODE_ACTIVE", "A32NX_FCU_APPR_MODE_ACTIVE",
-            "A32NX_FMA_EXPEDITE_MODE", "A32NX_FCU_EFIS_L_FD_ACTIVE",
-            "A32NX_FCU_EFIS_R_FD_ACTIVE" })
+            "A32NX_FMA_EXPEDITE_MODE", "FD_1_CTL", "FD_2_CTL" })
             s.RequestVariable(v, forceUpdate: true);
     }
 

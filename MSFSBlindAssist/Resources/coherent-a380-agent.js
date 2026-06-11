@@ -85,6 +85,20 @@
     return roots[idx] || roots[1] || roots[2];
   };
 
+  // Resolve the MFD-side container an element belongs to (LEFT/RIGHT parent div),
+  // falling back to document. Used to scope label/header scans so a dropdown on one
+  // pilot's MFD can't read the selected value off the OTHER pilot's MFD.
+  A.mfdRootOf = function (n) {
+    var cur = n;
+    var hops = 0;
+    while (cur && cur !== document.body && hops < 60) {
+      if (cur.id === "MFD_LEFT_PARENT_DIV" || cur.id === "MFD_RIGHT_PARENT_DIV") return cur;
+      cur = cur.parentElement;
+      hops++;
+    }
+    return document;
+  };
+
   // Status flags that share the .mfd-title-bar-text class but aren't a title.
   A.TITLE_FLAGS = { "PENALTY": 1, "EO": 1, "TMPY": 1, "SEC": 1 };
 
@@ -703,6 +717,19 @@
     var lines = page.querySelectorAll(".mfd-fms-fpln-line");
     function cellText(L, sel) { var n = L.querySelector(sel); return n ? clean(n.textContent) : ""; }
     function isDash(s) { return !s || /^[-:.\s]+$/.test(s); }
+    // The F-PLN page has a column-header toggle (MfdFmsFpln line 1033) that swaps
+    // the two right-hand columns between SPD / ALT and EFOB / T.WIND. When it shows
+    // "EFOB ... T.WIND", efobOrSpeed renders the speed cell as EFOB (tonnes, "NN.N")
+    // and windOrAlt renders the altitude cell as the wind (direction + "/" +
+    // magnitude). Detect the mode once so the cell parser below reads the right
+    // columns; default to SPD/ALT if the header button isn't found (safe).
+    var efobWindMode = false;
+    var hdrBtn = page.querySelector(".mfd-fms-fpln-button-speed-alt");
+    if (hdrBtn) efobWindMode = clean(hdrBtn.textContent).toUpperCase().indexOf("EFOB") >= 0;
+    // Wind direction/magnitude each render as a ditto-mark (") when unchanged from
+    // the line above (formatWind). A blind pilot reads line-by-line and can't glance
+    // up, so resolve dittos by carrying the previous waypoint's value forward.
+    var prevWindDir = "", prevWindMag = "";
     for (var i = 0; i < lines.length; i++) {
       var L = lines[i];
       if (!A.isVisible(L)) continue;
@@ -764,7 +791,7 @@
       // once the FMS computes them in flight they fold in as ", 250 knots" /
       // ", flight level 350". Captured by column position WITH a value-pattern
       // guard so a mis-placed cell can never inject garbage. (Verify in flight.)
-      var spd = "", alt = "";
+      var spd = "", alt = "", efob = "", windDir = "", windMag = "";
       var cells = L.getElementsByTagName("*");
       for (var p = 0; p < cells.length; p++) {
         var pc = cells[p];
@@ -773,8 +800,25 @@
         var pt = clean(A.directText(pc));
         if (!pt || isDash(pt)) continue;
         var relX = pc.getBoundingClientRect().left - lr.left;
-        if (!spd && relX >= 300 && relX < 405 && /^(M?\.\d{2}|\d{2,3})$/.test(pt)) spd = pt;
-        else if (!alt && relX >= 405 && relX < 520 && /^(FL\d{2,3}|\d{3,5})$/.test(pt)) alt = pt;
+        if (efobWindMode) {
+          // EFOB column ("NN.N" tonnes) sits in the old speed band; the wind splits
+          // into direction (TAIL/HEAD/ddd° or ditto) + "/" + magnitude (knots or
+          // ditto) across the old altitude band. The "--.-"/"---" blanks were
+          // already dropped by isDash above; skip only the "/" separator glyph.
+          if (pt === "/") continue;
+          if (!efob && relX >= 300 && relX < 405 && /^\d{1,3}\.\d$/.test(pt)) efob = pt;
+          else if (relX >= 405 && relX < 520) {
+            if (relX < 472) { if (!windDir) windDir = pt; }   // direction slot (left)
+            else { if (!windMag) windMag = pt; }              // magnitude slot (right)
+          }
+        } else {
+          if (!spd && relX >= 300 && relX < 405 && /^(M?\.\d{2}|\d{2,3})$/.test(pt)) spd = pt;
+          else if (!alt && relX >= 405 && relX < 520 && /^(FL\d{2,3}|\d{3,5})$/.test(pt)) alt = pt;
+        }
+      }
+      if (efobWindMode) {
+        if (windDir === '"') windDir = prevWindDir; else if (windDir) prevWindDir = windDir;
+        if (windMag === '"') windMag = prevWindMag; else if (windMag) prevWindMag = windMag;
       }
 
       // Constraint markers: the "*" the MFD draws immediately to the LEFT of a SPD or
@@ -786,7 +830,7 @@
       // left-of-value position) for the met case and ADD the word "missed" for the amber
       // case. Column band (relX) says whether the marker belongs to SPD or ALT.
       var spdCon = "", altCon = "";   // "" | "met" | "missed"
-      var marks = L.querySelectorAll('[class*="fpln-leg-constraint-respected"], [class*="fpln-leg-constraint-missed"]');
+      var marks = efobWindMode ? [] : L.querySelectorAll('[class*="fpln-leg-constraint-respected"], [class*="fpln-leg-constraint-missed"]');
       for (var st = 0; st < marks.length; st++) {
         if (clean(marks[st].textContent) !== "*") continue;   // the marker glyph, not the value form (con)
         var mcls = (marks[st].className && marks[st].className.toString) ? marks[st].className.toString() : "";
@@ -808,12 +852,24 @@
       if (track) parts.push(track);               // already carries the ° glyph
       if (dist) parts.push(dist + "NM");
       if (eta) parts.push(eta);
-      if (spd) {
-        var spdBase = /^M?\./.test(spd) ? "M" + spd.replace(/^M/, "") : spd + "kts";
-        parts.push(spdCon === "missed" ? "*" + spdBase + " missed" : spdCon === "met" ? "*" + spdBase : spdBase);
+      if (efobWindMode) {
+        // EFOB/T.WIND view: read the fuel + wind a sighted pilot sees. EFOB is in
+        // tonnes ("EFOB 36.8"); wind is direction (ddd° / TAIL / HEAD) over magnitude
+        // in knots, dittos resolved above. Strip the FBW zero-padding on magnitude
+        // (007 -> 7) so the reader doesn't say "zero zero seven".
+        if (efob) parts.push("EFOB " + efob);
+        if (windDir || windMag) {
+          var wmag = windMag.replace(/^0+(?=\d)/, "");
+          parts.push("wind " + (windDir && wmag ? windDir + "/" + wmag : windDir || wmag));
+        }
+      } else {
+        if (spd) {
+          var spdBase = /^M?\./.test(spd) ? "M" + spd.replace(/^M/, "") : spd + "kts";
+          parts.push(spdCon === "missed" ? "*" + spdBase + " missed" : spdCon === "met" ? "*" + spdBase : spdBase);
+        }
+        if (con) parts.push(A.fplnConstraint(con));
+        if (alt) parts.push(altCon === "missed" ? "*" + alt + " missed" : altCon === "met" ? "*" + alt : alt);
       }
-      if (con) parts.push(A.fplnConstraint(con));
-      if (alt) parts.push(altCon === "missed" ? "*" + alt + " missed" : altCon === "met" ? "*" + alt : alt);
 
       // Make the waypoint actionable: its ident cell carries the lateral-revision
       // click handler, so Enter opens the revisions menu (FROM P.POS DIR TO,
@@ -893,7 +949,8 @@
   // nothing. Verified live on ARRIVAL: RWY→"30R", APPR/VIA/STAR/TRANS→"" (unset).
   A.comboSelectedValue = function (label, node) {
     if (!label) return "";
-    var all = document.getElementsByTagName("*");
+    var scope = A.mfdRootOf(node);
+    var all = scope.getElementsByTagName("*");
     var hdr = null, i;
     for (i = 0; i < all.length; i++) {
       if (all[i] === node || (node.contains && node.contains(all[i]))) continue;
@@ -924,9 +981,14 @@
   };
 
   A.enumerateLines = function (root) {
-    var stale = root.querySelectorAll("[data-fbwa380-mcdu-idx]");
+    // Sweep stale stamps DOCUMENT-wide, not just under the active root: both pilot
+    // MFDs share one document, and clickElement/sendToField resolve stamps with a
+    // document-wide querySelector — a root-scoped sweep left the OTHER side's old
+    // stamps alive, so after a Captain->FO switch a click on idx N matched the
+    // Captain's stale node first in document order.
+    var stale = document.querySelectorAll("[data-fbwa380-mcdu-idx]");
     for (var s = 0; s < stale.length; s++) stale[s].removeAttribute("data-fbwa380-mcdu-idx");
-    var staleP = root.querySelectorAll("[data-fbwa380-perf-owned]");
+    var staleP = document.querySelectorAll("[data-fbwa380-perf-owned]");
     for (var sp = 0; sp < staleP.length; sp++) staleP[sp].removeAttribute("data-fbwa380-perf-owned");
 
     var page = root.querySelector(".mfd-navigator-container") || root;
@@ -1111,7 +1173,7 @@
       // merge them with each other or with neighbouring text.
       if (cur.idx === 0 && cur.kind === "text" && !cur.fpln && !cur.perf && mergedLines.length > 0) {
         var prev = mergedLines[mergedLines.length - 1];
-        if (prev.idx === 0 && prev.kind === "text" && !prev.fpln
+        if (prev.idx === 0 && prev.kind === "text" && !prev.fpln && !prev.perf
             && !cur.isStatusItem && !prev.isStatusItem
             && Math.round(prev.top / A.ROW_Y_TOLERANCE_PX) === Math.round(cur.top / A.ROW_Y_TOLERANCE_PX)) {
           // Compose label→value→unit groups so a row of sibling cells reads as
@@ -1199,7 +1261,7 @@
             }
           }
         }
-        var sel = document.querySelector(".mfd-fms-fpln-line-ident.selected[data-fbwa380-mcdu-idx], .mfd-fms-fpln-line-special.selected[data-fbwa380-mcdu-idx], .mfd-button.opened[data-fbwa380-mcdu-idx]");
+        var sel = root.querySelector(".mfd-fms-fpln-line-ident.selected[data-fbwa380-mcdu-idx], .mfd-fms-fpln-line-special.selected[data-fbwa380-mcdu-idx], .mfd-button.opened[data-fbwa380-mcdu-idx]");
         if (sel) return parseInt(sel.getAttribute("data-fbwa380-mcdu-idx"), 10);
         return -1;
       };
@@ -1673,10 +1735,17 @@
       var m = mfd.fsInstrument.fmcService.master;
       var gc = m && m.guidanceController;
       if (!gc) return JSON.stringify({ ok: false, error: "no guidance" });
-      var info = { ok: true, distToDest: null, distToTD: null, distToTC: null, timeToTD: null, timeToTC: null, flightPhase: null };
+      var info = { ok: true, distToDest: null, distToTD: null, distToTC: null, timeToTD: null, timeToTC: null, timeToDest: null, flightPhase: null };
       var map = gc.alongTrackDistancesToDestination;
-      var dtd = (map && map.get) ? map.get(0) : null;        // 0 = active plan
+      var dtd = (map && map.get) ? map.get(0) : null;        // dev build: Map keyed by plan index (0 = active)
       if (typeof dtd === "number" && isFinite(dtd)) info.distToDest = dtd;
+      // RELEASE-COMPAT FALLBACK — REMOVE once an FBW A380 release ships the dev FMS API.
+      // On the current A380 *release* (live-verified on flybywire-aircraft-a380-842 0.14.0)
+      // the Map above does not exist; the guidance controller instead exposes a scalar
+      // `alongTrackDistanceToDestination` (singular). The dev build keeps the Map, so this
+      // branch only runs on release — dev behaviour is unchanged (no regression).
+      if (info.distToDest == null && typeof gc.alongTrackDistanceToDestination === "number" && isFinite(gc.alongTrackDistanceToDestination))
+        info.distToDest = gc.alongTrackDistanceToDestination;
       // Total active-plan length (last leg's cumulative distance from start), so a
       // pseudo-waypoint's distanceFromStart can be turned into distance-to-go:
       //   toGo = distToDest - (total - pwp.distanceFromStart)
@@ -1684,18 +1753,45 @@
       // the destination explicitly (NOT just the last leg with a number — that can be
       // a missed-approach/hold leg past the runway, giving a wrong datum and a wrong
       // T/D toGo). Fall back to the last finite cumulativeDistance.
-      var total = null;
-      try {
-        var plan = m.flightPlanInterface.active;
+      var planTotal = function (plan) {
+        if (!plan || !plan.allLegs) return null;
         var legs = plan.allLegs;
         var di = (typeof plan.destinationLegIndex === "number") ? plan.destinationLegIndex : -1;
         if (di >= 0 && legs[di] && legs[di].calculated && isFinite(legs[di].calculated.cumulativeDistance))
-          total = legs[di].calculated.cumulativeDistance;
-        if (total == null)
-          for (var li = legs.length - 1; li >= 0; li--) {
-            var c = legs[li] && legs[li].calculated;
-            if (c && typeof c.cumulativeDistance === "number" && isFinite(c.cumulativeDistance)) { total = c.cumulativeDistance; break; }
-          }
+          return legs[di].calculated.cumulativeDistance;
+        for (var li = legs.length - 1; li >= 0; li--) {
+          var c = legs[li] && legs[li].calculated;
+          if (c && typeof c.cumulativeDistance === "number" && isFinite(c.cumulativeDistance)) return c.cumulativeDistance;
+        }
+        return null;
+      };
+      var total = null;
+      // dev build: the active plan is reachable via m.flightPlanInterface.active
+      try { total = planTotal(m.flightPlanInterface.active); } catch (e) {}
+      // RELEASE-COMPAT FALLBACK — REMOVE once an FBW A380 release ships the dev FMS API.
+      // The current release has no m.flightPlanInterface; the active plan lives at
+      // gc.flightPlanService.active (or m.flightPlanService.active). Live-verified on
+      // 0.14.0 release (dest leg cumulativeDistance). The dev build still has
+      // flightPlanInterface, so these fallbacks never execute there — no regression.
+      if (total == null) try { total = planTotal(gc.flightPlanService.active); } catch (e) {}
+      if (total == null) try { total = planTotal(m.flightPlanService.active); } catch (e) {}
+      // Time-to-destination (profile-aware): the same MCDU vertical-profile prediction the FMS
+      // uses for DEST UTC. profileManager.mcduProfile.waypointPredictions is a Map keyed by
+      // leg index; the destination leg's entry carries secondsFromPresent (live-verified on
+      // 0.14.0 release). Wrapped defensively — a build without this structure just yields no
+      // time, and the D readout falls back to distance-only (no regression).
+      try {
+        var actPlan = null;
+        try { actPlan = m.flightPlanInterface.active; } catch (e) {}
+        if (!actPlan) try { actPlan = gc.flightPlanService.active; } catch (e) {}
+        if (!actPlan) try { actPlan = m.flightPlanService.active; } catch (e) {}
+        var ddi = (actPlan && typeof actPlan.destinationLegIndex === "number") ? actPlan.destinationLegIndex : -1;
+        var pmgr = gc.vnavDriver && gc.vnavDriver.profileManager;
+        var preds = pmgr && pmgr.mcduProfile && pmgr.mcduProfile.waypointPredictions;
+        if (preds && preds.get && ddi >= 0) {
+          var dpr = preds.get(ddi);
+          if (dpr && typeof dpr.secondsFromPresent === "number" && isFinite(dpr.secondsFromPresent)) info.timeToDest = dpr.secondsFromPresent;
+        }
       } catch (e) {}
       var pw = gc.currentPseudoWaypoints || [];
       for (var p = 0; p < pw.length; p++) {

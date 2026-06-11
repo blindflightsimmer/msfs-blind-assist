@@ -220,6 +220,26 @@ namespace MSFSBlindAssist.SimConnect
         {
             if (_ws != null && _ws.State == WebSocketState.Open && _agentInstalled) return true;
 
+            // Socket still OPEN but the agent went missing (an eval timed out / the page
+            // re-evaluated) — re-install the agent on the SAME socket instead of reconnecting.
+            if (_ws != null && _ws.State == WebSocketState.Open)
+            {
+                string reinstall = await EvalAsync(_agentJs, ct);
+                _agentInstalled = reinstall.IndexOf("MSFSBA_A380_INSTALLED", StringComparison.Ordinal) >= 0;
+                if (_agentInstalled) { _connected = true; return true; }
+            }
+
+            // CRITICAL: tear down any existing socket BEFORE opening a new one. Coherent GT
+            // allows only ONE inspector connection per page — opening a SECOND socket while
+            // the first is alive orphans the healthy one and blocks the page permanently.
+            if (_ws != null)
+            {
+                try { _ws.Abort(); } catch { }
+                try { _ws.Dispose(); } catch { }
+                _ws = null;
+                _agentInstalled = false;
+            }
+
             // Resolve the MFD page id by title (restart-proof).
             int? pageId = await ResolveMfdPageId(ct);
             if (pageId == null) { _connected = false; return false; }
@@ -228,6 +248,7 @@ namespace MSFSBlindAssist.SimConnect
             var url = new Uri($"ws://127.0.0.1:19999/devtools/inspector/{pageId.Value}");
             await ws.ConnectAsync(url, ct);
             _ws = ws;
+            foreach (var kv in _pending) kv.Value.TrySetCanceled();   // cancel evals orphaned by the reconnect (else they hang to timeout)
             _pending.Clear();
             _ = Task.Run(() => ReceiveLoop(ws, ct));
 
@@ -397,12 +418,14 @@ namespace MSFSBlindAssist.SimConnect
         private async Task ReceiveLoop(ClientWebSocket ws, CancellationToken ct)
         {
             var buf = new byte[131072];
-            var sb = new StringBuilder();
+            // Accumulate raw bytes and decode once at EndOfMessage — decoding each read
+            // separately corrupts a multibyte UTF-8 char split across the read boundary.
+            var ms = new System.IO.MemoryStream();
             try
             {
                 while (!ct.IsCancellationRequested && ws.State == WebSocketState.Open)
                 {
-                    sb.Clear();
+                    ms.SetLength(0);
                     WebSocketReceiveResult res;
                     do
                     {
@@ -412,10 +435,10 @@ namespace MSFSBlindAssist.SimConnect
                             _connected = false; _agentInstalled = false;
                             return;
                         }
-                        sb.Append(Encoding.UTF8.GetString(buf, 0, res.Count));
+                        ms.Write(buf, 0, res.Count);
                     } while (!res.EndOfMessage);
 
-                    DispatchMessage(sb.ToString());
+                    DispatchMessage(Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length));
                 }
             }
             catch (OperationCanceledException) { }
@@ -468,7 +491,10 @@ namespace MSFSBlindAssist.SimConnect
             Stop();
             _cts?.Dispose();
             _http.Dispose();
-            _sendLock.Dispose();
+            // Intentionally NOT disposing _sendLock: the background RunLoop is not joined here and
+            // may be pending on WaitAsync — disposing a SemaphoreSlim with waiters throws
+            // ObjectDisposedException on the pool thread. Stop() cancels _cts, which unblocks the
+            // waiter; the wait handle is never materialized, so nothing leaks.
         }
 
         // ---- scrape DTOs -------------------------------------------------

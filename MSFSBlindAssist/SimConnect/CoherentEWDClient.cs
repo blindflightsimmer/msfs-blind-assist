@@ -218,6 +218,44 @@ namespace MSFSBlindAssist.SimConnect
             // Re-check under the lock: a concurrent caller may have just (re)connected.
             if (_ws != null && _ws.State == WebSocketState.Open && _agentInstalled) return true;
 
+            // Socket still OPEN but an agent flag went missing (an eval timed out / the page
+            // re-evaluated) — re-install the agents on the SAME socket. This is the common
+            // transient case and avoids a reconnect entirely. CRITICAL: never open a second
+            // socket while this one is alive — Coherent GT allows only ONE inspector
+            // connection per page, and replacing _ws would orphan the healthy socket and
+            // block the A380X_EWD page for the rest of the process.
+            if (_ws != null && _ws.State == WebSocketState.Open)
+            {
+                string reinstall = await EvalAsync(_agentJs, ct);
+                _agentInstalled = reinstall.IndexOf("MSFSBA_EWD_INSTALLED", StringComparison.Ordinal) >= 0;
+                if (_agentInstalled)
+                {
+                    if (!_eclAgentInstalled && !string.IsNullOrEmpty(_eclAgentJs))
+                    {
+                        string eclReinstall = await EvalAsync(_eclAgentJs, ct);
+                        _eclAgentInstalled = eclReinstall.IndexOf("MSFSBA_ECL_INSTALLED", StringComparison.Ordinal) >= 0;
+                    }
+                    if (!_dispAgentInstalled && !string.IsNullOrEmpty(_dispAgentJs))
+                    {
+                        string dispReinstall = await EvalAsync(_dispAgentJs, ct);
+                        _dispAgentInstalled = dispReinstall.IndexOf("MSFSBA_DISP_INSTALLED", StringComparison.Ordinal) >= 0;
+                    }
+                    _connected = true;
+                    return true;
+                }
+            }
+
+            // Tear down any existing socket BEFORE opening a new one (one-socket-per-page rule).
+            if (_ws != null)
+            {
+                try { _ws.Abort(); } catch { }
+                try { _ws.Dispose(); } catch { }
+                _ws = null;
+                _agentInstalled = false;
+                _eclAgentInstalled = false;
+                _dispAgentInstalled = false;
+            }
+
             int? pageId = await ResolveEwdPageId(ct);
             if (pageId == null) { _connected = false; return false; }
 
@@ -225,6 +263,7 @@ namespace MSFSBlindAssist.SimConnect
             var url = new Uri($"ws://127.0.0.1:19999/devtools/inspector/{pageId.Value}");
             await ws.ConnectAsync(url, ct);
             _ws = ws;
+            foreach (var kv in _pending) kv.Value.TrySetCanceled();   // cancel evals orphaned by the reconnect (else they hang to timeout)
             _pending.Clear();
             _ = Task.Run(() => ReceiveLoop(ws, ct));
 
@@ -419,7 +458,20 @@ namespace MSFSBlindAssist.SimConnect
 
         private async Task<List<EclRow>?> ScrapeEclInternal(CancellationToken ct)
         {
-            if (!_eclAgentInstalled) return null;
+            if (!_eclAgentInstalled)
+            {
+                // One transient eval timeout used to latch this false until the socket
+                // actually dropped — self-heal by re-installing on the live socket
+                // (idempotent IIFE; runs under the same connection the monitor owns).
+                // (Runs outside _connectLock; a timed-out eval here can transiently write
+                // false over a reinstall's true — harmless, the next scrape self-heals.)
+                var ws = _ws;
+                if (string.IsNullOrEmpty(_eclAgentJs) || ws == null || ws.State != WebSocketState.Open)
+                    return null;
+                string eclReinstall = await EvalAsync(_eclAgentJs, ct);
+                _eclAgentInstalled = eclReinstall.IndexOf("MSFSBA_ECL_INSTALLED", StringComparison.Ordinal) >= 0;
+                if (!_eclAgentInstalled) return null;
+            }
             string raw = await EvalAsync("window.__MSFSBA_ECL ? __MSFSBA_ECL.scrape() : ''", ct);
             if (string.IsNullOrEmpty(raw)) { _eclAgentInstalled = false; return null; }
             try
@@ -444,7 +496,20 @@ namespace MSFSBlindAssist.SimConnect
             {
                 var ct = _cts?.Token ?? CancellationToken.None;
                 if (!await EnsureConnected(ct)) return null;
-                if (!_dispAgentInstalled) return null;
+                if (!_dispAgentInstalled)
+                {
+                    // One transient eval timeout used to latch this false until the socket
+                    // actually dropped — self-heal by re-installing on the live socket
+                    // (idempotent IIFE; runs under the same connection the monitor owns).
+                    // (Runs outside _connectLock; a timed-out eval here can transiently write
+                    // false over a reinstall's true — harmless, the next scrape self-heals.)
+                    var ws = _ws;
+                    if (string.IsNullOrEmpty(_dispAgentJs) || ws == null || ws.State != WebSocketState.Open)
+                        return null;
+                    string dispReinstall = await EvalAsync(_dispAgentJs, ct);
+                    _dispAgentInstalled = dispReinstall.IndexOf("MSFSBA_DISP_INSTALLED", StringComparison.Ordinal) >= 0;
+                    if (!_dispAgentInstalled) return null;
+                }
                 string raw = await EvalAsync("window.__MSFSBA_DISP ? __MSFSBA_DISP.scrape() : ''", ct);
                 if (string.IsNullOrEmpty(raw)) { _dispAgentInstalled = false; return null; }
                 var res = JsonSerializer.Deserialize<DispScrapeResult>(raw);
@@ -539,12 +604,14 @@ namespace MSFSBlindAssist.SimConnect
         private async Task ReceiveLoop(ClientWebSocket ws, CancellationToken ct)
         {
             var buf = new byte[131072];
-            var sb = new StringBuilder();
+            // Accumulate raw bytes and decode once at EndOfMessage — decoding each read
+            // separately corrupts a multibyte UTF-8 char split across the read boundary.
+            var ms = new System.IO.MemoryStream();
             try
             {
                 while (!ct.IsCancellationRequested && ws.State == WebSocketState.Open)
                 {
-                    sb.Clear();
+                    ms.SetLength(0);
                     WebSocketReceiveResult res;
                     do
                     {
@@ -554,10 +621,10 @@ namespace MSFSBlindAssist.SimConnect
                             _connected = false; _agentInstalled = false;
                             return;
                         }
-                        sb.Append(Encoding.UTF8.GetString(buf, 0, res.Count));
+                        ms.Write(buf, 0, res.Count);
                     } while (!res.EndOfMessage);
 
-                    DispatchMessage(sb.ToString());
+                    DispatchMessage(Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length));
                 }
             }
             catch (OperationCanceledException) { }
@@ -617,11 +684,10 @@ namespace MSFSBlindAssist.SimConnect
             Stop();
             _cts?.Dispose();
             _http.Dispose();
-            _sendLock.Dispose();
-            // Intentionally NOT disposing _connectLock: the background RunLoop is not joined here and
-            // may be pending on WaitAsync — disposing a SemaphoreSlim with waiters is hazardous. We
-            // never access its AvailableWaitHandle, so nothing leaks; Stop() cancels _cts, unblocking
-            // the pending WaitAsync(ct) with OperationCanceledException.
+            // Intentionally NOT disposing _sendLock or _connectLock: the background RunLoop is not
+            // joined here and may be pending on either's WaitAsync — disposing a SemaphoreSlim with
+            // waiters throws ObjectDisposedException. Neither wait handle is materialized, so nothing
+            // leaks; Stop() cancels _cts, which unblocks the pending WaitAsync(ct).
         }
 
         private sealed class ScrapeResult

@@ -4027,6 +4027,7 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             UpdateFrequency = SimConnect.UpdateFrequency.OnRequest,
             IsAnnounced = false,
             RenderAsButton = true,
+            SuppressRestingButtonState = true,
             ValueDescriptions = new Dictionary<double, string> { [0] = "Off", [1] = "Activate" }
         },
         ["CLEAR_MASTER_WARNING_FO"] = new SimConnect.SimVarDefinition
@@ -4037,6 +4038,7 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             UpdateFrequency = SimConnect.UpdateFrequency.OnRequest,
             IsAnnounced = false,
             RenderAsButton = true,
+            SuppressRestingButtonState = true,
             ValueDescriptions = new Dictionary<double, string> { [0] = "Off", [1] = "Activate" }
         },
         ["CLEAR_MASTER_CAUTION"] = new SimConnect.SimVarDefinition
@@ -4047,6 +4049,7 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             UpdateFrequency = SimConnect.UpdateFrequency.OnRequest,
             IsAnnounced = false,
             RenderAsButton = true,
+            SuppressRestingButtonState = true,
             ValueDescriptions = new Dictionary<double, string> { [0] = "Off", [1] = "Activate" }
         },
         ["CLEAR_MASTER_CAUTION_FO"] = new SimConnect.SimVarDefinition
@@ -4057,6 +4060,7 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             UpdateFrequency = SimConnect.UpdateFrequency.OnRequest,
             IsAnnounced = false,
             RenderAsButton = true,
+            SuppressRestingButtonState = true,
             ValueDescriptions = new Dictionary<double, string> { [0] = "Off", [1] = "Activate" }
         },
         ["A32NX_AUTOBRAKES_ARMED_MODE"] = new SimConnect.SimVarDefinition
@@ -4174,11 +4178,16 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             IsAnnounced = false
         },
 
-        // PEDESTAL SECTION - RMP Panel
+        // PEDESTAL SECTION - RMP Panel. The A32NX RMP drives the STOCK COM radios
+        // (its React panel writes K:COM*_STBY_RADIO_SET_HZ / reads the stock simvars),
+        // so the stock set + swap events work here — live-verified 2026-06 (unlike the
+        // A380, whose RMP ignores them). The *_SET keys render numeric input fields;
+        // set logic (validate MHz → Hz event, active = set-standby + swap) lives in
+        // HandleUIVariableSet so the auto-announce below is the single confirmation.
         ["COM_ACTIVE_FREQUENCY_SET:1"] = new SimConnect.SimVarDefinition
         {
             Name = "COM ACTIVE FREQUENCY:1",
-            DisplayName = "Set Active Frequency",
+            DisplayName = "COM 1 Set Active Frequency",
             Type = SimConnect.SimVarType.SimVar,
             Units = "kHz",
             UpdateFrequency = SimConnect.UpdateFrequency.OnRequest
@@ -4216,13 +4225,17 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
                 [0] = "SEL", [1] = "VHF1", [2] = "VHF2", [3] = "VHF3"
             }
         },
+        // Active + standby freqs are Continuous + IsAnnounced so frequency changes and
+        // swaps auto-announce (Fenix/A380 parity); the announce itself is formatted in
+        // ProcessSimVarUpdate ("COM 1 active 121.500"), seeded silently on first read.
         ["COM_ACTIVE_FREQUENCY:1"] = new SimConnect.SimVarDefinition
         {
             Name = "COM ACTIVE FREQUENCY:1",
             DisplayName = "COM 1 Active Frequency",
             Type = SimConnect.SimVarType.SimVar,
             Units = "kHz",
-            UpdateFrequency = SimConnect.UpdateFrequency.OnRequest
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = true
         },
         ["COM_STANDBY_FREQUENCY:1"] = new SimConnect.SimVarDefinition
         {
@@ -4230,9 +4243,16 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             DisplayName = "COM 1 Standby Frequency",
             Type = SimConnect.SimVarType.SimVar,
             Units = "kHz",
-            UpdateFrequency = SimConnect.UpdateFrequency.OnRequest
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = true
         },
         // ---- COM2 / VHF2 (parity: the Radios panel now exposes COM1 + COM2) ----
+        ["COM_ACTIVE_FREQUENCY_SET:2"] = new SimConnect.SimVarDefinition
+        {
+            Name = "COM ACTIVE FREQUENCY:2", DisplayName = "COM 2 Set Active Frequency",
+            Type = SimConnect.SimVarType.SimVar, Units = "kHz",
+            UpdateFrequency = SimConnect.UpdateFrequency.OnRequest
+        },
         ["COM_STANDBY_FREQUENCY_SET:2"] = new SimConnect.SimVarDefinition
         {
             Name = "COM STANDBY FREQUENCY:2", DisplayName = "COM 2 Set Standby Frequency",
@@ -4248,20 +4268,25 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
         {
             Name = "COM ACTIVE FREQUENCY:2", DisplayName = "COM 2 Active Frequency",
             Type = SimConnect.SimVarType.SimVar, Units = "kHz",
-            UpdateFrequency = SimConnect.UpdateFrequency.OnRequest
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = true
         },
         ["COM_STANDBY_FREQUENCY:2"] = new SimConnect.SimVarDefinition
         {
             Name = "COM STANDBY FREQUENCY:2", DisplayName = "COM 2 Standby Frequency",
             Type = SimConnect.SimVarType.SimVar, Units = "kHz",
-            UpdateFrequency = SimConnect.UpdateFrequency.OnRequest
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = true
         },
+        // Transmit selectors are Continuous + IsAnnounced: ProcessSimVarUpdate speaks
+        // "Transmitting on VHF n" when the mic moves to a radio (rising edge only).
         ["COM_TRANSMIT:1"] = new SimConnect.SimVarDefinition
         {
             Name = "COM TRANSMIT:1",
             DisplayName = "VHF1 Transmit",
             Type = SimConnect.SimVarType.SimVar,
-            UpdateFrequency = SimConnect.UpdateFrequency.OnRequest,
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = true,
             ValueDescriptions = new Dictionary<double, string> { [0] = "Off", [1] = "Transmitting" }
         },
         ["COM_TRANSMIT:2"] = new SimConnect.SimVarDefinition
@@ -4269,7 +4294,8 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             Name = "COM TRANSMIT:2",
             DisplayName = "VHF2 Transmit",
             Type = SimConnect.SimVarType.SimVar,
-            UpdateFrequency = SimConnect.UpdateFrequency.OnRequest,
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = true,
             ValueDescriptions = new Dictionary<double, string> { [0] = "Off", [1] = "Transmitting" }
         },
         ["COM_TRANSMIT:3"] = new SimConnect.SimVarDefinition
@@ -4277,7 +4303,8 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             Name = "COM TRANSMIT:3",
             DisplayName = "VHF3 Transmit",
             Type = SimConnect.SimVarType.SimVar,
-            UpdateFrequency = SimConnect.UpdateFrequency.OnRequest,
+            UpdateFrequency = SimConnect.UpdateFrequency.Continuous,
+            IsAnnounced = true,
             ValueDescriptions = new Dictionary<double, string> { [0] = "Off", [1] = "Transmitting" }
         },
 
@@ -5123,15 +5150,15 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             "A32NX_MASTER_CAUTION",
             "A32NX_AUTOPILOT_AUTOLAND_WARNING"
         },
-        ["Radios"] = new List<string>
+        // RMP readout: tuned frequencies (rendered as MHz via TryGetDisplayOverride)
+        // first, then which radio the mic transmits on. (The former separate "Radios"
+        // panel was merged into RMP — frequency tuning IS the RMP on the A320.)
+        ["RMP"] = new List<string>
         {
             "COM_ACTIVE_FREQUENCY:1",
             "COM_STANDBY_FREQUENCY:1",
             "COM_ACTIVE_FREQUENCY:2",
-            "COM_STANDBY_FREQUENCY:2"
-        },
-        ["RMP"] = new List<string>
-        {
+            "COM_STANDBY_FREQUENCY:2",
             "COM_TRANSMIT:1",
             "COM_TRANSMIT:2",
             "COM_TRANSMIT:3"
@@ -5258,7 +5285,7 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
 ["Overhead"] = new List<string> { "ELEC", "ADIRS", "APU", "Oxygen", "Fire", "Hydraulics", "Fuel", "Air Conditioning", "Bleed", "Pressurization", "Ventilation", "Cargo Air", "Anti Ice", "Wipers", "Signs", "Interior Lighting", "Exterior Lighting", "Calls", "GPWS", "Flight Control Computers", "Cockpit", "Evacuation", "Cargo Smoke", "Recorder and Misc", "Engine Start" },
         ["Glareshield"] = new List<string> { "FCU", "EFIS Captain", "EFIS First Officer", "Warnings" },
         ["Instrument"] = new List<string> { "Gear", "Autobrake", "PFD", "ND", "ISIS", "Source Switching", "Clock", "System Display" },
-        ["Pedestal"] = new List<string> { "Flight Controls", "Speed Brake", "Parking Brake", "Engines", "Thrust Levers", "ECAM Control Panel", "Weather Radar", "Transponder", "Radios", "RMP", "Audio Control Panel Captain", "Audio Control Panel First Officer" }
+        ["Pedestal"] = new List<string> { "Flight Controls", "Speed Brake", "Parking Brake", "Engines", "Thrust Levers", "ECAM Control Panel", "Weather Radar", "Transponder", "RMP", "Audio Control Panel Captain", "Audio Control Panel First Officer" }
         // "Ground Services" (Doors + Ground Equipment) was removed — doors are read-only
         // auto-announced status now and ground services are done via the flyPad Ground
         // page (parity with the A380, which has no Doors panel).
@@ -5577,9 +5604,9 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
         },
         ["Engines"] = new List<string>
         {
+            "ENGINE_MODE_SELECTOR",
             "ENGINE_1_MASTER",
-            "ENGINE_2_MASTER",
-            "ENGINE_MODE_SELECTOR"
+            "ENGINE_2_MASTER"
         },
         ["Thrust Levers"] = new List<string>
         {
@@ -5631,15 +5658,18 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
             "A32NX_SWITCH_TCAS_TRAFFIC_POSITION",
             "A32NX_SWITCH_TCAS_POSITION"
         },
-        ["Radios"] = new List<string>
-        {
-            "COM_STANDBY_FREQUENCY_SET:1",
-            "COM1_RADIO_SWAP",
-            "COM_STANDBY_FREQUENCY_SET:2",
-            "COM2_RADIO_SWAP"
-        },
+        // RMP = the one radio panel (the former "Radios" panel was merged in). Tab
+        // order is deliberate: the frequency-management controls come FIRST so tuning
+        // is one Tab away from the panel list; the rarely-touched RMP power/mode
+        // switches sit at the end.
         ["RMP"] = new List<string>
         {
+            "COM_STANDBY_FREQUENCY_SET:1",
+            "COM_ACTIVE_FREQUENCY_SET:1",
+            "COM1_RADIO_SWAP",
+            "COM_STANDBY_FREQUENCY_SET:2",
+            "COM_ACTIVE_FREQUENCY_SET:2",
+            "COM2_RADIO_SWAP",
             "A32NX_RMP_L_TOGGLE_SWITCH",
             "A32NX_RMP_L_SELECTED_MODE"
         },
@@ -6049,6 +6079,12 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
     private double _baroHpaR = -1;         // last decoded F/O baro, hectopascals
     private int _baroModeR = -1;           // A32NX_FCU_EFIS_R_DISPLAY_BARO_VALUE_MODE
     private int _lastAnnouncedBaroHpaR = -1;
+
+    // ---- COM radio auto-announce state (Fenix/A380 RMP parity) ----
+    // Keyed by var key ("COM_ACTIVE_FREQUENCY:1", "COM_TRANSMIT:2"); freqs in kHz.
+    // Seeded silently on first sample so connecting doesn't read the whole stack.
+    private readonly Dictionary<string, double> _lastComKhz = new();
+    private readonly Dictionary<string, bool> _comTxOn = new();
     private static string BaroPhrase(double hpa, int mode)
     {
         if (mode == 0) return "Altimeter standard";
@@ -6687,6 +6723,15 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
     public override bool TryGetDisplayOverride(string varKey, double value, out string displayText)
     {
         displayText = "";
+        // COM frequencies arrive in kHz (134175) — render as MHz ("134.175") in the
+        // Radios panel readout fields.
+        if (varKey.StartsWith("COM_ACTIVE_FREQUENCY:", StringComparison.Ordinal)
+            || varKey.StartsWith("COM_STANDBY_FREQUENCY:", StringComparison.Ordinal))
+        {
+            displayText = $"{value / 1000.0:F3}";
+            return true;
+        }
+
         // Vertical Deviation (this var is "Vertical Deviation" in the panel) — show the real
         // deviation, not a 0/1 flag: glideslope dots on an ILS approach (GS_DEVIATION deg/0.4,
         // >0 = above), else the FMS linear V/DEV in feet during managed descent (altitude −
@@ -6967,6 +7012,42 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
                     int bucket = (pct / 10) * 10;
                     if (bucket > _presetBucket) { _presetBucket = bucket; announcer.Announce($"Aircraft preset loading {bucket} percent"); }
                 }
+            }
+            return true;
+        }
+
+        // ---- COM radios — auto-announce (Fenix/A380 RMP parity) ----
+        // Active/standby arrive in kHz (e.g. 121500). Seed silently on first sample;
+        // announce genuine changes as "COM 1 active 121.500", so a swap (XFER) reads
+        // both the new active and the new standby. Range-gated to the VHF airband so
+        // unpowered/garbage values cache silently. Honours the Ctrl+M mute.
+        if (varName.StartsWith("COM_ACTIVE_FREQUENCY:", StringComparison.Ordinal)
+            || varName.StartsWith("COM_STANDBY_FREQUENCY:", StringComparison.Ordinal))
+        {
+            bool seeded = _lastComKhz.TryGetValue(varName, out double prevKhz);
+            _lastComKhz[varName] = value;
+            if (seeded && Math.Abs(value - prevKhz) > 0.5
+                && value >= 118000 && value <= 137000
+                && !Settings.SettingsManager.Current.A32NXDisabledMonitorVariables.Contains(varName))
+            {
+                string com = varName.EndsWith(":2") ? "COM 2" : varName.EndsWith(":3") ? "COM 3" : "COM 1";
+                string kind = varName.Contains("ACTIVE") ? "active" : "standby";
+                announcer.Announce($"{com} {kind} {value / 1000.0:F3}");
+            }
+            return true;
+        }
+
+        // Transmit selector — speak only the radio the mic moved TO (rising edge);
+        // the old radio dropping to 0 is implied and would just be noise.
+        if (varName.StartsWith("COM_TRANSMIT:", StringComparison.Ordinal))
+        {
+            bool txOn = value > 0.5;
+            bool txKnown = _comTxOn.TryGetValue(varName, out bool txPrev);
+            _comTxOn[varName] = txOn;
+            if (txKnown && txOn && !txPrev
+                && !Settings.SettingsManager.Current.A32NXDisabledMonitorVariables.Contains(varName))
+            {
+                announcer.Announce($"Transmitting on VHF {varName[^1]}");
             }
             return true;
         }
@@ -7295,6 +7376,32 @@ public class FlyByWireA320Definition : BaseAircraftDefinition,
     public override bool HandleUIVariableSet(string varKey, double value, SimConnect.SimVarDefinition varDef,
         SimConnect.SimConnectManager simConnect, Accessibility.ScreenReaderAnnouncer announcer)
     {
+        // COM set fields (Radios panel). Validate, convert MHz → Hz, fire the stock
+        // events — live-verified on the A32NX (its RMP drives the stock COM radios;
+        // unlike the A380, which ignores these). "Set active" = set standby then swap
+        // (there is no direct active-set that keeps the RMP display honest). SILENT on
+        // success: the COM_*_FREQUENCY monitor announces the resulting active/standby
+        // change, confirming what the sim actually accepted instead of echoing input.
+        if (varKey.StartsWith("COM_STANDBY_FREQUENCY_SET", StringComparison.Ordinal)
+            || varKey.StartsWith("COM_ACTIVE_FREQUENCY_SET", StringComparison.Ordinal))
+        {
+            if (value < 118.0 || value > 136.975)
+            {
+                announcer.AnnounceImmediate("Invalid frequency. Range: 118.000 to 136.975");
+                return true;
+            }
+            uint hz = (uint)Math.Round(value * 1000000);
+            string idx = varKey.EndsWith(":2") ? "2" : varKey.EndsWith(":3") ? "3" : "1";
+            string setEvent = idx == "1" ? "COM_STBY_RADIO_SET_HZ" : $"COM{idx}_STBY_RADIO_SET_HZ";
+            simConnect.SendEvent(setEvent, hz);
+            if (varKey.Contains("ACTIVE"))
+            {
+                System.Threading.Thread.Sleep(100); // let the standby write land before swapping
+                simConnect.SendEvent($"COM{idx}_RADIO_SWAP", 0);
+            }
+            return true;
+        }
+
         // System Display page combo (MSFSBA-internal selector). Record the selection
         // and populate the status box — scrape the E/WD or read decoded SD-system
         // SimVars. The real A32NX SD index is read-only, so no real SD var is touched.

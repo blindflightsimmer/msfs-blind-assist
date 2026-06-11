@@ -177,6 +177,10 @@ guidance not active" if pressed when VG is off).
 
 Ground Services:
   Ctrl+G     Read latest GSX tooltip (no need to open the Access GSX window)
+             In the Access GSX window, press F5 to open the GSX menu, 1-9/0/A-E
+             to choose menu options, C to open GSX Settings, and Escape to hide
+             the window. If multiple GSX services are active, use the Active
+             services combo to choose which service drives tooltip announcements.
 
 INPUT MODE - Press [ to activate
 
@@ -271,9 +275,11 @@ MCDU Page Buttons:
   Alt+O          OVFLY
   Alt+C          CLR
 
-Alt+Arrow Navigation:
-  Alt+Left       Previous page (of a multi-page form, e.g. PERF 1/2)
-  Alt+Right      Next page
+Arrow Navigation:
+  Left           Previous page (of a multi-page form, e.g. PERF 1/2) — display list focused
+  Right          Next page — display list focused
+  Alt+Left       Previous page (works from anywhere in the window)
+  Alt+Right      Next page (works from anywhere in the window)
   Alt+Up         Scroll up
   Alt+Down       Scroll down
 

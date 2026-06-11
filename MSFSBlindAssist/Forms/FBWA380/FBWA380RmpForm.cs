@@ -60,7 +60,7 @@ public sealed class FBWA380RmpForm : Form
     private void BuildUi()
     {
         Text = "A380 Radio Management Panel";
-        Size = new Size(620, 560);
+        Size = new Size(620, 625);
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.Sizable;
         ShowInTaskbar = false;
@@ -89,23 +89,44 @@ public sealed class FBWA380RmpForm : Form
         // Page selectors (no mnemonics — Alt+V / Alt+T are handled in OnFormKeyDown so they can't steal
         // focus onto a button). The FBW A380 RMP models only VHF + Transponder.
         var pVhf = new Button { Text = "VHF page", Location = new Point(12, 362), Size = new Size(120, 28), AccessibleName = "VHF page" };
-        pVhf.Click += (_, _) => Page("VHF", "VHF page");
+        pVhf.Click += (_, _) => Page("VHF", "VHF page", fromButton: true);
         var pSqwk = new Button { Text = "Transponder page", Location = new Point(140, 362), Size = new Size(150, 28), AccessibleName = "Transponder page" };
-        pSqwk.Click += (_, _) => Page("SQWK", "Transponder page");
-        var ident = new Button { Text = "Ident", Location = new Point(300, 362), Size = new Size(80, 28), AccessibleName = "Send transponder ident" };
-        ident.Click += (_, _) => SendIdent();
+        pSqwk.Click += (_, _) => Page("SQWK", "Transponder page", fromButton: true);
+
+        // VHF radio SELECT (mirrors Ctrl+1/2/3 — line keys): pick which transceiver the keypad tunes; a
+        // second select of the same radio loads the typed standby (the PressLine re-press behaviour).
+        var sel1 = MakeVhfButton("Select VHF 1", 12,  394, () => SelectRadioFromButton(0));
+        var sel2 = MakeVhfButton("Select VHF 2", 128, 394, () => SelectRadioFromButton(1));
+        var sel3 = MakeVhfButton("Select VHF 3", 244, 394, () => SelectRadioFromButton(2));
+
+        // VHF SWAP active<->standby (mirrors Alt+1/2/3 — the ADK keys).
+        var swap1 = MakeVhfButton("Swap VHF 1", 12,  426, () => SwapFromButton(0));
+        var swap2 = MakeVhfButton("Swap VHF 2", 128, 426, () => SwapFromButton(1));
+        var swap3 = MakeVhfButton("Swap VHF 3", 244, 426, () => SwapFromButton(2));
+
+        // Clear (mirrors Alt+C — page-aware: VHF held full-clear, SQWK clears the typed squawk) and Ident.
+        var clear = new Button { Text = "Clear", Location = new Point(12, 458), Size = new Size(110, 28), AccessibleName = "Clear entry" };
+        clear.Click += (_, _) => { ClearEntry(fromButton: true); FocusDisplay(); };
+        var ident = new Button { Text = "Ident", Location = new Point(128, 458), Size = new Size(110, 28), AccessibleName = "Send transponder ident" };
+        ident.Click += (_, _) => { SendIdent(); FocusDisplay(); };
 
         var help = new Label
         {
-            Location = new Point(12, 398), Size = new Size(584, 56),
-            Text = "Alt+V VHF page · Alt+T Transponder page. Type the digits on the screen.\n" +
-                   "VHF: Enter loads · Backspace deletes · Alt+C clear · Ctrl+1/2/3 radio · Alt+1/2/3 swap.  SQWK: 4 digits 0–7 · Alt+I ident."
+            Location = new Point(12, 494), Size = new Size(584, 40),
+            Text = "Buttons mirror the keys: VHF page (Alt+V), Transponder page (Alt+T), Select/Swap VHF 1-3 " +
+                   "(Ctrl/Alt+1-3), Clear (Alt+C), Ident (Alt+I). Type the digits on the screen; Enter loads, Backspace deletes."
         };
-        var close = new Button { Text = "Close", Location = new Point(12, 460), Size = new Size(100, 30), AccessibleName = "Close" };
+        var close = new Button { Text = "Close", Location = new Point(12, 542), Size = new Size(100, 30), AccessibleName = "Close" };
         close.Click += (_, _) => Hide();   // hide, don't dispose — keeps the scrape warm for instant reopen
 
-        Controls.AddRange(new Control[] { sideLabel, _side, _status, _display, pVhf, pSqwk, ident, help, close });
-        _display.TabIndex = 1; pVhf.TabIndex = 2; pSqwk.TabIndex = 3; ident.TabIndex = 4; close.TabIndex = 5;
+        Controls.AddRange(new Control[] { sideLabel, _side, _status, _display, pVhf, pSqwk,
+            sel1, sel2, sel3, swap1, swap2, swap3, clear, ident, help, close });
+        int tab = 1;
+        _display.TabIndex = tab++;
+        pVhf.TabIndex = tab++; pSqwk.TabIndex = tab++;
+        sel1.TabIndex = tab++; sel2.TabIndex = tab++; sel3.TabIndex = tab++;
+        swap1.TabIndex = tab++; swap2.TabIndex = tab++; swap3.TabIndex = tab++;
+        clear.TabIndex = tab++; ident.TabIndex = tab++; close.TabIndex = tab++;
     }
 
     protected override void OnVisibleChanged(EventArgs e)
@@ -171,14 +192,14 @@ public sealed class FBWA380RmpForm : Form
     private static bool NoMods(KeyEventArgs e) => !e.Control && !e.Alt && !e.Shift;
     private static void Handled(KeyEventArgs e) { e.Handled = true; e.SuppressKeyPress = true; }
 
-    private void PressLine(int row)
+    private void PressLine(int row, bool fromButton = false)
     {
         if (_busy) return;
         bool wasSel = _selectedRowIndex == row;
         _selectedRowIndex = row;
         _def.SendRmpKey(_rmp, $"LSK_{row + 1}", _sim);
         if (wasSel) { _standbyTimer?.Stop(); AnnounceVhfEntry(force: true); _vhfEntry = ""; }   // re-press = load -> read back
-        else { _vhfEntry = ""; _announcer?.Announce($"Radio {row + 1}"); ScheduleRefresh(); }    // new radio = fresh entry
+        else { _vhfEntry = ""; if (!fromButton) _announcer?.Announce($"Radio {row + 1}"); ScheduleRefresh(); }    // new radio = fresh entry
     }
 
     // Announce the SELECTED radio's standby as "VHF standby 1, 123.500", formatting the DIGITS the user
@@ -276,21 +297,54 @@ public sealed class FBWA380RmpForm : Form
         return sel != null ? Token(sel, "standby ") : "";
     }
 
-    private void Swap(int row)
+    private void Swap(int row, bool fromButton = false)
     {
         if (_busy) return;
         _def.SendRmpKey(_rmp, $"ADK_{row + 1}", _sim);
-        _announcer?.Announce("Swapped");
+        if (!fromButton) _announcer?.Announce("Swapped");
         ScheduleRefresh();
     }
 
-    private void Page(string key, string spoken)
+    // ---- button equivalents of the VHF soft keys ---------------------------------------------
+    // The select/swap KEYS only act on the VHF page (OnFormKeyDown gates them). The BUTTONS ensure the
+    // VHF page first so a click is always meaningful from anywhere, then hand focus back to the screen
+    // so the pilot can keep typing digits (same as Page() does on a page-button click).
+
+    private Button MakeVhfButton(string text, int x, int y, Action onClick)
+    {
+        var b = new Button { Text = text, Location = new Point(x, y), Size = new Size(110, 28), AccessibleName = text };
+        b.Click += (_, _) => onClick();
+        return b;
+    }
+
+    private void FocusDisplay() { ActiveControl = _display; _display.Focus(); }
+
+    private void EnsureVhfPage()
+    {
+        if (_page != "VHF") Page("VHF", "VHF page", fromButton: true);   // Page() already refocuses the screen + resets the entry
+    }
+
+    private void SelectRadioFromButton(int row)
+    {
+        EnsureVhfPage();
+        PressLine(row, fromButton: true);     // first select = "Radio N"; second select of the same radio loads the standby
+        FocusDisplay();
+    }
+
+    private void SwapFromButton(int row)
+    {
+        EnsureVhfPage();
+        Swap(row, fromButton: true);
+        FocusDisplay();
+    }
+
+    private void Page(string key, string spoken, bool fromButton = false)
     {
         if (_busy) return;
         _page = (key == "SQWK") ? "SQWK" : "VHF";
         _squawkEntry = ""; _vhfEntry = "";       // start each page visit with a fresh entry
         _def.SendRmpKey(_rmp, key, _sim);         // drive the cockpit RMP to match (best-effort; scrape follows)
-        _announcer?.Announce(spoken);
+        if (!fromButton) _announcer?.Announce(spoken);
         ScheduleRefresh();
         // A page switch via a button moves focus onto it; pull it back so typed digits reach the screen.
         ActiveControl = _display;
@@ -368,16 +422,16 @@ public sealed class FBWA380RmpForm : Form
         RenderFromSim();
     }
 
-    private void ClearEntry()
+    private void ClearEntry(bool fromButton = false)
     {
         if (_page == "SQWK")
         {
             _squawkEntry = "";
-            _announcer?.Announce("Cleared");
+            if (!fromButton) _announcer?.Announce("Cleared");
             RenderFromSim();
             return;
         }
-        _ = FullClear();   // VHF: held full-clear of the keypad scratchpad
+        _ = FullClear(fromButton);   // VHF: held full-clear of the keypad scratchpad
     }
 
     private void SendIdent()
@@ -386,14 +440,14 @@ public sealed class FBWA380RmpForm : Form
         _announcer?.AnnounceImmediate("Ident");
     }
 
-    private async Task FullClear()
+    private async Task FullClear(bool fromButton = false)
     {
         if (_busy) return;
         _busy = true;
         try { _def.SendRmpKeyPress(_rmp, "DIGIT_CLR", _sim); await Task.Delay(1150); }
         finally { _def.SendRmpKeyRelease(_rmp, "DIGIT_CLR", _sim); _busy = false; }
         _vhfEntry = "";
-        _announcer?.Announce("Cleared");
+        if (!fromButton) _announcer?.Announce("Cleared");
         Apply(await _disp.ScrapeNowAsync());
     }
 
@@ -542,10 +596,28 @@ public sealed class FBWA380RmpForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        TearDown();
+        base.OnFormClosed(e);
+    }
+
+    // Idempotent teardown shared by real close AND Dispose(). The aircraft-swap
+    // cleanup calls Dispose() directly — Form.Dispose() does NOT raise FormClosed,
+    // and Close() is cancelled by the hide-on-close guard above, so without this
+    // the timers + the form-owned Coherent client survived the swap.
+    private bool _tornDown;
+    private void TearDown()
+    {
+        if (_tornDown) return;
+        _tornDown = true;
         try { _refreshTimer?.Stop(); _refreshTimer?.Dispose(); } catch { }
         try { _standbyTimer?.Stop(); _standbyTimer?.Dispose(); } catch { }
         try { _simPoll?.Stop(); _simPoll?.Dispose(); } catch { }
         try { _disp.RowsUpdated -= OnRowsUpdated; _disp.Dispose(); } catch { }
-        base.OnFormClosed(e);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) TearDown();
+        base.Dispose(disposing);
     }
 }

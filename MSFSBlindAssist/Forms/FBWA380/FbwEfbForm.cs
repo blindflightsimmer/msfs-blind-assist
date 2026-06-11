@@ -232,18 +232,8 @@ public class FbwEfbForm : Form
             // If the WebView2 render/browser process dies, don't let it take the host
             // with it: mark not-ready (so pushes queue instead of throwing) and try one
             // reload. The native list view remains as a backstop if it can't recover.
-            _webView.CoreWebView2.ProcessFailed += (_, args) =>
-            {
-                System.Diagnostics.Debug.WriteLine($"[FBW flyPad] WebView2 process failed: {args.ProcessFailedKind}");
-                _webViewReady = false;
-                _renderInFlight = false;
-                try { if (!IsDisposed && _webView?.CoreWebView2 != null) _webView.CoreWebView2.Reload(); } catch { }
-            };
-            _webView.CoreWebView2.NavigationCompleted += (_, _) =>
-            {
-                _webViewReady = true;
-                if (_pendingRenderJson != null) { PushToBrowser(_pendingRenderJson); _pendingRenderJson = null; }
-            };
+            _webView.CoreWebView2.ProcessFailed += OnWebViewProcessFailed;
+            _webView.CoreWebView2.NavigationCompleted += OnWebViewNavigationCompleted;
             _webView.CoreWebView2.NavigateToString(PageHtml);
         }
         catch (Exception ex)
@@ -432,6 +422,23 @@ public class FbwEfbForm : Form
         }
     }
 
+    // Named handlers (not inline lambdas) so Dispose can detach them — a late ProcessFailed
+    // → Reload → NavigationCompleted must not fire against a disposed WebView2.
+    private void OnWebViewProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs args)
+    {
+        System.Diagnostics.Debug.WriteLine($"[FBW flyPad] WebView2 process failed: {args.ProcessFailedKind}");
+        _webViewReady = false;
+        _renderInFlight = false;
+        try { if (!IsDisposed && _webView?.CoreWebView2 != null) _webView.CoreWebView2.Reload(); } catch { }
+    }
+
+    private void OnWebViewNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        if (IsDisposed) return;
+        _webViewReady = true;
+        if (_pendingRenderJson != null) { PushToBrowser(_pendingRenderJson); _pendingRenderJson = null; }
+    }
+
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         string body;
@@ -499,6 +506,20 @@ public class FbwEfbForm : Form
                 else if (r.Control is TextBox tb)
                 {
                     if (!tb.Focused && tb.Text != el.Value) tb.Text = el.Value;
+                }
+                else if (r.Control is Panel panel)
+                {
+                    // "text"/"select" elements render as a label+TextBox CONTAINER —
+                    // the rendered map stores the Panel, so the TextBox arm above never
+                    // matched and list-mode field values froze at first render.
+                    foreach (Control child in panel.Controls)
+                    {
+                        if (child is TextBox inner)
+                        {
+                            if (!inner.Focused && inner.Text != el.Value) inner.Text = el.Value;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -667,7 +688,7 @@ public class FbwEfbForm : Form
             _statusTimer?.Dispose();
             // Unsubscribe the WebView2 message handler before disposing so a
             // late message can't fire against a half-disposed form.
-            try { if (_webView?.CoreWebView2 != null) _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived; } catch { }
+            try { if (_webView?.CoreWebView2 != null) { _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived; _webView.CoreWebView2.ProcessFailed -= OnWebViewProcessFailed; _webView.CoreWebView2.NavigationCompleted -= OnWebViewNavigationCompleted; } } catch { }
             _webView?.Dispose();
         }
         base.Dispose(disposing);
@@ -768,7 +789,8 @@ public class FbwEfbForm : Form
   // across same-page polls (values are patched in place) while a sub-tab/page switch
   // cleanly swaps controls. The live data-idx for click/set is patched in place.
   // Strip the DYNAMIC state suffixes the agent appends -- (active) / (called) /
-  // (selected) / (current page) and the colon placed/not-placed markers -- from the
+  // (selected) / (current page) / (expanded) / (collapsed) and the colon
+  // placed/not-placed markers -- from the
   // reconcile key, so a control whose state changes (a door tile activated, a rate
   // option selected) maps to the SAME node and is patched IN PLACE rather than
   // destroyed + rebuilt. Rebuilding moved the screen-reader focus off the control
