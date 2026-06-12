@@ -147,3 +147,7 @@ tools/flypad-shell-test/node_modules/
 tools/flypad-settings-test/node_modules/
 tools/_probe/engmon/
 tools/_probe/engmon_ctrle/
+
+# HeadwindSim A330-900neo aircraft package — reference material only (~4 GB);
+# read by Claude to derive the HeadwindA330Definition, never committed.
+headwindsim-aircraft-a330-900/

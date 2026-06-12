@@ -212,6 +212,7 @@ public partial class MainForm : Form
             "FBW_A380" => new FlyByWireA380Definition(),
             "PMDG_737" => new PMDG737Definition(),
             "HS_787" => new HorizonSim787Definition(),
+            "HW_A330" => new HeadwindA330Definition(),
             // Future aircraft will be added here
             _ => new FlyByWireA320Definition() // Default to A320
         };
@@ -828,8 +829,10 @@ public partial class MainForm : Form
                     return; // Skip announcement for disabled variable
                 }
 
-                // Check if disabled in the A32NX Monitor Manager.
-                if (currentAircraft.AircraftCode == "A320" &&
+                // Check if disabled in the A32NX Monitor Manager. The Headwind A330
+                // is an A32NX fork that reuses the same monitor-manager form and the
+                // same A32NXDisabledMonitorVariables setting.
+                if ((currentAircraft.AircraftCode == "A320" || currentAircraft.AircraftCode == "HW_A330") &&
                     Settings.SettingsManager.Current.A32NXDisabledMonitorVariables.Contains(e.VarName))
                 {
                     return; // Skip announcement for disabled variable
@@ -2044,8 +2047,11 @@ public partial class MainForm : Form
                 {
                     ShowHS787FMCDialog();
                 }
-                else if (currentAircraft?.AircraftCode == "A320")
+                else if (currentAircraft?.AircraftCode == "A320" || currentAircraft?.AircraftCode == "HW_A330")
                 {
+                    // The Headwind A330 MCDU broadcasts over the same FBW SimBridge
+                    // relay (ws://localhost:8380/interfaces/v1/mcdu) the A32NX uses,
+                    // so the A320 MCDU service/form serve it unchanged.
                     ShowFlyByWireMCDUDialog();
                 }
                 else
@@ -2066,11 +2072,11 @@ public partial class MainForm : Form
                 {
                     ShowHS787EFBFormDialog();
                 }
-                else if (currentAircraft?.AircraftCode == "A320")
+                else if (currentAircraft?.AircraftCode == "A320" || currentAircraft?.AircraftCode == "HW_A330")
                 {
-                    // Unified flyPad: the A320 uses the SAME generic WebView2 form +
-                    // CoherentEFBClient as the A380 (both drive the one shared
-                    // coherent-flypad-agent.js over the "- EFB" Coherent view).
+                    // Unified flyPad: the A320 (and the Headwind A330 fork) use the SAME
+                    // generic WebView2 form + CoherentEFBClient as the A380 (all drive the
+                    // one shared coherent-flypad-agent.js over the "- EFB" Coherent view).
                     ShowFbwEfbDialog();
                 }
                 break;
@@ -2786,8 +2792,13 @@ public partial class MainForm : Form
     {
         string js = LoadA32NXFlightInfoJs();
         if (string.IsNullOrEmpty(js)) { announcer.AnnounceImmediate("Flight info unavailable."); return; }
+        // The Headwind A330 hosts the MCDU in the "A339X_MCDU" Coherent view; the A32NX
+        // uses "A32NX_MCDU". The flight-info JS queries both <a32nx-mcdu>/<a339x-mcdu>
+        // elements, so only the view needle changes per airframe.
+        string mcduView = (currentAircraft as Aircraft.FlyByWireA320Definition)?.FlightInfoMcduView
+            ?? "A32NX_MCDU";
         string raw = "";
-        try { raw = await SimConnect.CoherentEvalClient.EvalAsync("A32NX_MCDU", js); }
+        try { raw = await SimConnect.CoherentEvalClient.EvalAsync(mcduView, js); }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[A32NX flightInfo] {ex.Message}"); }
         AnnounceFlightInfoJson(raw, tod);
     }
@@ -2909,8 +2920,12 @@ public partial class MainForm : Form
             // One generic flyPad form serves both FBW aircraft; only the window
             // title differs. The form is disposed on aircraft swap (see the swap
             // handler), so it is always recreated with the correct title.
-            string title = currentAircraft?.AircraftCode == "A320"
-                ? "A320 flyPad EFB" : "A380X flyPad EFB";
+            string title = currentAircraft?.AircraftCode switch
+            {
+                "A320" => "A320 flyPad EFB",
+                "HW_A330" => "A330 flyPad EFB",
+                _ => "A380X flyPad EFB"
+            };
             fbwEfbForm = new Forms.FBWA380.FbwEfbForm(bridge, announcer, title, "flyPad");
         }
         fbwEfbForm.ShowForm();
@@ -4550,6 +4565,11 @@ public partial class MainForm : Form
         SwitchAircraft(new HorizonSim787Definition());
     }
 
+    private void HeadwindA330MenuItem_Click(object? sender, EventArgs e)
+    {
+        SwitchAircraft(new HeadwindA330Definition());
+    }
+
     private void SwitchAircraft(IAircraftDefinition newAircraft)
     {
         // Capture the OUTGOING definition BEFORE reassignment — several cleanup steps
@@ -4818,11 +4838,11 @@ public partial class MainForm : Form
             CheckAndOfferEFBModPackage();
             StartEFBBridgeServer();
         }
-        else if (newAircraft.AircraftCode == "A320")
+        else if (newAircraft.AircraftCode == "A320" || newAircraft.AircraftCode == "HW_A330")
         {
-            // FBW A320 flyPad: uses the shared CoherentEFBClient + generic EFB form
-            // (same as the A380). The client is created lazily when the user opens
-            // the flyPad, and is disposed by the unconditional swap cleanup above.
+            // FBW A320 / Headwind A330 flyPad: uses the shared CoherentEFBClient +
+            // generic EFB form (same as the A380). The client is created lazily when the
+            // user opens the flyPad, and is disposed by the unconditional swap cleanup above.
         }
         else if (newAircraft.AircraftCode == "FBW_A380")
         {
@@ -4905,9 +4925,16 @@ public partial class MainForm : Form
         flyByWireA380MenuItem.Checked = false;
         pmdg737MenuItem.Checked = false;
         horizonSim787MenuItem.Checked = false;
+        headwindA330MenuItem.Checked = false;
 
-        // Set the check on the current aircraft's menu item
-        if (currentAircraft is FlyByWireA320Definition)
+        // Set the check on the current aircraft's menu item.
+        // NOTE: HeadwindA330Definition derives from FlyByWireA320Definition, so it MUST
+        // be tested BEFORE the A320 (a derived instance also matches the base type).
+        if (currentAircraft is HeadwindA330Definition)
+        {
+            headwindA330MenuItem.Checked = true;
+        }
+        else if (currentAircraft is FlyByWireA320Definition)
         {
             flyByWireA320MenuItem.Checked = true;
         }

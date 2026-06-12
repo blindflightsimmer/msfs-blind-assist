@@ -13,7 +13,10 @@
 //   flightPhase: A32NX_FMGC_FLIGHT_PHASE (>=4 = descent/approach/... = past TOD)
 (function () {
   try {
-    var el = document.querySelector("a32nx-mcdu");
+    // The A32NX hosts <a32nx-mcdu>; the Headwind A330 fork hosts <a339x-mcdu> in its
+    // own A339X_MCDU Coherent view. The FMS shape (legacyFms.guidanceController) is the
+    // same fork, so we resolve whichever element is present in the evaluated view.
+    var el = document.querySelector("a32nx-mcdu") || document.querySelector("a339x-mcdu");
     var fms = el && el.fsInstrument && el.fsInstrument.legacyFms;
     var gc = fms && fms.guidanceController;
     if (!gc) return JSON.stringify({ ok: false, error: "FMS not ready" });
