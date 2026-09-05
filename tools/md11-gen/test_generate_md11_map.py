@@ -218,6 +218,36 @@ class StateTests(unittest.TestCase):
         self.assertEqual("Captain ILS Source CAP 2 light", out["MD11_LSIDE_INP_APPRCAP2_LT"]["label"])
         self.assertEqual("First Officer EIS Source FO AUX light", out["MD11_RSIDE_INP_EIS_FOAUX_LT"]["label"])
 
+    def test_fuel_dump_stop_lamp_pairs_to_the_stop_button_not_the_dump_button(self):
+        # MD11_OVHD_FUEL_DUMP_STOP_LT's stem is a superset of MD11_OVHD_FUEL_DUMP_BT's, so it
+        # matches BOTH buttons' stem rule (DUMP_BT via "<stem>_STOP_LT", STOP a LEGEND_MEANINGS
+        # key; DUMP_STOP_BT via the bare "<stem>_LT"). Per TFDi's Systems Guide the lamp is the
+        # STOP button's own indicator. Listing the DUMP button first reproduces the ordering
+        # that used to let it win the lamp before the curated STATE_LAMPS entry was added.
+        dump = ctl("MD11_OVHD_FUEL_DUMP_BT", label="Fuel Dump", value_map={"1": "Open", "0": "Closed"})
+        stop = ctl("MD11_OVHD_FUEL_DUMP_STOP_BT", label="Fuel Dump Emergency Stop", value_map={"1": "Stop", "0": "Normal"})
+        out = {c["node_id"]: c for c in g.apply_state(g.finalize_controls(
+            [dump, stop, self.lamp("MD11_OVHD_FUEL_DUMP_LT"), self.lamp("MD11_OVHD_FUEL_DUMP_STOP_LT")]))}
+        self.assertEqual([("MD11_OVHD_FUEL_DUMP_STOP_LT", "STOP", "Stop")],
+                         [(l["var"], l["legend"], l["lit"]) for l in out["MD11_OVHD_FUEL_DUMP_STOP_BT"]["state"]["lamps"]])
+        self.assertEqual([("MD11_OVHD_FUEL_DUMP_LT", "OPEN", "Open")],
+                         [(l["var"], l["legend"], l["lit"]) for l in out["MD11_OVHD_FUEL_DUMP_BT"]["state"]["lamps"]])
+        self.assertEqual("Fuel Dump Emergency Stop STOP light", out["MD11_OVHD_FUEL_DUMP_STOP_LT"]["label"])
+
+    def test_stem_rule_tie_break_prefers_the_longer_more_specific_stem(self):
+        # With no STATE_LAMPS curation at all, a lamp matching two buttons' stems must go to
+        # whichever stem is longer (more specific) -- MD11_OVHD_X_TEST_BT's bare "<stem>_LT"
+        # match, not MD11_OVHD_X_BT's shorter "<stem>_TEST_LT" match (TEST is a LEGEND_MEANINGS
+        # key). Listing the shorter-stem button first would have won the old, order-dependent
+        # code.
+        x = ctl("MD11_OVHD_X_BT", label="X")
+        x_test = ctl("MD11_OVHD_X_TEST_BT", label="X Test")
+        out = {c["node_id"]: c for c in g.apply_state(g.finalize_controls(
+            [x, x_test, self.lamp("MD11_OVHD_X_TEST_LT")]))}
+        self.assertEqual([("MD11_OVHD_X_TEST_LT", "ON", "On")],
+                         [(l["var"], l["legend"], l["lit"]) for l in out["MD11_OVHD_X_TEST_BT"]["state"]["lamps"]])
+        self.assertNotIn("state", out["MD11_OVHD_X_BT"])
+
 
 if __name__ == "__main__":
     unittest.main()

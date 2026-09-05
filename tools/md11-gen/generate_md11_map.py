@@ -330,6 +330,14 @@ STATE_LAMPS = {
     "MD11_OVHD_FUEL_FWDAUX_L_TRANS_BT": [("MD11_OVHD_FUEL_FWDAUX_LTRANS_ON_LT", "ON"), ("MD11_OVHD_FUEL_FWDAUX_LTRANS_LOW_LT", "LOW")],
     "MD11_OVHD_FUEL_FWDAUX_R_TRANS_BT": [("MD11_OVHD_FUEL_FWDAUX_RTRANS_ON_LT", "ON"), ("MD11_OVHD_FUEL_FWDAUX_RTRANS_LOW_LT", "LOW")],
     "MD11_OVHD_FUEL_MANF_DRAIN_BT": [("MANF_DRAIN_LT", "OPEN")],
+    # MD11_OVHD_FUEL_DUMP_STOP_LT's stem ("MD11_OVHD_FUEL_DUMP_STOP") has
+    # "MD11_OVHD_FUEL_DUMP" (MD11_OVHD_FUEL_DUMP_BT's own stem) as a PREFIX, so the lamp also
+    # matches that shorter button's stem rule as a "<stem>_STOP_LT" legend match (STOP is a
+    # LEGEND_MEANINGS key). Per TFDi's Systems Guide (Forward Overhead: "FUEL DUMP EMER STOP
+    # Switch (amber): legend amber when illuminated -- dump valves commanded closed"), the lamp
+    # belongs to the STOP button, not the DUMP button -- curate it explicitly so this is never
+    # left to iteration order (see pair_lamps).
+    "MD11_OVHD_FUEL_DUMP_STOP_BT": [("MD11_OVHD_FUEL_DUMP_STOP_LT", "STOP")],
     **{f"MD11_OVHD_FLTCTL_{c}_BT": [(f"MD11_OVHD_FLTCTL_{c}FAIL_LT", "FAIL"), (f"MD11_OVHD_FLTCTL_{c}FOFF_LT", "OFF")] for c in ("LLI", "LLO", "RLI", "RLO")},
     **{f"MD11_OVHD_FLTCTL_{c}_BT": [(f"MD11_OVHD_FLTCTL_{c}FAIL_LT", "FAIL"), (f"MD11_OVHD_FLTCTL_{c}OFF_LT", "OFF")] for c in ("LYDA", "LYDB", "UYDA", "UYDB")},
     **{f"MD11_OVHD_PNEU_BLEED_{n}_OFF_BT": [(f"MD11_OVHD_PNEU_BLEED_{n}_PRESS_LT", "PRESS")] for n in (1, 2, 3)},
@@ -575,10 +583,27 @@ def latch_for(control, node_ids):
 
 
 def pair_lamps(controls):
-    """lamp node id -> (owner button, legend). Curated pairings first, then the stem rule:
-    <stem>_<LEGEND>_LT with LEGEND a key of LEGEND_MEANINGS, or the bare <stem>_LT (legend ON
-    unless overridden). Only BUTTONS fold lamps into their state; a knob's or switch's lamps
-    become named rows instead (see lamp_name)."""
+    """lamp node id -> (owner button, legend).
+
+    Runs in two FULL passes over every button -- never interleaved per control -- so the
+    ordering is deterministic regardless of what order `controls` lists the buttons in:
+
+    1. Curated pairings (STATE_LAMPS), for every button, first. A curated entry always wins a
+       collision no matter where its button sits in `controls`, because this whole pass
+       finishes before the stem-rule pass (2) below even starts.
+    2. The stem rule -- <stem>_<LEGEND>_LT with LEGEND a key of LEGEND_MEANINGS, or the bare
+       <stem>_LT (legend ON unless overridden) -- visiting buttons in order of DESCENDING stem
+       length, longest (most specific) first. A longer stem's BARE match must beat a shorter
+       stem's <LEGEND> match on the very same lamp: MD11_OVHD_FUEL_DUMP_STOP_BT's bare
+       "<stem>_LT" match on MD11_OVHD_FUEL_DUMP_STOP_LT would otherwise lose to
+       MD11_OVHD_FUEL_DUMP_BT's shorter "<stem>_STOP_LT" match on the same lamp whenever DUMP_BT
+       happened to be iterated first (STOP is itself a LEGEND_MEANINGS key). The curated pairing
+       above already settles that specific case; this ordering is what stops a FUTURE, un-curated
+       collision from silently flipping to whichever button the exported XML happens to list
+       first on a package rebuild.
+
+    Only BUTTONS fold lamps into their state; a knob's or switch's lamps become named rows
+    instead (see lamp_name)."""
     lamps = {c["node_id"]: c for c in controls if c["kind"] == "annun"}
     owners = {}
 
@@ -586,11 +611,13 @@ def pair_lamps(controls):
         if lamp_id in lamps and lamp_id not in owners:
             owners[lamp_id] = (owner, legend)
 
-    for c in controls:
-        if c["kind"] != "button":
-            continue
+    buttons = [c for c in controls if c["kind"] == "button"]
+
+    for c in buttons:
         for lamp_id, legend in STATE_LAMPS.get(c["node_id"], []):
             attach(c, lamp_id, legend)
+
+    for c in sorted(buttons, key=lambda c: len(_strip_suffix(c["node_id"])), reverse=True):
         stem = _strip_suffix(c["node_id"])
         for lamp_id in lamps:
             if not (lamp_id.startswith(stem + "_") and lamp_id.endswith("_LT")):

@@ -19210,11 +19210,6 @@
       "var": "MD11_OVHD_FUEL_DUMP_LT",
       "legend": "OPEN",
       "lit": "Open"
-     },
-     {
-      "var": "MD11_OVHD_FUEL_DUMP_STOP_LT",
-      "legend": "STOP",
-      "lit": "Stop"
      }
     ],
     "latch": {
@@ -19295,12 +19290,19 @@
    "guard_id": "MD11_OVHD_FUEL_DUMP_STOP_GRD",
    "source": "FlightDeck/Overhead.xml",
    "state": {
-    "lamps": [],
+    "lamps": [
+     {
+      "var": "MD11_OVHD_FUEL_DUMP_STOP_LT",
+      "legend": "STOP",
+      "lit": "Stop"
+     }
+    ],
     "latch": {
      "var": "MD11_OVHD_FUEL_DUMP_STOP_BT",
      "on": "Stop",
      "off": "Normal"
-    }
+    },
+    "dark": "Normal"
    }
   },
   {
@@ -19335,7 +19337,7 @@
    "kind": "annun",
    "template": "TFDi_Design_MD11_Annunciator",
    "area": "Overhead",
-   "label": "Fuel Dump STOP light",
+   "label": "Fuel Dump Emergency Stop STOP light",
    "label_source": "paired",
    "state_var": "MD11_OVHD_FUEL_DUMP_STOP_LT",
    "value_map": {},
