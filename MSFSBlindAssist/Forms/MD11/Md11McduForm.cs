@@ -55,12 +55,13 @@ public class Md11McduForm : Form
     private string _lastAnnouncedTitle = "";
 
     /// <summary>
-    /// Last rendered blank/content state, so going dark mid-session is ANNOUNCED (a background
-    /// change the pilot did not cause) while the same state on open is only shown (the screen
-    /// reader reads the list, and speaking over it is the redundancy CLAUDE.md forbids).
-    /// Null until the first render, which is what keeps the open silent.
+    /// When the unit went continuously blank, or null while it has content.
+    ///
+    /// The MD-11 ERASES its CDU before redrawing, so a blank frame arrives on every page change
+    /// and the new page follows 202-438 ms later (37 measured page changes). This is what lets a
+    /// repaint be held rather than believed. See <see cref="Md11McduPresence.BlankSettleMs"/>.
     /// </summary>
-    private Md11McduPresenceState? _lastPresence;
+    private DateTime? _blankSince;
     private string _lastAnnouncedScratchpad = "";
     private string _lastAnnouncedFlags = "";
 
@@ -421,6 +422,21 @@ public class Md11McduForm : Form
             return;
         }
 
+        // The blank judgement has to run BEFORE the reference shortcut below. A unit that stays
+        // blank delivers ONE frame and then nothing more (the request is CHANGED-only), so the
+        // "has it stayed blank?" question can only be answered by this timer tick, never by a
+        // delivery. Judging it after the shortcut would mean a persistent blank was never
+        // reported at all.
+        var presence = Md11McduPresence.Classify(screen);
+        if (presence == Md11McduPresenceState.Blank) _blankSince ??= DateTime.UtcNow;
+        else _blankSince = null;
+
+        var blankFor = _blankSince == null ? TimeSpan.Zero : DateTime.UtcNow - _blankSince.Value;
+
+        // Hold the page through a repaint: draw nothing, say nothing, leave the list and the
+        // screen-reader cursor exactly where they are.
+        if (Md11McduPresence.Decide(presence, blankFor) == Md11McduDisplayAction.HoldLastPage) return;
+
         // The manager only builds a new screen object when the sim delivers, and the underlying
         // request is CHANGED-only — so an unchanged reference means nothing happened.
         if (ReferenceEquals(screen, _lastRendered)) return;
@@ -446,6 +462,8 @@ public class Md11McduForm : Form
         var presence = Md11McduPresence.Classify(screen);
         if (presence != Md11McduPresenceState.Content)
         {
+            // Reached only for a SETTLED blank or a unit that has never delivered — Poll holds
+            // every transient repaint before it gets here.
             var withContent = new List<Md11McduUnit>(3);
             foreach (var u in new[] { Md11McduUnit.Left, Md11McduUnit.Center, Md11McduUnit.Right })
                 if (Md11McduPresence.Classify(manager?.GetScreen(u)) == Md11McduPresenceState.Content)
@@ -462,18 +480,18 @@ public class Md11McduForm : Form
                 ? $"MCDU: {_unit} blank"
                 : $"MCDU: {_unit} no data";
 
-            // Announce only a CHANGE, and only once this window has rendered at least once —
-            // going dark under the pilot is news, opening onto a dark unit is the screen reader's
-            // to read. Clearing the title latch lets the page announce normally when it comes back.
-            if (_lastPresence != null && _lastPresence != presence && advisory.Count > 0)
-                _announcer.Announce(advisory[0]);
-
-            _lastPresence = presence;
-            _lastAnnouncedTitle = "";
+            // NOTHING is spoken here, deliberately. The advisory is a LIST ROW: the screen reader
+            // reads it when the pilot's focus is on the display, which is the same channel the
+            // monitor manager uses for its filter state. Speaking it instead put "MCDU is blank"
+            // over the cockpit on every repaint.
+            //
+            // The title latch is deliberately NOT cleared either. Clearing it made the page title
+            // re-announce every time content came back — the "then something there" half of the
+            // spam. Left alone, a CDU that goes dark and returns to the SAME page stays silent
+            // (nothing changed for the pilot) while a return to a DIFFERENT page announces itself
+            // through the ordinary title-change path.
             return;
         }
-
-        _lastPresence = presence;
 
         var lines = new List<string>(Md11McduLayout.Rows + 2)
         {

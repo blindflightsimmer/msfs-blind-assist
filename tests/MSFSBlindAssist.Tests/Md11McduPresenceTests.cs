@@ -126,3 +126,82 @@ public class Md11McduPresenceTests
             Md11McduUnit.Right, Md11McduPresenceState.Content, new[] { Md11McduUnit.Right }));
     }
 }
+
+/// <summary>
+/// Pins the ERASE-then-REDRAW behaviour of the MD-11's CDU.
+///
+/// Measured live (MD-11F GE, 2026-09-05 19:11-19:24, 37 page changes): every page change
+/// publishes an ALL-ZERO frame and then the new page — min 202 ms, median 418 ms, max 438 ms —
+/// and not one blank frame in the whole session failed to be followed by content. The aircraft
+/// clears the screen before drawing on it.
+///
+/// So a blank frame is a repaint artifact, NOT a dark CDU, and the first version of the blank
+/// handling treated each one as a state change worth speaking: the pilot got "Left MCDU is
+/// blank" followed about 400 ms later by the page title, on every single page change, because
+/// the blank branch also cleared the title latch. Reported as "very spammy... it says blank,
+/// then something there".
+///
+/// It is not only speech: rendering the advisory would swap a 9-row list for a 1-row list and
+/// back on every page change, destroying the screen-reader cursor twice per change.
+///
+/// Hence: a blank must SETTLE before it is believed. The threshold is measured, not guessed —
+/// see BlankSettleHasRealMarginOverTheMeasuredEraseWindow.
+/// </summary>
+public class Md11McduEraseRedrawTests
+{
+    /// <summary>The longest erase window actually observed, in ms. The constant must clear this.</summary>
+    private const int MeasuredMaxEraseMs = 438;
+
+    [Fact]
+    public void Content_always_renders_immediately()
+    {
+        Assert.Equal(Md11McduDisplayAction.ShowContent,
+            Md11McduPresence.Decide(Md11McduPresenceState.Content, TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void A_just_arrived_blank_holds_the_last_page_instead_of_flickering()
+    {
+        Assert.Equal(Md11McduDisplayAction.HoldLastPage,
+            Md11McduPresence.Decide(Md11McduPresenceState.Blank, TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void A_blank_lasting_the_longest_MEASURED_erase_window_still_holds()
+    {
+        // 438 ms is the worst real erase seen. If this ever returns ShowAdvisory the pilot gets
+        // the flicker back on their longest page changes only - an intermittent bug, the worst
+        // kind to chase.
+        Assert.Equal(Md11McduDisplayAction.HoldLastPage,
+            Md11McduPresence.Decide(Md11McduPresenceState.Blank, TimeSpan.FromMilliseconds(MeasuredMaxEraseMs)));
+    }
+
+    [Fact]
+    public void A_blank_that_outlasts_the_settle_window_is_finally_believed()
+    {
+        Assert.Equal(Md11McduDisplayAction.ShowAdvisory,
+            Md11McduPresence.Decide(Md11McduPresenceState.Blank,
+                TimeSpan.FromMilliseconds(Md11McduPresence.BlankSettleMs)));
+
+        Assert.Equal(Md11McduDisplayAction.ShowAdvisory,
+            Md11McduPresence.Decide(Md11McduPresenceState.Blank, TimeSpan.FromSeconds(30)));
+    }
+
+    [Fact]
+    public void BlankSettle_has_real_margin_over_the_measured_erase_window()
+    {
+        // Not a round number picked for looks: it must sit clear of the measured maximum with
+        // room for a slower frame, and clear of the form's own 250 ms poll so a settle decision
+        // is never made on a single tick.
+        Assert.True(Md11McduPresence.BlankSettleMs >= MeasuredMaxEraseMs * 3,
+            $"settle {Md11McduPresence.BlankSettleMs} ms is too close to the {MeasuredMaxEraseMs} ms erase window");
+        Assert.True(Md11McduPresence.BlankSettleMs >= 250 * 4);
+    }
+
+    [Fact]
+    public void NoData_shows_the_advisory_at_once_because_there_is_no_page_to_hold()
+    {
+        Assert.Equal(Md11McduDisplayAction.ShowAdvisory,
+            Md11McduPresence.Decide(Md11McduPresenceState.NoData, TimeSpan.Zero));
+    }
+}

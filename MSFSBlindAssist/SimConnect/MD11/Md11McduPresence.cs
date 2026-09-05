@@ -1,5 +1,18 @@
 namespace MSFSBlindAssist.SimConnect.MD11;
 
+/// <summary>What the window should do with the frame it just got.</summary>
+public enum Md11McduDisplayAction
+{
+    /// <summary>Keep showing the page already on screen — this frame is a repaint artifact.</summary>
+    HoldLastPage,
+
+    /// <summary>Replace the page with the blank/no-data advisory.</summary>
+    ShowAdvisory,
+
+    /// <summary>Render the frame normally.</summary>
+    ShowContent,
+}
+
 /// <summary>What a unit's exported screen actually amounts to.</summary>
 public enum Md11McduPresenceState
 {
@@ -55,6 +68,40 @@ public static class Md11McduPresence
     /// <c>IsNullOrEmpty</c> check here would classify the live all-zero Left screen as content
     /// and this whole class would do nothing.
     /// </summary>
+    /// <summary>
+    /// How long a blank must persist before it is believed, in milliseconds.
+    ///
+    /// MEASURED, not chosen: the MD-11 ERASES its CDU before redrawing it, so every page change
+    /// publishes an all-zero frame followed by the new page. Live, 2026-09-05 19:11-19:24, 37
+    /// page changes: min 202 ms, median 418 ms, max 438 ms, and every single blank was followed
+    /// by content — none ever persisted. 1500 ms is ~3.4x the worst erase seen and six of the
+    /// form's 250 ms poll ticks, so a settle is never decided on one tick.
+    ///
+    /// Believing a blank too early is not a cosmetic fault: it speaks "MCDU is blank" and then
+    /// the page title ~400 ms later on EVERY page change, and swaps a 9-row list for a 1-row list
+    /// and back, taking the screen-reader cursor with it. That is exactly how it was reported —
+    /// "very spammy... it says blank, then something there".
+    /// </summary>
+    public const int BlankSettleMs = 1500;
+
+    /// <summary>
+    /// Whether this frame should be drawn, held, or replaced by the advisory.
+    ///
+    /// <paramref name="blankFor"/> is how long the unit has been continuously blank
+    /// (<see cref="TimeSpan.Zero"/> when it is not blank).
+    /// </summary>
+    public static Md11McduDisplayAction Decide(Md11McduPresenceState state, TimeSpan blankFor) => state switch
+    {
+        Md11McduPresenceState.Content => Md11McduDisplayAction.ShowContent,
+
+        // Nothing has ever arrived, so there is no page to hold — say so at once.
+        Md11McduPresenceState.NoData => Md11McduDisplayAction.ShowAdvisory,
+
+        _ => blankFor.TotalMilliseconds >= BlankSettleMs
+            ? Md11McduDisplayAction.ShowAdvisory
+            : Md11McduDisplayAction.HoldLastPage,
+    };
+
     public static Md11McduPresenceState Classify(Md11McduScreen? screen)
     {
         if (screen == null) return Md11McduPresenceState.NoData;
