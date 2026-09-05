@@ -102,6 +102,19 @@ class FinalizeTests(unittest.TestCase):
         self.assertEqual("Doors and Exterior", areas["Cylinder11904"])
         self.assertEqual("Main Instrument Panel", areas["knob_kohlsman"])
 
+    def test_the_mirrored_window_shade_is_the_first_officers(self):
+        # "Mirror_" names the modelling mirror the node was made with, not the left side of the
+        # cockpit: FOAux_Light.xml declares it with ANIM_NAME MD11_RSIDE_WINDOW_SHADE (event
+        # 95518, beside MD11_RSIDE_WINDOW's 95517). Calling it "Left Window Shade (mirror)" on
+        # the Captain panel had a pilot operating the RIGHT shade, with no shade on the F/O side
+        # at all.
+        out = g.finalize_controls([ctl("l_window_shade_pull"), ctl("Mirror_l_window_shade_pull")])
+        by = {c["node_id"]: c for c in out}
+        self.assertEqual("Left Window Shade", by["l_window_shade_pull"]["label"])
+        self.assertEqual("Captain Side Panel", by["l_window_shade_pull"]["area"])
+        self.assertEqual("Right Window Shade", by["Mirror_l_window_shade_pull"]["label"])
+        self.assertEqual("F/O Side Panel", by["Mirror_l_window_shade_pull"]["area"])
+
     def test_glareshield_warning_areas_are_named_correctly(self):
         self.assertEqual("Glareshield (Captain)", g.area_of("MD11_GSL_MST_WRN_BT"))
         self.assertEqual("Glareshield (First Officer)", g.area_of("MD11_GSR_MST_WRN_BT"))

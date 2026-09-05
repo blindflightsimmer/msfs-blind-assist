@@ -111,6 +111,18 @@ public class Md11PanelLayoutTests
     }
 
     [Fact]
+    public void EachWindowShade_SitsOnItsOwnPilotsPanel()
+    {
+        // "Mirror_l_window_shade_pull" is a modelling-mirror name, not a left-hand one: TFDi
+        // declare it in FOAux_Light.xml as MD11_RSIDE_WINDOW_SHADE. On the Captain panel it had a
+        // pilot pulling the RIGHT shade, and the F/O panel had no shade at all.
+        Assert.Contains("l_window_shade_pull", P.Controls["Captain Side"]);
+        Assert.DoesNotContain("Mirror_l_window_shade_pull", P.Controls["Captain Side"]);
+        var fo = P.Controls["First Officer Side"];
+        Assert.Equal("Mirror_l_window_shade_pull", fo[fo.IndexOf("MD11_RSIDE_WINDOW") + 1]);
+    }
+
+    [Fact]
     public void McduKeys_StartWithTheLineSelectKeys()
     {
         Assert.Equal("MD11_LMCDU_LSK_1L_BT", P.Controls["MCDU Left"][0]);

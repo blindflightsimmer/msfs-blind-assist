@@ -24,7 +24,7 @@
    "Audio Panel (Observer)": 60,
    "Cabin": 3,
    "Captain EFIS Control Panel": 23,
-   "Captain Side Panel": 36,
+   "Captain Side Panel": 35,
    "Captain Yoke": 3,
    "Center Instrument": 12,
    "Circuit Breakers": 116,
@@ -32,7 +32,7 @@
    "Doors and Exterior": 39,
    "EFB": 2,
    "F/O EFIS Control Panel": 23,
-   "F/O Side Panel": 34,
+   "F/O Side Panel": 35,
    "F/O Yoke": 1,
    "Flaps": 1,
    "Flight Deck Door": 1,
@@ -4323,22 +4323,6 @@
    },
    "guard_id": null,
    "source": "FlightDeck/CaptainAux_Light.xml"
-  },
-  {
-   "node_id": "Mirror_l_window_shade_pull",
-   "kind": "button",
-   "template": "TFDi_Design_MD11_Button_Template",
-   "area": "Captain Side Panel",
-   "label": "Left Window Shade (mirror)",
-   "label_source": "curated",
-   "state_var": "Mirror_l_window_shade_pull",
-   "value_map": {},
-   "num_states": null,
-   "events": {
-    "LEFT_BUTTON_DOWN": 95518
-   },
-   "guard_id": null,
-   "source": "FlightDeck/FOAux_Light.xml"
   },
   {
    "node_id": "l_window_shade_pull",
@@ -9902,6 +9886,22 @@
    "num_states": null,
    "events": {
     "LEFT_BUTTON_DOWN": 95517
+   },
+   "guard_id": null,
+   "source": "FlightDeck/FOAux_Light.xml"
+  },
+  {
+   "node_id": "Mirror_l_window_shade_pull",
+   "kind": "button",
+   "template": "TFDi_Design_MD11_Button_Template",
+   "area": "F/O Side Panel",
+   "label": "Right Window Shade",
+   "label_source": "curated",
+   "state_var": "Mirror_l_window_shade_pull",
+   "value_map": {},
+   "num_states": null,
+   "events": {
+    "LEFT_BUTTON_DOWN": 95518
    },
    "guard_id": null,
    "source": "FlightDeck/FOAux_Light.xml"

@@ -278,7 +278,7 @@ public static class Md11PanelLayout
         "MD11_LSIDE_OXY_FLOW_SW", "MD11_LSIDE_OXY_TEST_BT", "MD11_LSIDE_TIMER_SW", "MD11_LSIDE_TIMER_BT",
         "MD11_LSIDE_FLOOR_SW", "MD11_LSIDE_BRIEFCASE_KB", "MD11_LSIDE_PTT_BT", "MD11_MIP_CAPT_EVTMKR_SW",
         "MD11_CTR_FLTNO1_SW", "MD11_CTR_FLTNO2_SW", "MD11_CTR_FLTNO3_SW", "MD11_CTR_FLTNO4_SW",
-        "MD11_LSIDE_WINDOW", "l_window_shade_pull", "Mirror_l_window_shade_pull",
+        "MD11_LSIDE_WINDOW", "l_window_shade_pull",
         "MD11_LSIDE_OXY_FLOW_IND",
     };
 
@@ -286,7 +286,9 @@ public static class Md11PanelLayout
     {
         "MD11_RSIDE_OXY_FLOW_SW", "MD11_RSIDE_OXY_TEST_BT", "MD11_RSIDE_TIMER_SW", "MD11_RSIDE_TIMER_BT",
         "MD11_RSIDE_FLOOR_SW", "MD11_RSIDE_BRIEFCASE_KB", "MD11_RSIDE_PTT_BT", "MD11_MIP_FO_EVTMKR_SW",
-        "MD11_RSIDE_WINDOW",
+        // "Mirror_l_window_shade_pull" is the F/O's shade despite the name — FOAux_Light.xml,
+        // ANIM_NAME MD11_RSIDE_WINDOW_SHADE, event 95518 next to MD11_RSIDE_WINDOW's 95517.
+        "MD11_RSIDE_WINDOW", "Mirror_l_window_shade_pull",
         "MD11_RSIDE_OXY_FLOW_IND",
     };
 

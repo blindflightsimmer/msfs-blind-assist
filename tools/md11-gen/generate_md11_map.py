@@ -147,7 +147,11 @@ AREA_FIXES = {
     "GA_BT_ALT": "Throttle Quadrant",
     "knob_kohlsman": "Main Instrument Panel",
     "l_window_shade_pull": "Captain Side Panel",
-    "Mirror_l_window_shade_pull": "Captain Side Panel",
+    # Named "Mirror_l_..." after the 3D modelling mirror it was made with, NOT after the left
+    # side of the cockpit: it is declared in FlightDeck/FOAux_Light.xml with
+    # ANIM_NAME MD11_RSIDE_WINDOW_SHADE and event 95518, next to MD11_RSIDE_WINDOW's 95517,
+    # while the Captain's shade (94238) sits beside MD11_LSIDE_WINDOW in CaptainAux_Light.xml.
+    "Mirror_l_window_shade_pull": "F/O Side Panel",
     "MANF_DRAIN_LT": "Overhead",
     "MD11_OVHD_1_PAX_LOAD_SW": "Aircraft Options",
     "MD11_OVHD_10_PAX_LOAD_SW": "Aircraft Options",
@@ -225,7 +229,7 @@ LABEL_FIXES = {
     "MD11_EFB_TOGGLE_FO": "EFB Toggle (First Officer)",
     "MD11_FLIGHTDECK_DOOR": "Flight Deck Door",
     "l_window_shade_pull": "Left Window Shade",
-    "Mirror_l_window_shade_pull": "Left Window Shade (mirror)",
+    "Mirror_l_window_shade_pull": "Right Window Shade",
     "GA_BT_ALT": "Go Around Mode (alternate button)",
     "MD11_LYOKE_TRIM_SW001": "First Officer Elevator Trim Switch",
     "MD11_THR_L_ATS_BT": "Left Autothrust Disconnect",
