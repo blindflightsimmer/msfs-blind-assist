@@ -73,10 +73,80 @@ public class Md11RadioTests
     }
 
     [Fact]
-    public void TheRadiosReadoutPanel_ListsAllSix_InRadioOrder()
+    public void TheRadiosPanel_OpensThePedestal_AndListsEachRadioAsActiveStandbySetTransfer()
     {
-        Assert.Contains("Radios", Def.GetPanelStructure()["Read-outs"]);
-        Assert.Equal(Md11Radios.Keys, Def.GetPanelControls()["Radios"]);
+        var structure = Def.GetPanelStructure();
+        Assert.Equal("Radios", structure["Pedestal"][0]);
+        Assert.DoesNotContain("Radios", structure["Read-outs"]);
+        Assert.Equal(Md11Radios.PanelKeys, Def.GetPanelControls()["Radios"]);
+        Assert.Equal(new[] { "COM_ACTIVE_FREQUENCY:1", "COM_STANDBY_FREQUENCY:1", "COM_STANDBY_FREQUENCY_SET:1", "COM1_RADIO_SWAP" },
+                     Md11Radios.PanelKeys.Take(4));
+    }
+
+    [Theory]
+    [InlineData(124.9, 124900000u)]
+    [InlineData(118.0, 118000000u)]
+    [InlineData(136.975, 136975000u)]
+    [InlineData(121.500, 121500000u)]
+    public void ATypedStandby_BecomesExactHertz(double mhz, uint expected)
+    {
+        Assert.True(Md11Radios.TryParseMhz(mhz, out var hz, out var error));
+        Assert.Equal(expected, hz);
+        Assert.Equal("", error);
+    }
+
+    [Theory]
+    [InlineData(117.975)]
+    [InlineData(137.0)]
+    [InlineData(0)]
+    [InlineData(1249)]      // "1249" — the pilot forgot the point; not a frequency
+    public void AnOutOfBandStandby_IsRefused(double mhz)
+    {
+        Assert.False(Md11Radios.TryParseMhz(mhz, out var hz, out var error));
+        Assert.Equal(0u, hz);
+        Assert.Equal(Md11Radios.InvalidFrequencyMessage, error);
+    }
+
+    [Fact]
+    public void TheStockEvents_AreNamedPerRadio_WithComOneUnnumbered()
+    {
+        Assert.Equal("COM_STBY_RADIO_SET_HZ", Md11Radios.StandbySetEvent(1));
+        Assert.Equal("COM2_STBY_RADIO_SET_HZ", Md11Radios.StandbySetEvent(2));
+        Assert.Equal("COM3_STBY_RADIO_SET_HZ", Md11Radios.StandbySetEvent(3));
+        Assert.Equal("COM1_RADIO_SWAP", Md11Radios.SwapEvent(1));
+        Assert.Equal(3, Md11Radios.RadioIndex("COM3_RADIO_SWAP"));
+        Assert.Equal(2, Md11Radios.RadioIndex("COM_STANDBY_FREQUENCY_SET:2"));
+        Assert.True(Md11Radios.IsStandbySetKey("COM_STANDBY_FREQUENCY_SET:1"));
+        Assert.False(Md11Radios.IsComKey("COM_STANDBY_FREQUENCY_SET:1"));   // the field is not a read-out row
+        Assert.True(Md11Radios.IsSwapKey("COM2_RADIO_SWAP"));
+    }
+
+    [Fact]
+    public void TheSetFieldAndTransferButton_AreEventDefinitions()
+    {
+        for (int idx = 1; idx <= 3; idx++)
+        {
+            var set = Vars[Md11Radios.StandbySetKey(idx)];
+            Assert.Equal(SimVarType.Event, set.Type);
+            Assert.Equal(Md11Radios.StandbySetEvent(idx), set.Name);
+            Assert.Equal($"COM {idx} Standby", set.DisplayName);
+            Assert.False(set.PreventTextInput);
+
+            var swap = Vars[Md11Radios.SwapKey(idx)];
+            Assert.Equal(SimVarType.Event, swap.Type);
+            Assert.Equal($"COM{idx}_RADIO_SWAP", swap.Name);
+            Assert.True(swap.RenderAsButton);
+            Assert.Equal($"COM {idx} Transfer", swap.DisplayName);
+        }
+    }
+
+    [Fact]
+    public void TheAnnouncer_RemembersTheLastStandby_ForTheTransferReadBack()
+    {
+        var com = new Md11ComAnnouncer();
+        Assert.Null(com.Last("COM_STANDBY_FREQUENCY:1"));
+        com.OnUpdate("COM_STANDBY_FREQUENCY:1", 124900);
+        Assert.Equal(124900, com.Last("COM_STANDBY_FREQUENCY:1"));
     }
 
     [Fact]

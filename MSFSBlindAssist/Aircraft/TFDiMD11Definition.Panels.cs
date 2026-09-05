@@ -116,6 +116,30 @@ public partial class TFDiMD11Definition
         foreach (var key in Md11Radios.Keys)
             v[key] = ComRadio(key);
 
+        // Tuning goes through the sim's own events, which the aircraft honours (probed live
+        // 2026-09-06: COM3_STBY_RADIO_SET_HZ held, COM3_RADIO_SWAP swapped). A typed standby
+        // (the "_SET" text box) and a Transfer button per radio; HandleUIVariableSet claims both,
+        // and the COM announcer speaks the outcome from the variables that then change.
+        for (int idx = 1; idx <= 3; idx++)
+        {
+            v[Md11Radios.StandbySetKey(idx)] = new SimVarDefinition
+            {
+                Name = Md11Radios.StandbySetEvent(idx),
+                DisplayName = $"COM {idx} Standby",
+                Type = SimVarType.Event,
+                UpdateFrequency = UpdateFrequency.OnRequest,
+            };
+            v[Md11Radios.SwapKey(idx)] = new SimVarDefinition
+            {
+                Name = Md11Radios.SwapEvent(idx),
+                DisplayName = $"COM {idx} Transfer",
+                Type = SimVarType.Event,
+                UpdateFrequency = UpdateFrequency.OnRequest,
+                RenderAsButton = true,
+                HelpText = $"Swap COM {idx}'s standby frequency into the active slot",
+            };
+        }
+
         // ---- Transponder -------------------------------------------------------------
         // A typed four-digit squawk (text box + Set, the "_SET" convention) replaces the eight
         // keypad buttons on the panel: HandleUIVariableSet presses the aircraft's own digit keys
@@ -225,6 +249,7 @@ public partial class TFDiMD11Definition
 
         AddReadoutPanels(placement.Structure, placement.Controls);
         AddSquawkEntry(placement.Controls);
+        AddRadiosPanel(placement.Structure, placement.Controls);
 
         _panelStructure = placement.Structure;
         _panelControls = placement.Controls;
@@ -251,6 +276,19 @@ public partial class TFDiMD11Definition
         keys.Add(Md11Squawk.CodeKey);
     }
 
+    /// <summary>
+    /// The Radios panel is operable (typed standby, transfer), so it belongs on the Pedestal with
+    /// the radio control panels rather than among the read-outs; it opens the section because
+    /// tuning is what the pilot goes there for.
+    /// </summary>
+    private static void AddRadiosPanel(Dictionary<string, List<string>> structure, Dictionary<string, List<string>> controls)
+    {
+        controls["Radios"] = new List<string>(Md11Radios.PanelKeys);
+        if (!structure.TryGetValue("Pedestal", out var panels)) structure["Pedestal"] = panels = new List<string>();
+        panels.Remove("Radios");
+        panels.Insert(0, "Radios");
+    }
+
     private static void AddReadoutPanels(
         Dictionary<string, List<string>> structure,
         Dictionary<string, List<string>> controls)
@@ -272,11 +310,10 @@ public partial class TFDiMD11Definition
             "MD11_OVHD_TANK_1_VAL", "MD11_OVHD_TANK_2_VAL", "MD11_OVHD_TANK_3_VAL",
             "MD11_OVHD_TANK_AUX_VAL", "MD11_OVHD_TANK_TAIL_VAL",
         };
-        controls["Radios"] = new List<string>(Md11Radios.Keys);
 
         structure["Read-outs"] = new List<string>
         {
-            "V-Speeds", "Minimums and Altimeters", "Autoflight Status", "APU Status", "Fuel Quantity", "Radios",
+            "V-Speeds", "Minimums and Altimeters", "Autoflight Status", "APU Status", "Fuel Quantity",
         };
     }
 }

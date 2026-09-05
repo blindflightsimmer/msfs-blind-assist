@@ -50,7 +50,77 @@ public partial class TFDiMD11Definition
             SetSquawk(value, simConnect, announcer);
             return true;   // always ours: the generic path would send the stock XPNDR_SET event
         }
+        if (Md11Radios.IsStandbySetKey(varKey))
+        {
+            SetComStandby(varKey, value, simConnect, announcer);
+            return true;
+        }
+        if (Md11Radios.IsSwapKey(varKey))
+        {
+            SwapCom(varKey, simConnect, announcer);
+            return true;
+        }
         return SetControl(varKey, value, simConnect, announcer);
+    }
+
+    /// <summary>How long a stock tuning event gets before the read-back judges it.</summary>
+    private const int ComTuneSettleMs = 1500;
+
+    /// <summary>
+    /// A typed standby frequency: validated (a refusal is spoken, nothing is sent), then the
+    /// stock standby-set event. The COM announcer speaks the frequency the radio then reports;
+    /// this only speaks up when nothing changed, because a set the aircraft ignored would
+    /// otherwise be silent and look exactly like one that worked.
+    /// </summary>
+    private void SetComStandby(string varKey, double typedMhz, SimConnectManager simConnect, ScreenReaderAnnouncer announcer)
+    {
+        Attach(simConnect);
+        _uiContext ??= SynchronizationContext.Current;
+        if (!Md11Radios.TryParseMhz(typedMhz, out var hz, out var error))
+        {
+            announcer.Announce(error);
+            return;
+        }
+        int idx = Md11Radios.RadioIndex(varKey);
+        string standbyKey = $"COM_STANDBY_FREQUENCY:{idx}";
+        double targetKhz = hz / 1000.0;
+        simConnect.SendEvent(Md11Radios.StandbySetEvent(idx), hz);
+        _ = VerifyComAsync(standbyKey, targetKhz, $"COM {idx} standby did not change", simConnect, announcer);
+    }
+
+    /// <summary>The Transfer button: the stock swap event, then a check that the active slot moved.</summary>
+    private void SwapCom(string varKey, SimConnectManager simConnect, ScreenReaderAnnouncer announcer)
+    {
+        Attach(simConnect);
+        _uiContext ??= SynchronizationContext.Current;
+        int idx = Md11Radios.RadioIndex(varKey);
+        string activeKey = $"COM_ACTIVE_FREQUENCY:{idx}";
+        double? expected = _com.Last($"COM_STANDBY_FREQUENCY:{idx}");   // the standby we saw last is what should become active
+        simConnect.SendEvent(Md11Radios.SwapEvent(idx));
+        if (expected is double e && Md11Radios.InAirband(e))
+            _ = VerifyComAsync(activeKey, e, $"COM {idx} transfer did not take", simConnect, announcer);
+    }
+
+    /// <summary>
+    /// After the settle, force-read the frequency and speak only a MISMATCH ("… did not change,
+    /// still 124.850"); a match was already announced by the COM announcer when the variable moved.
+    /// </summary>
+    private async Task VerifyComAsync(string key, double targetKhz, string failure, SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    {
+        try
+        {
+            await Task.Delay(ComTuneSettleMs).ConfigureAwait(false);
+            sim.RequestVariable(key, forceUpdate: true);
+            await Task.Delay(400).ConfigureAwait(false);
+            var read = sim.GetCachedVariableValue(key);
+            if (read is double khz && Math.Abs(khz - targetKhz) <= 0.5) return;
+            string still = read is double k && Md11Radios.InAirband(k) ? $", still {Md11Radios.FormatMhz(k)}" : "";
+            OnUiThread(() => announcer.Announce($"{failure}{still}."));
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("MD11", $"COM tuning read-back failed: {ex.Message}");
+        }
     }
 
     /// <summary>How long the aircraft gets to accept the fourth digit before the read-back.</summary>

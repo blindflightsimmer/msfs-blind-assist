@@ -168,7 +168,18 @@ Also announced as they change: autopilot engagement, APU state, the COM radios (
 135.500" - active and standby for COM 1, 2 and 3, so a tuner click and a frequency swap both read
 back; each radio has its own line in Ctrl+M), and flap movement ("flaps moving" then the new
 position - which on an aircraft with no flap gauge is your only confirmation that a selection
-actually took). The current COM frequencies are also in the Read-outs section, Radios panel.
+actually took).
+
+
+THE RADIOS
+
+The Pedestal section opens with a Radios panel. For each of COM 1, 2 and 3 it lists the active
+and standby frequencies, a "COM n Standby" field (type the frequency in megahertz, 124.9 or
+124.900, and press Set or Enter) and a "COM n Transfer" button that swaps the standby into the
+active slot. Both read back through the announcements above: after Set you hear "COM 1 standby
+124.900", after Transfer "COM 1 active 124.900" and the new standby. If the aircraft refuses a
+change you hear that instead ("COM 1 standby did not change, still 121.500"). The three radio
+control panels further down the Pedestal are the aircraft's own knobs and buttons, unchanged.
 
 
 THE TRANSPONDER
