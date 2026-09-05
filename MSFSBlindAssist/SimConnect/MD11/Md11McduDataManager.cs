@@ -35,15 +35,6 @@ public sealed class Md11McduDataManager : IDisposable
 
     private readonly Microsoft.FlightSimulator.SimConnect.SimConnect _simConnect;
     private readonly Md11McduScreen?[] _screens = new Md11McduScreen?[3];
-
-    /// <summary>
-    /// Last known blank/content state per unit, and when a blank run started, so a REAL dark
-    /// period can be told from the aircraft's own repaint. Defaults to NoData for all three,
-    /// which is the truth before anything lands.
-    /// </summary>
-    private readonly Md11McduPresenceState[] _presence = new Md11McduPresenceState[3];
-
-    private readonly DateTime?[] _blankSince = new DateTime?[3];
     private readonly object _lock = new();
 
     private bool _registered;
@@ -195,37 +186,17 @@ public sealed class Md11McduDataManager : IDisposable
                     $"{glyphs} glyphs, title='{screen.Title}'.");
             }
 
-            // A blank run is timed, and only a run that OUTLASTS the settle window is logged.
+            // Blank frames are DELIBERATELY not logged here, and this manager deliberately keeps
+            // no blank/content state of its own.
             //
-            // The unfiltered version of this answered the question it was added for and must not
-            // be kept: the MD-11 ERASES its CDU before redrawing, so it wrote a Blank line and a
-            // Content line on every page change — 37 page changes in 13 minutes, 202-438 ms
-            // apart, every blank followed by content — which is pure noise now that the cause is
-            // known, and noise in a 5 MB rotation costs a real diagnostic its place in the file.
-            // A run past the settle window is a different event: the screen really is dark.
-            var state = Md11McduPresence.Classify(screen);
-            DateTime? blankStarted = null;
-            lock (_lock)
-            {
-                var was = _presence[(int)unit.Value];
-                _presence[(int)unit.Value] = state;
-
-                if (state == Md11McduPresenceState.Blank)
-                    _blankSince[(int)unit.Value] ??= DateTime.UtcNow;
-                else if (was == Md11McduPresenceState.Blank)
-                {
-                    blankStarted = _blankSince[(int)unit.Value];
-                    _blankSince[(int)unit.Value] = null;
-                }
-            }
-
-            if (blankStarted != null)
-            {
-                var ms = (DateTime.UtcNow - blankStarted.Value).TotalMilliseconds;
-                if (ms >= Md11McduPresence.BlankSettleMs)
-                    Log.Info("MD11", $"MCDU {unit} was blank for {ms:F0} ms, now '{screen.Title.Trim()}'.");
-            }
-
+            // The MD-11 erases its CDU before redrawing, so a blank frame arrives on every page
+            // change (37 measured, 202-438 ms, every one followed by content — none has ever
+            // persisted). Logging that edge answered the question it was added for and then went
+            // on writing two lines per page change for no further gain. Logging only a blank that
+            // outlasts Md11McduPresence.BlankSettleMs was the next attempt and is no better: it
+            // records an event never once observed, while implying to a later reader that someone
+            // has seen one. A settled blank already reaches the pilot as a row in the window,
+            // which is the channel that matters and the one they can report from.
             IsReady = true;
             if (changed) ScreenUpdated?.Invoke(this, screen);
         }
