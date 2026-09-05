@@ -168,6 +168,14 @@ public sealed class Md11Control
     [JsonPropertyName("notes")]
     public string? Notes { get; set; }
 
+    /// <summary>
+    /// How this control's spoken STATE is composed (spec §3.2): the legend lamps that belong to
+    /// it, its own L:var where that is a proven latch, and what "all legends dark" means. Absent
+    /// for momentary buttons and for knobs/switches (their combo shows the state).
+    /// </summary>
+    [JsonPropertyName("state")]
+    public Md11StateSpec? State { get; set; }
+
     /// <summary>The spoken label, never null — falls back to the node id so a control is always identifiable.</summary>
     public string DisplayLabel => string.IsNullOrWhiteSpace(Label) ? NodeId : Label!;
 
@@ -230,6 +238,31 @@ public sealed class Md11DialAFlapSpec
     public double ToRaw(double degrees) => (degrees - MinDeg) * UnitsPerDeg;
 }
 
+/// <summary>The generated state block — see <c>apply_state</c> in the generator.</summary>
+public sealed class Md11StateSpec
+{
+    [JsonPropertyName("lamps")] public List<Md11StateLamp> Lamps { get; set; } = new();
+    [JsonPropertyName("latch")] public Md11StateLatch? Latch { get; set; }
+    /// <summary>Meaning of every legend dark while DC power is present; null = nothing to say.</summary>
+    [JsonPropertyName("dark")] public string? Dark { get; set; }
+}
+
+/// <summary>One legend lamp: the L:var that lights it, the printed legend, the word spoken when lit.</summary>
+public sealed class Md11StateLamp
+{
+    [JsonPropertyName("var")] public string Var { get; set; } = string.Empty;
+    [JsonPropertyName("legend")] public string Legend { get; set; } = string.Empty;
+    [JsonPropertyName("lit")] public string Lit { get; set; } = string.Empty;
+}
+
+/// <summary>A button whose own L:var holds its position (proven), with the word for each side.</summary>
+public sealed class Md11StateLatch
+{
+    [JsonPropertyName("var")] public string Var { get; set; } = string.Empty;
+    [JsonPropertyName("on")] public string On { get; set; } = "On";
+    [JsonPropertyName("off")] public string Off { get; set; } = "Off";
+}
+
 /// <summary>The <c>kind</c> discriminator values used by the generator.</summary>
 public static class Md11Kinds
 {
@@ -242,4 +275,6 @@ public static class Md11Kinds
     public const string Guard = "guard";
     public const string Lever = "lever";
     public const string Handle = "handle";
+    // MD11_OPT_* configuration flags — not controls, not lamps; never registered.
+    public const string Option = "option";
 }
