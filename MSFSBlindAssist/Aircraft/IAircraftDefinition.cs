@@ -260,6 +260,18 @@ public interface IAircraftDefinition
     /// </summary>
     bool TryGetDisplayOverride(string varKey, double value, out string displayText);
 
+    /// <summary>
+    /// Lets an aircraft compose the SPOKEN STATE of a panel control (a button's label suffix or a
+    /// read-only status row's text) from several variables it reads itself — the TFDi MD-11's
+    /// legend lamps plus latching var plus DC-power gate. Return true and set
+    /// <paramref name="stateText"/> ("On", "Available, On", "unpowered"); return false to fall
+    /// through to the StateVariable / ValueDescriptions labelling. Called on the UI thread when a
+    /// panel is built and whenever a key in the control's
+    /// <see cref="SimConnect.SimVarDefinition.StateVariables"/> updates; must read cached values
+    /// only, never request.
+    /// </summary>
+    bool TryDescribeControlState(string varKey, out string stateText);
+
     // Variable Update Processing
 
     /// <summary>

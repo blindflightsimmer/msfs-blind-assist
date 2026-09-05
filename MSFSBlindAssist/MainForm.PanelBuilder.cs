@@ -125,6 +125,64 @@ public partial class MainForm
     }
 
     /// <summary>
+    /// Reverse index for composed-state controls: dependency key → control keys whose label
+    /// must be recomputed through IAircraftDefinition.TryDescribeControlState when it updates.
+    /// Rebuilt once per panel build from each control's SimVarDefinition.StateVariables; a control
+    /// that lists any dependency is also a dependent of its own key.
+    /// </summary>
+    private readonly Dictionary<string, List<string>> stateDependents = new(StringComparer.Ordinal);
+
+    private void RebuildStateDependents()
+    {
+        stateDependents.Clear();
+        var vars = currentAircraft.GetVariables();
+        foreach (var key in currentControls.Keys)
+        {
+            if (!vars.TryGetValue(key, out var def) || def.StateVariables == null) continue;
+            AddStateDependent(key, key);
+            foreach (var dep in def.StateVariables) AddStateDependent(dep, key);
+        }
+    }
+
+    private void AddStateDependent(string source, string dependent)
+    {
+        if (!stateDependents.TryGetValue(source, out var list))
+            stateDependents[source] = list = new List<string>();
+        if (!list.Contains(dependent)) list.Add(dependent);
+    }
+
+    /// <summary>Relabels every control whose composed state depends on <paramref name="varKey"/>.</summary>
+    private void RelabelStateDependents(string varKey)
+    {
+        if (!stateDependents.TryGetValue(varKey, out var dependents)) return;
+        foreach (var key in dependents) RefreshDescribedState(key);
+    }
+
+    /// <summary>
+    /// Pure label refresh — no user-action handler can fire from a Button.Text or a read-only
+    /// TextBox.Text assignment, so this is safe on the def-handled path too.
+    /// </summary>
+    private void RefreshDescribedState(string key)
+    {
+        if (!currentControls.TryGetValue(key, out var control)) return;
+        if (!currentAircraft.GetVariables().TryGetValue(key, out var def)) return;
+        if (!currentAircraft.TryDescribeControlState(key, out var state)) return;
+
+        switch (control)
+        {
+            case Button btn:
+            {
+                string label = $"{def.DisplayName}: {state}";
+                if (btn.Text != label) { btn.Text = label; btn.AccessibleName = label; }
+                break;
+            }
+            case TextBox tb when tb.ReadOnly:
+                if (tb.Text != state) tb.Text = state;
+                break;
+        }
+    }
+
+    /// <summary>
     /// Timer callback: Load panel controls after debounce delay.
     /// Only called when user stops arrowing through panels.
     /// </summary>
@@ -163,9 +221,16 @@ public partial class MainForm
                 {
                     foreach (string varKey in panelControls[panelToLoad])
                     {
-                        if (variables.ContainsKey(varKey) && !string.IsNullOrEmpty(variables[varKey].StateVariable))
+                        if (!variables.ContainsKey(varKey)) continue;
+                        if (!string.IsNullOrEmpty(variables[varKey].StateVariable))
                         {
                             simConnectManager.RequestVariable(variables[varKey].StateVariable!);
+                        }
+                        // Composed-state dependencies (MD-11 latch vars, lamps, DC gate). Batch-covered
+                        // keys no-op inside RequestVariable; OnRequest keys get a fresh read.
+                        if (variables[varKey].StateVariables is { } deps)
+                        {
+                            foreach (var dep in deps) simConnectManager.RequestVariable(dep);
                         }
                     }
                 }
@@ -174,6 +239,7 @@ public partial class MainForm
             // Clear and reload controls
             controlsContainer.Controls.Clear();
             currentControls.Clear();
+            stateDependents.Clear();
 
             if (!currentAircraft.GetPanelControls().ContainsKey(currentPanel))
                 return;
@@ -272,7 +338,12 @@ public partial class MainForm
                 // Render as button (momentary pushbutton, action button, etc.)
                 // If StateVariable is set, show on/off state from the indicator LVar
                 string buttonText = varDef.DisplayName;
-                if (!string.IsNullOrEmpty(varDef.StateVariable) && currentSimVarValues.ContainsKey(varDef.StateVariable))
+                if (currentAircraft.TryDescribeControlState(varKey, out string describedState))
+                {
+                    // Definition-composed state (MD-11 legend lamps + latch + DC gate).
+                    buttonText = $"{varDef.DisplayName}: {describedState}";
+                }
+                else if (!string.IsNullOrEmpty(varDef.StateVariable) && currentSimVarValues.ContainsKey(varDef.StateVariable))
                 {
                     double stateVal = currentSimVarValues[varDef.StateVariable];
                     buttonText = $"{varDef.DisplayName}: {(stateVal != 0 ? "On" : "Off")}";
@@ -368,7 +439,11 @@ public partial class MainForm
                 // Seed initial text from cached value, falling back to numeric string
                 // and finally to "—" if no value is known yet.
                 string initial = "—";
-                if (currentSimVarValues.ContainsKey(varKey))
+                if (currentAircraft.TryDescribeControlState(varKey, out string describedStatus))
+                {
+                    initial = describedStatus;
+                }
+                else if (currentSimVarValues.ContainsKey(varKey))
                 {
                     double cur = currentSimVarValues[varKey];
                     initial = varDef.ValueDescriptions.TryGetValue(cur, out string? desc)
@@ -1220,6 +1295,8 @@ public partial class MainForm
             currentControls["_DISPLAY_"] = displayList;
             currentControls["_REFRESH_"] = refreshButton;
         }
+
+            RebuildStateDependents();
 
             // Resume + lay out ONCE now that every row exists, then attach.
             layout.ResumeLayout(true);

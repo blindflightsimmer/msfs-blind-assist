@@ -100,6 +100,16 @@ public class SimVarDefinition
     public double SliderMax { get; set; } = 100;
     public string? StateVariable { get; set; }  // LVar name to read for actual button on/off state (e.g., I_ indicator for S_ switch buttons)
 
+    /// <summary>
+    /// Variable KEYS this control's SPOKEN STATE depends on, for definitions that compose the
+    /// state themselves through <see cref="Aircraft.IAircraftDefinition.TryDescribeControlState"/>
+    /// (the TFDi MD-11: a button's legend lamps, its latching var and the DC-power gate).
+    /// MainForm relabels the control through that hook whenever any listed key — or the
+    /// control's own key — updates. Null (the default) means the control has no composed
+    /// state and the older <see cref="StateVariable"/> / ValueDescriptions labelling applies.
+    /// </summary>
+    public IReadOnlyList<string>? StateVariables { get; set; }
+
     // ----- ARINC429 auto-decode -----
     // When true, the raw double is a FlyByWire ARINC429 word (numeric-truncate to u64; low
     // 32 bits = IEEE-754 float in engineering units, bits 32-33 = SSM). The generic decode

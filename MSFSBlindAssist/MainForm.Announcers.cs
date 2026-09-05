@@ -91,6 +91,12 @@ public partial class MainForm
         // Step 1: ALWAYS store the value first (needed by all consumers)
         currentSimVarValues[e.VarName] = e.Value;
 
+        // Composed-state controls (MD-11): relabel every dependent of this key, on EVERY path
+        // below — initial snapshot, def-handled (ProcessSimVarUpdate returns true and exits
+        // early) and generic. The SimConnect cache already holds the new value here, which is
+        // what the definition's hook reads.
+        RelabelStateDependents(e.VarName);
+
         // Initial-snapshot fast path: populate caches and refresh UI controls
         // but skip all announcement paths. These events represent "what the
         // cockpit looked like when the app started", not user-triggered
@@ -1207,7 +1213,11 @@ public partial class MainForm
                 //  (b) Enum-style status field (door state, annunciator, etc.) —
                 //      mirror the value through ValueDescriptions; fall back to
                 //      raw numeric if the cached value isn't in the map.
-                if (currentAircraft.GetVariables().ContainsKey(varName))
+                if (currentAircraft.TryDescribeControlState(varName, out string describedStatus))
+                {
+                    if (textBox.Text != describedStatus) textBox.Text = describedStatus;
+                }
+                else if (currentAircraft.GetVariables().ContainsKey(varName))
                 {
                     var varDef = currentAircraft.GetVariables()[varName];
                     string newText;
@@ -1235,7 +1245,13 @@ public partial class MainForm
             else if (control is Button btn)
             {
                 // Update stateful button label from StateVariable or ValueDescriptions
-                if (currentAircraft.GetVariables().ContainsKey(varName))
+                if (currentAircraft.TryDescribeControlState(varName, out string describedState) &&
+                    currentAircraft.GetVariables().TryGetValue(varName, out var describedDef))
+                {
+                    string newLabel = $"{describedDef.DisplayName}: {describedState}";
+                    if (btn.Text != newLabel) { btn.Text = newLabel; btn.AccessibleName = newLabel; }
+                }
+                else if (currentAircraft.GetVariables().ContainsKey(varName))
                 {
                     var varDef = currentAircraft.GetVariables()[varName];
                     if (!string.IsNullOrEmpty(varDef.StateVariable))

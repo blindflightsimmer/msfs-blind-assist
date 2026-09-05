@@ -569,6 +569,17 @@ public abstract class BaseAircraftDefinition : IAircraftDefinition
     }
 
     /// <summary>
+    /// Default: no composed state — MainForm labels the control from StateVariable /
+    /// ValueDescriptions as before. Aircraft whose state lives in several variables (MD-11
+    /// legend lamps) override this.
+    /// </summary>
+    public virtual bool TryDescribeControlState(string varKey, out string stateText)
+    {
+        stateText = "";
+        return false;
+    }
+
+    /// <summary>
     /// Generic ARINC429 decode. If the var is flagged <see cref="SimConnect.SimVarDefinition.IsArinc429"/>,
     /// decode the raw double via <see cref="SimConnect.Arinc429Word"/> and return "&lt;value&gt; &lt;unit&gt;"
     /// (SSM NormalOperation/FunctionalTest) or the not-available text. Returns false for non-ARINC vars so
