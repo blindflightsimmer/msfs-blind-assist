@@ -712,6 +712,15 @@ Every bullet below is a condensed guardrail ("do NOT / NEVER / CRITICAL / gotcha
 - Strobe light control must use `STROBES_SET`, not `STROBE_LIGHTS_SET` (a no-op on the Asobo-template lighting). → [hs787.md](docs/hs787.md)
 - The Community-folder HS787 bridge (HTML patching + injected JS) is fully removed on both sims — never reinstate the installer; the Coherent transport needs no Community mod and no sim restart. → [hs787.md](docs/hs787.md)
 
+### TFDi MD-11 (→ [md11.md](docs/md11.md))
+
+- Every control write is a CEVENT through `Md11EventBus` with the `{seq} 0 *` prefix; never `SetLVar` a control var. `TDMD11.TRIGGER_EVENT` coalesces identical repeats exactly like CEVENT without the prefix — it is not a better channel. → [md11.md](docs/md11.md)
+- A control's spoken state is composed by `Md11ControlState.Compose` in a fixed order — lit legends, then the PROVEN latch, then "unpowered", then the dark meaning. A lit legend always outranks the latch; **dark is never "normal" without the DC gate** (`MD11_DC_BUS_VOLTAGE` ≥ 20 V): cold and dark every lamp reads 0, `BATT_OFF_LT` included. → [md11.md](docs/md11.md)
+- A button's own L:var is a position ONLY where proven — TFDi's tooltip reads it, or a live probe did (the battery). External power, generators and the nav lights hold nothing useful there. Extend `LATCH_FIXED` only from a before/after probe. → [md11.md](docs/md11.md)
+- `state` blocks, lamp pairings, names and label repairs are GENERATED (`tools/md11-gen`) — regenerate `md11_control_map.json`, never hand-edit it or patch C#. One lamp node per L:var: two lamps on one var are two continuous batch entries with one Name. → [md11.md](docs/md11.md)
+- `Md11PanelLayout` is the ONLY source of panel order; an unlisted control is appended, never dropped, and `Md11PanelLayoutTests` pins that the shipped map needs no fallback panel. Guard cover immediately before its control; status rows last; no two rows in one panel share a spoken name. → [md11.md](docs/md11.md)
+- A lamp change speaks its OWNER's composed state; a lamp going dark on an unpowered aircraft is silent; a press is confirmed once after settle and its own lamp echo is swallowed (`Md11AnnouncementGate`). Every lamp update is consumed in `ProcessSimVarUpdate`, so Ctrl+M only works through MainForm's `Suppressed` wrap. → [md11.md](docs/md11.md)
+
 ### FlyByWire A32NX / Fenix (→ [a32nx.md](docs/a32nx.md))
 
 - Every Fenix panel pushbutton must go through a full PRESS-RELEASE pulse (0→1→0), never press-only — a press-only pulse leaves the button held down for the whole session (root cause of the stuck TO CONFIG / stuck ECAM STATUS bug that re-fired the takeoff-config test after touchdown). → [a32nx.md](docs/a32nx.md)
@@ -856,6 +865,7 @@ Details: [docs/a32nx.md](docs/a32nx.md).
 - **Working on the FlyByWire A32NX or Fenix A320 (panel parity, MCDU, DCDU, cockpit controls, monitor manager)** → [FlyByWire A32NX / Fenix](docs/a32nx.md)
 - **Working on the shared flyPad EFB (A320 + A380 ground services, settings, dashboard reading order)** → [flyPad EFB](docs/flypad.md)
 - **Working on the HorizonSim 787-9 (CDU/IRS/EICAS over the Coherent debugger)** → [HorizonSim 787](docs/hs787.md)
+- **Working on the TFDi MD-11 (CEVENT transport, control state, layout, the control-map generator)** → [TFDi MD-11](docs/md11.md)
 - **A control "doesn't work" and you're about to declare it broken, computed-output, or unsettable** → [Troubleshooting Playbook](docs/troubleshooting-playbook.md) (read this FIRST — most "broken" verdicts turn out wrong)
 - **Working on Gemini AI display reading, scene description, or route briefing** → [Gemini AI](docs/gemini.md)
 - **Understanding variable patterns** → [Variable System](docs/variable-system.md)
@@ -883,6 +893,7 @@ Details: [docs/a32nx.md](docs/a32nx.md).
 - **[FlyByWire A32NX / Fenix](docs/a32nx.md)** - A32NX panel parity, MCDU, DCDU, Fenix cockpit controls, Fenix monitor manager, momentary-button press-release fix
 - **[flyPad EFB](docs/flypad.md)** - Shared FlyByWire A320/A380 flyPad accessibility architecture (WebView2 shell, ground services, settings, dashboard)
 - **[HorizonSim 787](docs/hs787.md)** - 787-9 CDU/IRS/EICAS over the Coherent debugger, community-folder-bridge retirement
+- **[TFDi MD-11](docs/md11.md)** - Event-driven transport, the MCDU client-data export, control state composition, panel layout, the control-map generator
 - **[Troubleshooting Playbook](docs/troubleshooting-playbook.md)** - Universal variable/control troubleshooting method — read before declaring any control "broken"
 - **[Gemini AI](docs/gemini.md)** - Model selection, retry/backoff, and API-parameter gotchas for the AI display-reading and route-briefing features
 - **[Aircraft Definitions](docs/aircraft-definitions.md)** - Multi-aircraft dictionary system API reference
