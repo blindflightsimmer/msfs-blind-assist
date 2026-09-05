@@ -471,14 +471,20 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                 // — which is exactly why the handle refused to reach 50 and the wheel undershot. A
                 // per-var SIM_FRAME feed (ExcludeFromBatch + HighFrequency, with the CHANGED flag)
                 // makes every read fresh while a stationary control still delivers nothing.
-                bool flapStream = c.NodeId == Md11FlapSystem.LeverKey || c.NodeId == Md11FlapSystem.DialKey;
+                bool flapStream = c.NodeId == Md11FlapSystem.LeverKey || c.NodeId == Md11FlapSystem.DialKey
+                    // The speedbrake lever too: a hardware lever's detent is spoken live and its
+                    // walk reads fresh. It reads the TRAVEL var, not its own node var — see
+                    // Md11SpeedbrakeSystem for the three-variable model the tooltip revealed.
+                    || c.NodeId == Md11SpeedbrakeSystem.LeverKey;
                 // The Dial-A-Flap thumbwheel's declared state_var is the INDICATOR needle
                 // (MD11_DIALAFLAP_IND_RNG), which the cockpit XML animates with ANIM_LAG=1000 — it
                 // trails the real value by ~1 s, so the closed-loop walk read it a step behind, saw
                 // "no movement", and bailed. Read the knob's OWN live L:var (the NodeId,
                 // MD11_DIALAFLAP_WHEEL_RNG — the OVERRIDE_ANIM_CODE source) instead: it updates the
                 // instant the CEVENT lands. Same 0–100 → 10–25° scale, so DegreesFor is unchanged.
-                string readVar = c.NodeId == Md11FlapSystem.DialKey ? c.NodeId : c.StateVar;
+                string readVar = c.NodeId == Md11FlapSystem.DialKey ? c.NodeId
+                    : c.NodeId == Md11SpeedbrakeSystem.LeverKey ? Md11SpeedbrakeSystem.TravelVar
+                    : c.StateVar;
                 return new SimVarDefinition
                 {
                     Name = readVar,
@@ -492,7 +498,7 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                     // wording: that flag means "muted by plumbing, a checkbox here would silence
                     // nothing", and these two DO speak (the composed flap read-out). Unticking
                     // either really does silence its trigger, so both stay Ctrl+M rows.
-                    ValueDescriptions = values,
+                    ValueDescriptions = c.NodeId == Md11SpeedbrakeSystem.LeverKey ? Md11SpeedbrakeSystem.TravelValues : values,
                     // No ValueDescriptions means a bare number with no meaning to speak — render
                     // it read-only rather than offering an empty combo the user cannot use.
                     RenderAsReadOnlyStatus = values.Count == 0,

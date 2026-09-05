@@ -192,6 +192,17 @@ last row, "Squawk code". The eight digit keys are not listed any more; the field
 Ident, Clear, the mode knob, the system select and the TCAS filter are where they were.
 
 
+THE SPEEDBRAKE
+
+The Pedestal section's Speedbrake panel has two rows. "Spoilers" is the lever's travel:
+Retracted, 1/3 extended, 2/3 extended, Fully extended. "Ground spoilers" is the lever's pull:
+Not armed, Armed, or Extended once they have deployed by themselves on landing. Choose Armed
+to arm them for landing (the lever must be retracted first, and you are told so if it is not);
+choose Not armed to disarm. Both rows announce as they change, so moving a hardware lever
+reads its detent aloud ("Spoilers 2/3 extended") and arming reads "Ground spoilers armed". A
+change the aircraft refuses is spoken as such.
+
+
 THE FLAP HANDLE
 
 The MD-11 has ONE handle for flaps and slats together, plus a separate Dial-A-Flap thumbwheel

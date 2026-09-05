@@ -19,6 +19,11 @@ public partial class TFDiMD11Definition
     private double _dialRaw = double.NaN;
     private string _lastFlapSpoken = string.Empty;
 
+    // Speedbrake: the lever's travel (detents) and its pull (armed), see Md11SpeedbrakeSystem.
+    private double _spdbrkRng = double.NaN;
+    private double _spdbrkHandle = double.NaN;
+    private string _lastSpoilerSpoken = string.Empty;
+
     // Annunciator anti-flap. Some MD-11 lamps blink — the pneumatic avionics fan flow light
     // pulses as bleed flow changes when the throttles are advanced — and narrating every on/off is
     // noise a blind pilot does not need. After a few rapid transitions we go quiet until the lamp
@@ -60,7 +65,80 @@ public partial class TFDiMD11Definition
             SwapCom(varKey, simConnect, announcer);
             return true;
         }
+        if (varKey == Md11SpeedbrakeSystem.ArmKey)
+        {
+            SetGroundSpoilers(value, simConnect, announcer);
+            return true;
+        }
         return SetControl(varKey, value, simConnect, announcer);
+    }
+
+    /// <summary>
+    /// The Ground spoilers combo. The lever's single click toggles the pull, and the aircraft
+    /// ignores it unless the lever is retracted, so a selection it would ignore is refused with
+    /// the reason and nothing is sent. Success announces itself through the pull var (or is the
+    /// pilot's own combo pick, which the screen reader already spoke); only a failure is spoken here.
+    /// </summary>
+    private void SetGroundSpoilers(double target, SimConnectManager simConnect, ScreenReaderAnnouncer announcer)
+    {
+        Attach(simConnect);
+        _uiContext ??= SynchronizationContext.Current;
+        double handle = simConnect.GetCachedVariableValue(Md11SpeedbrakeSystem.ArmKey)
+                        ?? (double.IsNaN(_spdbrkHandle) ? 0 : _spdbrkHandle);
+        double travel = simConnect.GetCachedVariableValue(Md11SpeedbrakeSystem.LeverKey)
+                        ?? (double.IsNaN(_spdbrkRng) ? 0 : _spdbrkRng);
+        var why = Md11SpeedbrakeSystem.RefuseArm(target, handle, travel);
+        if (why != null) { announcer.Announce(why); return; }
+        if ((int)Math.Round(target) == (int)Math.Round(handle)) return;
+        if (_bus == null || !_byNodeId.TryGetValue(Md11SpeedbrakeSystem.LeverKey, out var lever)) return;
+        var click = lever.Event("LEFT_BUTTON_DOWN");
+        if (click is not > 0) return;
+        _bus.Fire(click.Value);
+        _ = VerifyGroundSpoilersAsync(target, simConnect, announcer);
+    }
+
+    private async Task VerifyGroundSpoilersAsync(double target, SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    {
+        try
+        {
+            await Task.Delay(700).ConfigureAwait(false);
+            sim.RequestVariable(Md11SpeedbrakeSystem.ArmKey, forceUpdate: true);
+            await Task.Delay(400).ConfigureAwait(false);
+            var read = sim.GetCachedVariableValue(Md11SpeedbrakeSystem.ArmKey);
+            if (read is double h && (int)Math.Round(h) == (int)Math.Round(target)) return;
+            string failure = (int)Math.Round(target) == 1 ? "Ground spoilers did not arm." : "Ground spoilers did not disarm.";
+            OnUiThread(() => announcer.Announce(failure));
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("MD11", $"Ground spoiler read-back failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// A hardware lever sweeps through the values between detents; only a detent is named, and
+    /// only once. Baseline-first: connecting must not narrate the lever's resting position.
+    /// </summary>
+    private void AnnounceSpoilerTravel(ScreenReaderAnnouncer announcer)
+    {
+        var detent = Md11SpeedbrakeSystem.DescribeTravel(_spdbrkRng);
+        if (detent == null) return;
+        var text = $"Spoilers {detent.ToLowerInvariant()}";
+        if (string.Equals(text, _lastSpoilerSpoken, StringComparison.Ordinal)) return;
+        bool first = _lastSpoilerSpoken.Length == 0;
+        _lastSpoilerSpoken = text;
+        if (!first) announcer.Announce(text);
+    }
+
+    /// <summary>The pull var: armed / disarmed / extended, baseline-first, spoken on a real change.</summary>
+    private void AnnounceGroundSpoilers(double handle, ScreenReaderAnnouncer announcer)
+    {
+        bool first = double.IsNaN(_spdbrkHandle);
+        bool changed = !first && (int)Math.Round(handle) != (int)Math.Round(_spdbrkHandle);
+        _spdbrkHandle = handle;
+        if (first || !changed) return;
+        var text = Md11SpeedbrakeSystem.DescribeArm(handle);
+        if (text != null) announcer.Announce(text);
     }
 
     /// <summary>How long a stock tuning event gets before the read-back judges it.</summary>
@@ -227,6 +305,18 @@ public partial class TFDiMD11Definition
             case Md11Kinds.Knob when control.NodeId == Md11FlapSystem.DialKey:
                 _ = SetDialAndAnnounce(value, simConnect, announcer);
                 return true;
+
+            // The speedbrake lever's wheel is dead while the pull is up (armed) — the aircraft's
+            // own template gates it — so say why instead of walking into "did not move".
+            case Md11Kinds.Lever when control.NodeId == Md11SpeedbrakeSystem.LeverKey:
+            {
+                double handle = simConnect.GetCachedVariableValue(Md11SpeedbrakeSystem.ArmKey)
+                                ?? (double.IsNaN(_spdbrkHandle) ? 0 : _spdbrkHandle);
+                var why = Md11SpeedbrakeSystem.RefuseTravel(value, handle);
+                if (why != null) { announcer.Announce(why); return true; }
+                _ = DebouncedWalk(control, value, varKey, simConnect, announcer);
+                return true;
+            }
 
             // Everything detented: closed-loop walk to the target position, debounced so that
             // arrowing through a multi-position combo runs ONE walk (to the final selection),
@@ -521,6 +611,15 @@ public partial class TFDiMD11Definition
                 AnnounceFlaps(announcer);
                 return true;
 
+            case Md11SpeedbrakeSystem.LeverKey:
+                _spdbrkRng = value;
+                AnnounceSpoilerTravel(announcer);
+                return true;
+
+            case Md11SpeedbrakeSystem.ArmKey:
+                AnnounceGroundSpoilers(value, announcer);
+                return true;
+
             case Md11FlapSystem.DialKey:
                 _dialRaw = value;
                 // Moving the thumbwheel only changes the commanded angle when the handle is
@@ -660,6 +759,10 @@ public partial class TFDiMD11Definition
 
             case Md11FlapSystem.DialKey:
                 displayText = $"{_flaps.DegreesFor(value).ToString("0", CultureInfo.InvariantCulture)} degrees";
+                return true;
+
+            case Md11SpeedbrakeSystem.LeverKey:
+                displayText = Md11SpeedbrakeSystem.DisplayTravel(value);   // the detent, or "between detents"
                 return true;
         }
 

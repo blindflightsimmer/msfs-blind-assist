@@ -163,6 +163,21 @@ public partial class TFDiMD11Definition
             RenderAsReadOnlyStatus = true,
         };
 
+        // ---- Speedbrake --------------------------------------------------------------
+        // The lever's PULL (0 down, 1 = ground spoilers armed, 2 = auto-extended on landing) is
+        // a row of this app's own; the Spoilers row is the map control, re-pointed at the
+        // travel var in BuildControlVariable. A combo, so the pilot can arm and disarm; the
+        // click that toggles the pull lives on the lever control (HandleUIVariableSet).
+        v[Md11SpeedbrakeSystem.ArmKey] = new SimVarDefinition
+        {
+            Name = Md11SpeedbrakeSystem.ArmVar,
+            DisplayName = "Ground spoilers",
+            Type = SimVarType.LVar,
+            UpdateFrequency = UpdateFrequency.Continuous,
+            IsAnnounced = true,
+            ValueDescriptions = Md11SpeedbrakeSystem.ArmValues,
+        };
+
         return v;
     }
 
@@ -250,6 +265,7 @@ public partial class TFDiMD11Definition
         AddReadoutPanels(placement.Structure, placement.Controls);
         AddSquawkEntry(placement.Controls);
         AddRadiosPanel(placement.Structure, placement.Controls);
+        AddSpeedbrakeArm(placement.Controls);
 
         _panelStructure = placement.Structure;
         _panelControls = placement.Controls;
@@ -274,6 +290,14 @@ public partial class TFDiMD11Definition
         int at = keys.IndexOf("MD11_PED_XPNDR_ABV_BLW_SW");
         keys.Insert(at < 0 ? 0 : at + 1, Md11Squawk.SetKey);
         keys.Add(Md11Squawk.CodeKey);
+    }
+
+    /// <summary>The Ground spoilers row sits right after the lever it belongs to.</summary>
+    private static void AddSpeedbrakeArm(Dictionary<string, List<string>> controls)
+    {
+        if (!controls.TryGetValue("Speedbrake", out var keys)) return;
+        int at = keys.IndexOf(Md11SpeedbrakeSystem.LeverKey);
+        keys.Insert(at < 0 ? keys.Count : at + 1, Md11SpeedbrakeSystem.ArmKey);
     }
 
     /// <summary>
