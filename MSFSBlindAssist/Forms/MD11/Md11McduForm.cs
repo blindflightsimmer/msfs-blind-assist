@@ -53,6 +53,14 @@ public class Md11McduForm : Form
     private Md11McduScreen? _screen;
     private object? _lastRendered;
     private string _lastAnnouncedTitle = "";
+
+    /// <summary>
+    /// Last rendered blank/content state, so going dark mid-session is ANNOUNCED (a background
+    /// change the pilot did not cause) while the same state on open is only shown (the screen
+    /// reader reads the list, and speaking over it is the redundancy CLAUDE.md forbids).
+    /// Null until the first render, which is what keeps the open silent.
+    /// </summary>
+    private Md11McduPresenceState? _lastPresence;
     private string _lastAnnouncedScratchpad = "";
     private string _lastAnnouncedFlags = "";
 
@@ -429,6 +437,43 @@ public class Md11McduForm : Form
 
         _screen = screen;
         _lastRendered = screen;
+
+        // A unit with nothing on it renders as ONE informative row, not as "Title:", "1:" ... "6:",
+        // "Scratchpad:" over a status line reading "connected". Those eight blank rows plus that
+        // reassuring status are how a working feed came to be reported as "my mcdu is not showing
+        // up in the app" — the window is indistinguishable from a broken one, and the usual
+        // announce is gated on a non-empty title so nothing is said either.
+        var presence = Md11McduPresence.Classify(screen);
+        if (presence != Md11McduPresenceState.Content)
+        {
+            var withContent = new List<Md11McduUnit>(3);
+            foreach (var u in new[] { Md11McduUnit.Left, Md11McduUnit.Center, Md11McduUnit.Right })
+                if (Md11McduPresence.Classify(manager?.GetScreen(u)) == Md11McduPresenceState.Content)
+                    withContent.Add(u);
+
+            var advisory = Md11McduPresence.Describe(_unit, presence, withContent).ToList();
+            Forms.DisplayList.UpdateInPlace(mcduDisplay, advisory);
+
+            // UpdateStatus owns the MSG/FAIL announcement and WRITES statusLabel, so it runs
+            // BEFORE the label is set here — reversed, it would overwrite "blank" with
+            // "connected", which is the exact false reassurance this branch exists to remove.
+            UpdateStatus(screen);
+            statusLabel.Text = presence == Md11McduPresenceState.Blank
+                ? $"MCDU: {_unit} blank"
+                : $"MCDU: {_unit} no data";
+
+            // Announce only a CHANGE, and only once this window has rendered at least once —
+            // going dark under the pilot is news, opening onto a dark unit is the screen reader's
+            // to read. Clearing the title latch lets the page announce normally when it comes back.
+            if (_lastPresence != null && _lastPresence != presence && advisory.Count > 0)
+                _announcer.Announce(advisory[0]);
+
+            _lastPresence = presence;
+            _lastAnnouncedTitle = "";
+            return;
+        }
+
+        _lastPresence = presence;
 
         var lines = new List<string>(Md11McduLayout.Rows + 2)
         {

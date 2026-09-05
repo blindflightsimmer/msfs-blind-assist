@@ -35,6 +35,12 @@ public sealed class Md11McduDataManager : IDisposable
 
     private readonly Microsoft.FlightSimulator.SimConnect.SimConnect _simConnect;
     private readonly Md11McduScreen?[] _screens = new Md11McduScreen?[3];
+
+    /// <summary>
+    /// Last known blank/content state per unit, so a CHANGE can be logged rather than only the
+    /// first delivery. Defaults to NoData for all three, which is the truth before anything lands.
+    /// </summary>
+    private readonly Md11McduPresenceState[] _presence = new Md11McduPresenceState[3];
     private readonly object _lock = new();
 
     private bool _registered;
@@ -185,6 +191,24 @@ public sealed class Md11McduDataManager : IDisposable
                 Log.Info("MD11", $"MCDU {unit} first delivery: dspy={screen.Dspy} fail={screen.Fail} " +
                     $"{glyphs} glyphs, title='{screen.Title}'.");
             }
+
+            // Then every blank<->content TRANSITION. The first-delivery line alone cannot answer
+            // the question the live reports actually raise. On 2026-09-05 the Left unit arrived
+            // with zero glyphs in two sessions while Center and Right carried real pages, and
+            // nothing recorded whether Left ever filled in afterwards — so a CDU the aircraft has
+            // not powered and a CDU whose update never reached us were indistinguishable. They are
+            // indistinguishable in a SNAPSHOT; across transitions they are not (a dark unit that
+            // later draws logs a Blank->Content edge, a lost feed never does).
+            var state = Md11McduPresence.Classify(screen);
+            bool stateChanged;
+            lock (_lock)
+            {
+                stateChanged = _presence[(int)unit.Value] != state;
+                _presence[(int)unit.Value] = state;
+            }
+
+            if (stateChanged && !firstEver)
+                Log.Info("MD11", $"MCDU {unit} is now {state} (title='{screen.Title.Trim()}').");
 
             IsReady = true;
             if (changed) ScreenUpdated?.Invoke(this, screen);
