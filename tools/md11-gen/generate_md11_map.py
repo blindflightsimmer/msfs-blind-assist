@@ -302,8 +302,7 @@ LAMP_LEGEND_OVERRIDES = {
 }
 # Spoken word for the overriding legends above that LEGEND_MEANINGS does not carry.
 LEGEND_MEANINGS.update({"UP": "Up", "STOW": "Stowed", "WARN": "Warning", "CAUT": "Caution", "A": "Selected",
-                        "B": "Selected", "FIRE": "Fire", "ALERT": "Alert", "MANUAL": "Manual", "NAV_OFF": "NAV OFF",
-                        "NO_MASKS": "No masks"})
+                        "B": "Selected", "FIRE": "Fire", "ALERT": "Alert", "MANUAL": "Manual", "NAV_OFF": "NAV OFF"})
 
 # Spoken word when lit, where the legend's generic word reads wrong for this lamp.
 LAMP_LIT_OVERRIDES = {
@@ -338,7 +337,6 @@ STATE_LAMPS = {
     "MD11_OVHD_PNEU_1_2_ISOL_BT": [("MD11_OVHD_PNEU_ISOL_1_2_ON_LT", "ON"), ("MD11_OVHD_PNEU_ISOL_1_2_DISAG_LT", "DISAG")],
     "MD11_OVHD_PNEU_1_3_ISOL_BT": [("MD11_OVHD_PNEU_ISOL_1_3_ON_LT", "ON"), ("MD11_OVHD_PNEU_ISOL_1_3_DISAG_LT", "DISAG")],
     "MD11_OVHD_PNEU_APU_BLEED_BT": [("MD11_OVHD_PNEU_APU_ON_LT", "ON"), ("MD11_OVHD_PNEU_APU_USE_ENG_AIR_LT", "USE_ENG_AIR")],
-    "MD11_OVHD_PNEU_MASKS_BT": [("MD11_OVHD_PNEU_NO_MASKS_LT", "NO_MASKS")],
     "MD11_OVHD_LTS_MECH_BT": [("MD11_OVHD_LTS_MECH_CALL_ON_LT", "CALL")],
     "MD11_OVHD_LTS_DOME_BT": [("MD11_LTS_DOME", "ON")],
     "MD11_AOVHD_APU_START_BT": [("MD11_AOVHD_APU_ON_LT", "ON"), ("MD11_AOVHD_APU_OFF_LT", "OFF")],
@@ -376,8 +374,7 @@ STANDALONE_LAMPS = {
     "MD11_OVHD_ELEC_DC_GND_SVC_OFF_LT": ("DC Ground Service Bus", "Off", "Powered"),
     **{f"MD11_OVHD_HYD_SYS_{n}_PRESS_LT": (f"Hydraulic System {n} Pressure", "Abnormal", "Normal") for n in (1, 2, 3)},
     "MD11_OVHD_PNEU_OUTFLOW_CLOSED_LT": ("Outflow Valve", "Closed", "Not closed"),
-    # MD11_OVHD_PNEU_NO_MASKS_LT is paired to MD11_OVHD_PNEU_MASKS_BT via STATE_LAMPS instead
-    # (the manual-deploy button's own fault lamp, found missing by the Step 6 audit).
+    "MD11_OVHD_PNEU_NO_MASKS_LT": ("No Masks light", "On", "Off"),
     "MD11_OVHD_ENG_IGN_OFF_LT": ("Engine Ignition", "Off", "Selected"),
     "MD11_OVHD_LOCK_AUTO_LT": ("Cockpit Door Lock AUTO light", "On", "Off"),
     "MD11_OVHD_LOCK_FAIL_LT": ("Cockpit Door Lock FAIL light", "On", "Off"),

@@ -25013,17 +25013,7 @@
     "LEFT_BUTTON_UP": 90322
    },
    "guard_id": "MD11_OVHD_PNEU_MASKS_GRD",
-   "source": "FlightDeck/Overhead.xml",
-   "state": {
-    "lamps": [
-     {
-      "var": "MD11_OVHD_PNEU_NO_MASKS_LT",
-      "legend": "NO_MASKS",
-      "lit": "No masks"
-     }
-    ],
-    "dark": "Normal"
-   }
+   "source": "FlightDeck/Overhead.xml"
   },
   {
    "node_id": "MD11_OVHD_PNEU_MASKS_GRD",
@@ -25091,8 +25081,8 @@
    "kind": "annun",
    "template": "TFDi_Design_MD11_Annunciator",
    "area": "Overhead",
-   "label": "Passenger Oxygen Masks Manual Deploy NO MASKS light",
-   "label_source": "paired",
+   "label": "No Masks light",
+   "label_source": "curated",
    "state_var": "MD11_OVHD_PNEU_NO_MASKS_LT",
    "value_map": {},
    "num_states": null,
@@ -25103,10 +25093,11 @@
     "lamps": [
      {
       "var": "MD11_OVHD_PNEU_NO_MASKS_LT",
-      "legend": "NO_MASKS",
-      "lit": "No masks"
+      "legend": "ON",
+      "lit": "On"
      }
-    ]
+    ],
+    "dark": "Off"
    }
   },
   {
