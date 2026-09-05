@@ -79,6 +79,15 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     private readonly Md11FlapSystem _flaps;
     private readonly Dictionary<string, Md11Control> _byNodeId;
 
+    /// <summary>Stock DC bus voltage: the "annunciators have power" gate (spec §3.4). Silent; read from the cache by the hook.</summary>
+    public const string DcPowerKey = "MD11_DC_BUS_VOLTAGE";
+
+    /// <summary>L:var name → variable KEY (a lamp's node id is its key; a few lamps light from a foreign VIS_VAR).</summary>
+    private readonly Dictionary<string, string> _keyByStateVar = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Lamp KEY → the buttons whose state folds that lamp in (spec §3.7: a lamp change speaks its owner's state).</summary>
+    private readonly Dictionary<string, List<Md11Control>> _lampOwners = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// The silent numeric read-outs (every <c>Export()</c> var): continuously batched so the cache
     /// and hotkey read-outs stay fresh, but NEVER narrated on change — a raw "Engine 1 N1: 70.3"
@@ -96,7 +105,33 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
         _map = Md11ControlMap.Load();
         _byNodeId = new Dictionary<string, Md11Control>(StringComparer.OrdinalIgnoreCase);
         foreach (var c in _map.Controls) _byNodeId[c.NodeId] = c;
+        foreach (var c in _map.Controls)
+            if (!string.IsNullOrEmpty(c.StateVar) && !_keyByStateVar.ContainsKey(c.StateVar))
+                _keyByStateVar[c.StateVar] = c.NodeId;
+        foreach (var c in _map.Controls)
+        {
+            if (c.Kind != Md11Kinds.Button || c.State == null) continue;
+            foreach (var lamp in c.State.Lamps)
+            {
+                var key = KeyFor(lamp.Var);
+                if (!_lampOwners.TryGetValue(key, out var owners)) _lampOwners[key] = owners = new List<Md11Control>();
+                owners.Add(c);
+            }
+        }
         _flaps = new Md11FlapSystem(_map);
+    }
+
+    private string KeyFor(string stateVar) => _keyByStateVar.TryGetValue(stateVar, out var k) ? k : stateVar;
+
+    /// <summary>The keys MainForm must watch to keep this control's label current.</summary>
+    private IReadOnlyList<string>? StateDependencies(Md11Control c)
+    {
+        if (c.State == null) return null;
+        var deps = new List<string>();
+        foreach (var lamp in c.State.Lamps) deps.Add(KeyFor(lamp.Var));
+        if (c.State.Latch != null) deps.Add(KeyFor(c.State.Latch.Var));
+        deps.Add(DcPowerKey);
+        return deps;
     }
 
     /// <summary>
@@ -284,6 +319,18 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
         foreach (var kvp in BuildExportVariables())
             if (!vars.ContainsKey(kvp.Key)) vars[kvp.Key] = kvp.Value;
 
+        vars[DcPowerKey] = new SimVarDefinition
+        {
+            Name = "ELECTRICAL MAIN BUS VOLTAGE",
+            DisplayName = "DC bus voltage",
+            Type = SimVarType.SimVar,
+            Units = "Volts",
+            UpdateFrequency = UpdateFrequency.Continuous,
+            IsAnnounced = true,                 // batch-covered; ProcessSimVarUpdate consumes it silently
+            ExcludeFromMonitorManager = true,
+            RenderAsReadOnlyStatus = true,
+        };
+
         // Silent read-outs: every Export() var is Continuous+IsAnnounced+LVar with NO
         // ValueDescriptions (a bare number, meaningless spoken). That signature is also the
         // generic auto-announce condition, so without consuming them they narrate on every batch
@@ -317,24 +364,33 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
 
         switch (c.Kind)
         {
-            // Momentary push-buttons. Write-only: there is no resting state worth reading, and
-            // Never keeps them off the data-definition budget entirely (666 of them).
+            case Md11Kinds.Option:
+                return null;   // MD11_OPT_* configuration flags: not controls, not lamps
+
+            // Momentary or latching push-buttons. A PROVEN latch (its own L:var holds the
+            // position — TFDi's tooltip reads it, or the battery, measured live) is read on
+            // panel open and after a press; everything else stays write-only and costs no
+            // data definition. The spoken state is composed by TryDescribeControlState.
             case Md11Kinds.Button:
                 return new SimVarDefinition
                 {
                     Name = c.StateVar,
                     DisplayName = label,
                     Type = SimVarType.LVar,
-                    UpdateFrequency = UpdateFrequency.Never,
+                    UpdateFrequency = c.State?.Latch != null ? UpdateFrequency.OnRequest : UpdateFrequency.Never,
                     RenderAsButton = true,
                     SuppressRestingButtonState = true,
+                    StateVariables = StateDependencies(c),
                 };
 
-            // Indicator lamps. A blind pilot cannot see a lamp illuminate, so this is the single
-            // most valuable class of variable on the aircraft — and Continuous+IsAnnounced makes
-            // them batch-covered, i.e. free. Stripped from panel controls (see BuildPanelControls):
-            // a pilot navigates a panel to OPERATE things, not to scan "X Fault: Normal" rows.
+            // Indicator lamps. Batch-covered (free). DisplayName is the generated spoken name
+            // ("External Power AVAIL light", "AC Bus 1"); the value words come from the state
+            // block so a standalone light reads "AC Bus 1: Off" / "AC Bus 1: Powered".
             case Md11Kinds.Annunciator:
+            {
+                var self = c.State?.Lamps.FirstOrDefault();
+                string lit = self?.Lit ?? "on";
+                string dark = c.State?.Dark ?? "off";
                 return new SimVarDefinition
                 {
                     Name = c.StateVar,
@@ -342,9 +398,12 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                     Type = SimVarType.LVar,
                     UpdateFrequency = UpdateFrequency.Continuous,
                     IsAnnounced = true,
-                    ValueDescriptions = values.Count > 0 ? values : LampStates,
+                    ValueDescriptions = new Dictionary<double, string> { [0] = dark, [1] = lit },
                     RenderAsReadOnlyStatus = true,
+                    ExcludeFromMonitorManager = string.IsNullOrEmpty(lit),   // a lamp with nothing to say (APU BLANK)
+                    StateVariables = new[] { c.NodeId, DcPowerKey },
                 };
+            }
 
             // Guard covers. A guard is a click-toggle with no positions (empty value map), so it is
             // rendered as an operable BUTTON rather than a combo — the pilot can lift/lower it by
@@ -358,6 +417,7 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                     Type = SimVarType.LVar,
                     UpdateFrequency = UpdateFrequency.OnRequest,
                     RenderAsButton = true,
+                    StateVariables = StateDependencies(c),
                 };
 
             // Everything with an operable, readable position: switches, knobs, levers,
@@ -410,9 +470,6 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                 return null;
         }
     }
-
-    /// <summary>Fallback lamp wording when TFDi's tooltip carries no case map (most annunciators).</summary>
-    private static readonly Dictionary<double, string> LampStates = new() { [0] = "off", [1] = "on" };
 
     /// <summary>
     /// TFDi's value→label map, parsed to numbers. The flap lever's descriptions come from the

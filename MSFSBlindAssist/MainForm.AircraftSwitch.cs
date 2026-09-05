@@ -652,6 +652,12 @@ public partial class MainForm
         // Update the aircraft instance
         currentAircraft = newAircraft;
 
+        // The MD-11's composed-state hook reads the SimConnect cache through the handle Attach
+        // captures. Without this the first panel opens before any control has been pressed and
+        // every button shows a bare label (Attach used to run only from a press or a hotkey).
+        if (newAircraft is TFDiMD11Definition newMd11 && simConnectManager != null)
+            newMd11.Attach(simConnectManager);
+
         taxiGuidanceManager.TurnLeadSeconds = newAircraft.TaxiTurnLeadSeconds;
 
         // Refresh aircraft-conditional menu items (FMC Settings is PMDG-only).
