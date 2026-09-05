@@ -15,11 +15,11 @@ namespace MSFSBlindAssist.Aircraft.MD11;
 /// heard there is nothing left to echo, and the text dedup below still keeps the SAME state from
 /// being said twice.
 ///
-/// Every call lands on the UI thread — <c>HandleLampUpdate</c> runs there as the event-batch
-/// consumer (a WinForms timer, so the same thread that dispatches every SimVar update), and
-/// <c>TFDiMD11Definition</c> marshals <c>PressFeedbackAsync</c>'s tail back to it (via its
-/// captured <c>SynchronizationContext</c>) after that method's ConfigureAwait(false) delays — so
-/// the plain <see cref="Dictionary{TKey,TValue}"/> fields below need no lock.
+/// Every call lands on ONE thread: the WinForms timer that dispatches every SimVar update, which
+/// is where <c>HandleLampUpdate</c> runs. <c>TFDiMD11Definition</c> marshals the tails of
+/// <c>PressFeedbackAsync</c> and <c>DeferDarkTransitionAsync</c> back to it (via its captured
+/// <c>SynchronizationContext</c>) after their ConfigureAwait(false) delays — so the plain
+/// <see cref="Dictionary{TKey,TValue}"/> fields below need no lock.
 /// </summary>
 public sealed class Md11AnnouncementGate
 {
@@ -34,6 +34,14 @@ public sealed class Md11AnnouncementGate
     public bool IsInEchoWindow(string owner, long nowMs)
         => _pressedAt.TryGetValue(owner, out var t) && nowMs - t < EchoWindowMs;
 
+    /// <summary>
+    /// Whether a background state change is spoken, and the dedup's record of it.
+    ///
+    /// The record is written on the way OUT, not on the way to the speaker: a "yes" here can still
+    /// be silenced downstream by MainForm's Ctrl+M wrap, and the text is remembered either way. So
+    /// after un-muting a control, its CURRENT state is not re-spoken until it changes again —
+    /// baseline-first, the same bargain every monitor in this app makes, not an oversight.
+    /// </summary>
     public bool ShouldSpeakBackground(string owner, string text, long nowMs)
     {
         if (IsInEchoWindow(owner, nowMs)) return false;
@@ -47,7 +55,7 @@ public sealed class Md11AnnouncementGate
     /// when the lamp went out (spec §3.7, amended 2026-09-05). Returns the sentence to speak, or
     /// null for silence.
     ///
-    /// Two things can only be known late. First, POWER: the 528 continuous lamps ride two
+    /// Two things can only be known late. First, POWER: the batch-covered variables ride two
     /// SimConnect batches, and the DC bus 1 lamp the gate reads sits in a different batch from the
     /// hydraulic and pneumatic lamps, so at shutdown a lamp can go dark a beat before the gate
     /// learns the busses died. Speaking on the spot narrated the whole panel losing power one

@@ -43,11 +43,15 @@ public partial class TFDiMD11Definition
 
     /// <summary>
     /// The UI thread's context, captured by <see cref="SetControl"/> the first time it runs (every
-    /// caller is a WinForms event handler). The gate's plain dictionaries are also mutated by
-    /// <see cref="HandleLampUpdate"/> on the event-batch consumer thread, so
-    /// <see cref="PressFeedbackAsync"/>'s tail — which runs on a thread-pool thread after its
-    /// ConfigureAwait(false) delays — must hop back via <see cref="OnUiThread"/> rather than touch
-    /// the gate or the announcer directly.
+    /// caller is a WinForms event handler).
+    ///
+    /// EVERYTHING that touches the gate or the announcer runs on that ONE thread — the WinForms
+    /// timer that dispatches every SimVar update, so <see cref="HandleLampUpdate"/> is on it too;
+    /// the gate's plain dictionaries need no lock precisely because of that. What is NOT on it is
+    /// the tail of any method that has awaited: <see cref="PressFeedbackAsync"/> and
+    /// <see cref="DeferDarkTransitionAsync"/> resume on a thread-pool thread after their
+    /// ConfigureAwait(false) delays, so both hop back via <see cref="OnUiThread"/> rather than
+    /// touch the gate or the announcer directly.
     /// </summary>
     private SynchronizationContext? _uiContext;
 
@@ -57,8 +61,8 @@ public partial class TFDiMD11Definition
 
     /// <summary>
     /// Runs <paramref name="action"/> on the UI thread when one was captured (the announcer and the
-    /// gate's dictionaries are UI-thread objects — HandleLampUpdate mutates the same gate on the
-    /// event-batch consumer thread), else inline as a last resort.
+    /// gate's dictionaries are UI-thread objects, and the WinForms timer that dispatches SimVar
+    /// updates puts HandleLampUpdate on that same thread), else inline as a last resort.
     /// </summary>
     private void OnUiThread(Action action)
     {
@@ -129,7 +133,8 @@ public partial class TFDiMD11Definition
     /// <summary>
     /// A lamp went out. Wait <see cref="DarkSettleMs"/>, then decide from what is true THEN.
     ///
-    /// Two reasons, both measured. POWER: the 528 continuous lamps ride two SimConnect batches
+    /// Two reasons, both measured. POWER: the 528 batch-covered variables (488 of them lamps)
+    /// ride two SimConnect batches
     /// sorted by name, and <c>MD11_OVHD_ELEC_DC1_BUS_OFF_LT</c> (which the gate reads) sits in
     /// batch 1 while the <c>MD11_OVHD_HYD_*</c> and <c>MD11_OVHD_PNEU_*</c> lamps sit in batch 2 —
     /// so in the normal shutdown order (external power off, battery still on) a batch-2 lamp can
@@ -203,8 +208,9 @@ public partial class TFDiMD11Definition
 
             // The delays above leave this on a thread-pool thread. Compose + feedback + announce
             // must run on the UI thread: the gate's dictionaries are also mutated by
-            // HandleLampUpdate on the event-batch consumer thread (a same-thread invariant, not a
-            // locked one), and ScreenReaderAnnouncer.Announce is unreliable off the UI thread.
+            // HandleLampUpdate, which the WinForms SimVar-dispatch timer puts on that same thread
+            // (a same-thread invariant, not a locked one), and ScreenReaderAnnouncer.Announce is
+            // unreliable off the UI thread.
             OnUiThread(() =>
             {
                 try

@@ -437,7 +437,8 @@ public partial class TFDiMD11Definition
     /// True when this annunciator update should be suppressed as blink chatter — 3+ transitions
     /// within <see cref="LampFlapWindowMs"/>. The first sighting (baseline) and the first couple of
     /// changes pass through, so a genuine one-shot caption is prompt; only sustained blinking is
-    /// dropped. Runs on the UI thread (the event-batch consumer), so the dictionaries need no lock.
+    /// dropped. Runs on the UI thread (the WinForms timer that dispatches every SimVar update), so
+    /// the dictionaries need no lock.
     /// </summary>
     private bool SuppressAnnunciatorFlap(string varName, double value)
     {
