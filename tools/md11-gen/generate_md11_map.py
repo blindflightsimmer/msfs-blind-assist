@@ -246,6 +246,195 @@ MCDU_KEY_LABELS = {
 }
 MCDU_SIDES = {"LMCDU": "Left", "CMCDU": "Center", "RMCDU": "Right"}
 
+# ---------------------------------------------------------------------------
+# Control STATE. A blind pilot cannot see a legend light, so each button's state is composed
+# by MSFSBA from (1) the legend lamps that belong to it, (2) its own L:var where TFDi's own
+# tooltip reads state from it (a proven latch), (3) what "all legends dark" means. Everything
+# below is TFDi wording from the Systems Guide; live evidence is in docs/md11.md.
+# ---------------------------------------------------------------------------
+
+# Legend token (the text printed on the light) -> plain state word spoken when it is lit.
+LEGEND_MEANINGS = {
+    "OFF": "Off", "ON": "On", "ARM": "Armed", "AVAIL": "Available", "FAULT": "Fault", "FAIL": "Fail",
+    "DISAG": "Disagree", "LOW": "Low", "PRESS": "Low pressure", "FLOW": "Flow", "MANF": "Manifold hot",
+    "TEMP_HI": "Temperature high", "SEL": "Select", "MAN": "Manual", "OVRD": "Override",
+    "DISC": "Disconnected", "DISCONNECT": "Disconnected", "ALTN": "Alternate", "FILL": "Filling",
+    "TRANS": "Transfer", "RESET": "Reset", "SMOKE": "Smoke", "HEAT": "Heat", "TEST": "Test",
+    "DISARM": "Disarmed", "GREEN": "Down and locked", "RED": "Unsafe", "CALL": "Call", "MIC": "Selected",
+    "VOL": "On", "IDENT": "Ident", "MSG": "Message", "DSPY": "Display", "OFST": "Offset", "AUTO": "Auto",
+    "HIGH": "High", "NORM": "Normal", "USE_ENG_AIR": "Use engine air", "CAB_ALT": "Cabin altitude",
+    "AVIONICS_OVHT": "Avionics overheat", "CLOSED": "Closed", "OPEN": "Open", "TEL": "Telephone",
+    "TELL": "Telephone", "MECH": "Mech call", "INHIBIT": "Inhibited", "LOCK": "Locked",
+    "UNLOCK": "Unlocked", "PWR": "Powered", "CLSD_READY": "Closed and ready", "DOOR": "Door",
+    "FUEL": "Fuel low", "GEN": "Generator", "STOP": "Stop", "BLANK": "",
+}
+
+# Lamps named as a bare "<stem>_LT" whose legend is NOT "ON" (the default for a bare lamp), and
+# lamps whose legend token differs from what is printed. From the Systems Guide.
+LAMP_LEGEND_OVERRIDES = {
+    "MD11_OVHD_LTS_NAV_LT": "OFF", "MD11_OVHD_LTS_BCN_LT": "OFF", "MD11_OVHD_LTS_HI_INT_LT": "OFF",
+    "MD11_OVHD_WNDSHLD_AICE_DEFOG_LT": "OFF", "MD11_OVHD_PNEU_BLEED_1_OFF_LT": "OFF",
+    "MD11_OVHD_PNEU_BLEED_2_OFF_LT": "OFF", "MD11_OVHD_PNEU_BLEED_3_OFF_LT": "OFF",
+    "MD11_AOVHD_APU_GEN_LT": "OFF", "MD11_CTR_ANTISKID_LT": "OFF",
+    "MD11_OVHD_ELEC_GALLEY_BUS_1_LT": "OFF", "MD11_OVHD_ELEC_GALLEY_BUS_2_LT": "OFF", "MD11_OVHD_ELEC_GALLEY_BUS_3_LT": "OFF",
+    "MD11_OVHD_FUEL_TANK_1_TRANS_LT": "ON", "MD11_OVHD_FUEL_TANK_2_TRANS_LT": "ON", "MD11_OVHD_FUEL_TANK_3_TRANS_LT": "ON",
+    "MD11_OVHD_FUEL_SYSTEM_SEL_LT": "SEL", "MD11_OVHD_PNEU_SYSTEM_SEL_LT": "SEL",
+    "MD11_OVHD_PNEU_CABIN_SYSTEM_SEL_LT": "SEL", "MANF_DRAIN_LT": "OPEN", "MD11_OVHD_FUEL_DUMP_LT": "OPEN",
+    "MD11_OVHD_FUEL_DUMP_STOP_LT": "STOP", "MD11_OVHD_HYD_TEST_LT": "TEST", "MD11_MIP_CTR_GEAR_LT": "UP",
+    "MD11_CTR_SLAT_STOW_LT": "STOW", "MD11_GSL_MST_WRN_LT": "WARN", "MD11_GSR_MST_WRN_LT": "WARN",
+    "MD11_GSL_MST_CAUT_LT": "CAUT", "MD11_GSR_MST_CAUT_LT": "CAUT", "MD11_OVHD_ENG_A_LT": "A",
+    "MD11_OVHD_ENG_B_LT": "B", "MD11_OVHD_LTS_MECH_LT": "CALL", "MD11_OVHD_LTS_MECH_CALL_ON_LT": "CALL",
+    "MD11_OVHD_LTS_FWD_ATTND_LT": "CALL", "MD11_OVHD_LTS_MID_ATTND_LT": "CALL", "MD11_OVHD_LTS_AFT_ATTND_LT": "CALL",
+    "MD11_OVHD_LTS_OVW_ATTND_LT": "CALL", "MD11_OVHD_LTS_CREW_REST_LT": "CALL", "MD11_OVHD_GEN_BUS_1_RESET_LT": "FAULT",
+    "MD11_OVHD_GEN_BUS_2_RESET_LT": "FAULT", "MD11_OVHD_GEN_BUS_3_RESET_LT": "FAULT",
+    **{f"MD11_AOVHD_CRGSMK_{p}_AGNT{n}_LT": "FIRE" for p in ("FWD", "AFT") for n in (1, 2)},
+    **{f"MD11_AOVHD_CRGSMK_{p}_AGNT{n}LO_LT": "LOW" for p in ("FWD", "AFT") for n in (1, 2)},
+    **{f"MD11_PED_SD_{p}_LT": "ALERT" for p in ("AIR", "CONFIG", "ELEC", "ENG", "FUEL", "HYD", "MISC")},
+    **{f"MD11_PED_{s}_RADIO_PNL_{r}_LT": "SEL" for s in ("CPT", "FO", "OBS") for r in ("VHF1", "VHF2", "VHF3", "HF1", "HF2")},
+    # Rows attached to knobs/switches: the legend the guide prints on that light.
+    "MD11_OVHD_FLTCTL_ELEVFEEL_LT": "MANUAL", "MD11_OVHD_FLTCTL_FLAPLIM_LT": "MANUAL",
+    "MD11_OVHD_IRS_1_LT": "NAV_OFF", "MD11_OVHD_IRS_2_LT": "NAV_OFF", "MD11_OVHD_IRS_3_LT": "NAV_OFF",
+    "MD11_THR_L_FUEL_LT": "FIRE", "MD11_THR_C_FUEL_LT": "FIRE", "MD11_THR_R_FUEL_LT": "FIRE",
+    # Audio panel MIC / IDENT buttons light "MIC" / "IDENT", not "ON".
+    **{f"{p}_{r}_MIC_LT": "MIC" for p in ("MD11_PED_CPT_AUDIO_PNL", "MD11_PED_FO_AUDIO_PNL", "MD11_OBS_AUDIO_PNL")
+       for r in ("VHF1", "VHF2", "VHF3", "HF1", "HF2", "SAT", "INT", "CAB")},
+    **{f"{p}_IDENT_LT": "IDENT" for p in ("MD11_PED_CPT_AUDIO_PNL", "MD11_PED_FO_AUDIO_PNL", "MD11_OBS_AUDIO_PNL")},
+}
+# Spoken word for the overriding legends above that LEGEND_MEANINGS does not carry.
+LEGEND_MEANINGS.update({"UP": "Up", "STOW": "Stowed", "WARN": "Warning", "CAUT": "Caution", "A": "Selected",
+                        "B": "Selected", "FIRE": "Fire", "ALERT": "Alert", "MANUAL": "Manual", "NAV_OFF": "NAV OFF",
+                        "NO_MASKS": "No masks"})
+
+# Spoken word when lit, where the legend's generic word reads wrong for this lamp.
+LAMP_LIT_OVERRIDES = {
+    **{f"MD11_PED_{s}_RADIO_PNL_{r}_LT": "Selected" for s in ("CPT", "FO", "OBS") for r in ("VHF1", "VHF2", "VHF3", "HF1", "HF2")},
+}
+
+# Curated pairings where TFDi's lamp name does not start with the button's stem.
+STATE_LAMPS = {
+    **{f"MD11_OVHD_ELEC_AC_TIE{n}_BT": [(f"MD11_OVHD_ELEC_AC{n}_TIE_ARM_LT", "ARM"), (f"MD11_OVHD_ELEC_AC{n}_TIE_OFF_LT", "OFF")] for n in (1, 2, 3)},
+    "MD11_OVHD_ELEC_DC_TIE1_BT": [("MD11_OVHD_ELEC_DC1_TIE_OFF_LT", "OFF")],
+    "MD11_OVHD_ELEC_DC_TIE3_BT": [("MD11_OVHD_ELEC_DC3_TIE_OFF_LT", "OFF")],
+    "MD11_OVHD_ELEC_CAB_BUS_BT": [("MD11_OVHD_ELEC_CABIN_BUS_OFF_LT", "OFF")],
+    "MD11_OVHD_ELEC_SYSTEM_SEL_BT": [("MD11_OVHD_ELEC_SYS_SEL_LT", "SEL"), ("MD11_OVHD_ELEC_SYS_MANUAL_LT", "MAN")],
+    **{f"MD11_OVHD_GALLEY_BUS_{n}_BT": [(f"MD11_OVHD_ELEC_GALLEY_BUS_{n}_LT", "OFF")] for n in (1, 2, 3)},
+    "MD11_OVHD_HYD_HYD_TEST_BT": [("MD11_OVHD_HYD_TEST_LT", "TEST")],
+    "MD11_OVHD_HYD_SYSTEM_SEL_BT": [("MD11_OVHD_HYD_SYS_SEL_LT", "SEL"), ("MD11_OVHD_HYD_SYS_MANUAL_LT", "MAN")],
+    "MD11_OVHD_FUEL_SYSTEM_SEL_BT": [("MD11_OVHD_FUEL_SYSTEM_MAN_LT", "MAN")],
+    "MD11_OVHD_PNEU_SYSTEM_SEL_BT": [("MD11_OVHD_PNEU_SYSTEM_MAN_LT", "MAN")],
+    "MD11_OVHD_PNEU_CABIN_SYSTEM_SEL_BT": [("MD11_OVHD_PNEU_CABIN_SYSTEM_MAN_LT", "MAN")],
+    "MD11_OVHD_AICE_SYSTEM_SEL_BT": [("MD11_OVHD_AICE_SYSTEM_MAN_LT", "MAN")],
+    **{f"MD11_OVHD_FUEL_PUMP_TANK_{n}_BT": [(f"MD11_OVHD_FUEL_TANK_{n}_PUMP_OFF_LT", "OFF"), (f"MD11_OVHD_FUEL_TANK_{n}_PUMP_LOW_LT", "LOW")] for n in (1, 2, 3)},
+    **{f"MD11_OVHD_FUEL_TRANS_TANK_{n}_BT": [(f"MD11_OVHD_FUEL_TANK_{n}_TRANS_LT", "ON"), (f"MD11_OVHD_FUEL_TANK_{n}_TRANS_LOW_LT", "LOW")] for n in (1, 2, 3)},
+    **{f"MD11_OVHD_FUEL_XFEED_TANK_{n}_BT": [(f"MD11_OVHD_FUEL_TANK_{n}_XFEED_ON_LT", "ON"), (f"MD11_OVHD_FUEL_TANK_{n}_XFEED_DISAG_LT", "DISAG")] for n in (1, 2, 3)},
+    **{f"MD11_OVHD_FUEL_FILL_TANK_{n}_BT": [(f"MD11_OVHD_FUEL_TANK_{n}_FILL_ARM_LT", "ARM"), (f"MD11_OVHD_FUEL_TANK_{n}_FILL_FILL_LT", "FILL")] for n in (1, 2, 3)},
+    "MD11_OVHD_FUEL_FWDAUX_L_TRANS_BT": [("MD11_OVHD_FUEL_FWDAUX_LTRANS_ON_LT", "ON"), ("MD11_OVHD_FUEL_FWDAUX_LTRANS_LOW_LT", "LOW")],
+    "MD11_OVHD_FUEL_FWDAUX_R_TRANS_BT": [("MD11_OVHD_FUEL_FWDAUX_RTRANS_ON_LT", "ON"), ("MD11_OVHD_FUEL_FWDAUX_RTRANS_LOW_LT", "LOW")],
+    "MD11_OVHD_FUEL_MANF_DRAIN_BT": [("MANF_DRAIN_LT", "OPEN")],
+    **{f"MD11_OVHD_FLTCTL_{c}_BT": [(f"MD11_OVHD_FLTCTL_{c}FAIL_LT", "FAIL"), (f"MD11_OVHD_FLTCTL_{c}FOFF_LT", "OFF")] for c in ("LLI", "LLO", "RLI", "RLO")},
+    **{f"MD11_OVHD_FLTCTL_{c}_BT": [(f"MD11_OVHD_FLTCTL_{c}FAIL_LT", "FAIL"), (f"MD11_OVHD_FLTCTL_{c}OFF_LT", "OFF")] for c in ("LYDA", "LYDB", "UYDA", "UYDB")},
+    **{f"MD11_OVHD_PNEU_BLEED_{n}_OFF_BT": [(f"MD11_OVHD_PNEU_BLEED_{n}_PRESS_LT", "PRESS")] for n in (1, 2, 3)},
+    **{f"MD11_OVHD_PNEU_BLEED_{n}_MANF_TEMP_HI_BT": [(f"MD11_OVHD_PNEU_BLEED_{n}_MANF_LT", "MANF"), (f"MD11_OVHD_PNEU_BLEED_{n}_TEMP_HI_LT", "TEMP_HI")] for n in (1, 2, 3)},
+    "MD11_OVHD_PNEU_1_2_ISOL_BT": [("MD11_OVHD_PNEU_ISOL_1_2_ON_LT", "ON"), ("MD11_OVHD_PNEU_ISOL_1_2_DISAG_LT", "DISAG")],
+    "MD11_OVHD_PNEU_1_3_ISOL_BT": [("MD11_OVHD_PNEU_ISOL_1_3_ON_LT", "ON"), ("MD11_OVHD_PNEU_ISOL_1_3_DISAG_LT", "DISAG")],
+    "MD11_OVHD_PNEU_APU_BLEED_BT": [("MD11_OVHD_PNEU_APU_ON_LT", "ON"), ("MD11_OVHD_PNEU_APU_USE_ENG_AIR_LT", "USE_ENG_AIR")],
+    "MD11_OVHD_PNEU_MASKS_BT": [("MD11_OVHD_PNEU_NO_MASKS_LT", "NO_MASKS")],
+    "MD11_OVHD_LTS_MECH_BT": [("MD11_OVHD_LTS_MECH_CALL_ON_LT", "CALL")],
+    "MD11_OVHD_LTS_DOME_BT": [("MD11_LTS_DOME", "ON")],
+    "MD11_AOVHD_APU_START_BT": [("MD11_AOVHD_APU_ON_LT", "ON"), ("MD11_AOVHD_APU_OFF_LT", "OFF")],
+    **{f"MD11_AOVHD_CRGSMK_{p}_AGNT{n}_BT": [(f"MD11_AOVHD_CRGSMK_{p}_AGNT{n}LO_LT", "LOW")] for p in ("FWD", "AFT") for n in (1, 2)},
+}
+
+# What "every legend dark" means, where the legend-set rule (OFF→On; ON/AVAIL/ARM→Off;
+# fault-class only→Normal) gives the wrong answer.
+DARK_OVERRIDES = {
+    "MD11_OVHD_ELEC_EXT_PWR_BT": "Not available", "MD11_OVHD_ELEC_APU_PWR_BT": "Not available",
+    "MD11_OVHD_ELEC_GLY_EXT_PWR_BT": "Not available",
+    **{f"MD11_OVHD_ELEC_AC_TIE{n}_BT": "Closed" for n in (1, 2, 3)},
+    **{f"MD11_OVHD_ELEC_DC_TIE{n}_BT": "Closed" for n in (1, 3)},
+    "MD11_OVHD_ELEC_CAB_BUS_BT": "Powered",
+    **{f"MD11_OVHD_GALLEY_BUS_{n}_BT": "Powered" for n in (1, 2, 3)},
+    "MD11_AOVHD_APU_START_BT": "Off",
+    **{f"MD11_PED_SD_{p}_BT": "No alert" for p in ("AIR", "CONFIG", "ELEC", "ENG", "FUEL", "HYD", "MISC")},
+    **{f"MD11_PED_{s}_RADIO_PNL_{r}_BT": "Not selected" for s in ("CPT", "FO", "OBS") for r in ("VHF1", "VHF2", "VHF3", "HF1", "HF2")},
+}
+
+# Buttons proven live to latch their position in their own L:var although their tooltip does
+# not read it (battery: 0→1 on press, stays 1, 2026-09-05). Tooltip-read buttons need no entry.
+LATCH_FIXED = {"MD11_OVHD_ELEC_BATT_BT": ("On", "Off")}
+
+# Lamps that belong to no button: spoken name, lit state, dark state.
+STANDALONE_LAMPS = {
+    **{f"MD11_OVHD_ELEC_AC{n}_OFF_LT": (f"AC Bus {n}", "Off", "Powered") for n in (1, 2, 3)},
+    **{f"MD11_OVHD_ELEC_DC{n}_BUS_OFF_LT": (f"DC Bus {n}", "Off", "Powered") for n in (1, 2, 3)},
+    "MD11_OVHD_ELEC_BATT_BUS_OFF_LT": ("Battery Bus", "Off", "Powered"),
+    "MD11_OVHD_ELEC_L_EMER_AC_OFF_LT": ("Left Emergency AC Bus", "Off", "Powered"),
+    "MD11_OVHD_ELEC_R_EMER_AC_OFF_LT": ("Right Emergency AC Bus", "Off", "Powered"),
+    "MD11_OVHD_ELEC_L_EMER_DC_OFF_LT": ("Left Emergency DC Bus", "Off", "Powered"),
+    "MD11_OVHD_ELEC_R_EMER_DC_OFF_LT": ("Right Emergency DC Bus", "Off", "Powered"),
+    "MD11_OVHD_ELEC_AC_GND_SVC_OFF_LT": ("AC Ground Service Bus", "Off", "Powered"),
+    "MD11_OVHD_ELEC_DC_GND_SVC_OFF_LT": ("DC Ground Service Bus", "Off", "Powered"),
+    **{f"MD11_OVHD_HYD_SYS_{n}_PRESS_LT": (f"Hydraulic System {n} Pressure", "Abnormal", "Normal") for n in (1, 2, 3)},
+    "MD11_OVHD_PNEU_OUTFLOW_CLOSED_LT": ("Outflow Valve", "Closed", "Not closed"),
+    # MD11_OVHD_PNEU_NO_MASKS_LT is paired to MD11_OVHD_PNEU_MASKS_BT via STATE_LAMPS instead
+    # (the manual-deploy button's own fault lamp, found missing by the Step 6 audit).
+    "MD11_OVHD_ENG_IGN_OFF_LT": ("Engine Ignition", "Off", "Selected"),
+    "MD11_OVHD_LOCK_AUTO_LT": ("Cockpit Door Lock AUTO light", "On", "Off"),
+    "MD11_OVHD_LOCK_FAIL_LT": ("Cockpit Door Lock FAIL light", "On", "Off"),
+    "MD11_OVHD_LTS_PAINUSE_LT": ("PA in use", "Yes", "No"),
+    "MD11_OVHD_LTS_MOVIE_LT": ("Movie light", "On", "Off"),
+    "MD11_AOVHD_APU_FUEL_LT": ("APU FUEL light", "On", "Off"),
+    "MD11_AOVHD_APU_DOOR_LT": ("APU DOOR light", "On", "Off"),
+    "MD11_AOVHD_APU_FAIL_LT": ("APU FAIL light", "On", "Off"),
+    "MD11_AOVHD_APU_BLANK_LT": ("APU blank light", "", ""),
+    "MD11_AOVHD_APUFIRE_LT": ("APU Fire", "Fire", "Normal"),
+    **{f"MD11_AOVHD_ENG{n}FIRE_LT": (f"Engine {n} Fire", "Fire", "Normal") for n in (1, 2, 3)},
+    **{f"MD11_AOVHD_ENG{n}AGENT{b}LO_LT": (f"Engine {n} Agent {b} LOW light", "On", "Off") for n in (1, 2, 3) for b in (1, 2)},
+    **{f"MD11_AOVHD_CRGSMK_{p}_HEAT_LT": (f"{'Forward' if p == 'FWD' else 'Aft'} Cargo HEAT light", "On", "Off") for p in ("FWD", "AFT")},
+    **{f"MD11_AOVHD_CRGSMK_{p}_SMOKE_LT": (f"{'Forward' if p == 'FWD' else 'Aft'} Cargo SMOKE light", "On", "Off") for p in ("FWD", "AFT")},
+    **{f"MD11_AOVHD_CRGSMK_{p}_VENTDISAG_LT": (f"{'Forward' if p == 'FWD' else 'Aft'} Cargo Ventilation DISAG light", "On", "Off") for p in ("FWD", "AFT")},
+    **{f"MD11_AOVHD_CRGSMK_{p}_VENTOFF_LT": (f"{'Forward' if p == 'FWD' else 'Aft'} Cargo Ventilation OFF light", "On", "Off") for p in ("FWD", "AFT")},
+    "MD11_AOVHD_EMER_LT": ("Aft overhead EMER light", "On", "Off"),
+    **{f"MD11_MIP_{g}_GREEN_LT": (f"{n} Gear GREEN light", "On", "Off") for g, n in (("NOSE", "Nose"), ("LEFT", "Left"), ("RIGHT", "Right"), ("CTR", "Center"))},
+    **{f"MD11_MIP_{g}_RED_LT": (f"{n} Gear RED light", "On", "Off") for g, n in (("NOSE", "Nose"), ("LEFT", "Left"), ("RIGHT", "Right"), ("CTR", "Center"))},
+    **{f"MD11_{s}_ABS_DISARM_LT": (f"{n} Autobrake DISARM light", "On", "Off") for s, n in (("GSL", "Captain"), ("GSR", "First Officer"))},
+    **{f"MD11_{s}_BELOW_GS_LT": (f"{n} BELOW G/S light", "On", "Off") for s, n in (("GSL", "Captain"), ("GSR", "First Officer"))},
+    **{f"MD11_{s}_ENG_FAIL_LT": (f"{n} ENG FAIL light", "On", "Off") for s, n in (("GSL", "Captain"), ("GSR", "First Officer"))},
+    "MD11_PED_XPNDR_FAIL_LT": ("Transponder FAIL light", "On", "Off"),
+    "MD11_PED_CKPTDOOR_AUTO_LT": ("Cockpit Door AUTO light", "On", "Off"),
+    "MD11_PED_CKPTDOOR_FAIL_LT": ("Cockpit Door FAIL light", "On", "Off"),
+    **{f"MD11_{m}MCDU_{l}_LT": (f"{n} MCDU {l} light", "On", "Off") for m, n in (("L", "Left"), ("C", "Center"), ("R", "Right")) for l in ("DSPY", "FAIL", "MSG", "OFST")},
+    "MD11_CABIN_OXY_MASKS": ("Cabin Oxygen Masks", "Deployed", "Stowed"),
+    "MD11_CABIN_POWER": ("Cabin Power", "On", "Off"),
+    "MD11_LSIDE_OXY_FLOW_IND": ("Captain Oxygen Flow indicator", "Flow", "No flow"),
+    "MD11_RSIDE_OXY_FLOW_IND": ("First Officer Oxygen Flow indicator", "Flow", "No flow"),
+    "MD11_EXT_DOOR_CRG_MAIN_OPEN_LT": ("Main Cargo Door OPEN light", "On", "Off"),
+    "MD11_EXT_DOOR_CRG_MAIN_CLSD_READY_LT": ("Main Cargo Door CLOSED READY light", "On", "Off"),
+    "MD11_EXT_DOOR_CRG_MAIN_LOCK_LT": ("Main Cargo Door LOCK light", "On", "Off"),
+    "MD11_EXT_DOOR_CRG_MAIN_UNLOCK_LT": ("Main Cargo Door UNLOCK light", "On", "Off"),
+    "MD11_EXT_DOOR_CRG_MAIN_PWR_LT": ("Main Cargo Door PWR light", "On", "Off"),
+    **{f"MD11_EXT_DOOR_PAXC_{d}_DISARM_LT": (f"Door {d} DISARM light", "On", "Off") for d in ("1L", "1R")},
+    **{f"MD11_LTS_MAP_{n}": (f"Map Light {n}", "On", "Off") for n in (1, 2, 3)},
+    # Audio panel call lights (the MIC/VOL lights belong to their button/knob; these do not).
+    **{f"{p}_{r}_CALL_LT": (f"{seat} {r} CALL light", "On", "Off")
+       for p, seat in (("MD11_PED_CPT_AUDIO_PNL", "Captain"), ("MD11_PED_FO_AUDIO_PNL", "First Officer"), ("MD11_OBS_AUDIO_PNL", "Observer"))
+       for r in ("VHF1", "VHF2", "VHF3", "HF1", "HF2", "CAB")},
+    **{f"{p}_INT_MECH_LT": (f"{seat} MECH call light", "On", "Off")
+       for p, seat in (("MD11_PED_CPT_AUDIO_PNL", "Captain"), ("MD11_PED_FO_AUDIO_PNL", "First Officer"), ("MD11_OBS_AUDIO_PNL", "Observer"))},
+    "MD11_PED_CPT_AUDIO_PNL_SAT_TEL_LT": ("Captain SAT TEL light", "On", "Off"),
+    "MD11_PED_FO_AUDIO_PNL_SAT_TELL_LT": ("First Officer SAT TEL light", "On", "Off"),
+    "MD11_OBS_AUDIO_PNL_SAT_TEL_LT": ("Observer SAT TEL light", "On", "Off"),
+}
+# Side-panel source-select lights: "<seat> <source> Source CAP 2 light" etc.
+for _side, _seat in (("LSIDE", "Captain"), ("RSIDE", "First Officer")):
+    for _src, _word in (("APPR", "ILS"), ("CADC", "Air Data"), ("FLTDIR", "Flight Director"), ("FMS", "FMS"), ("VOR", "VOR")):
+        STANDALONE_LAMPS[f"MD11_{_side}_INP_{_src}CAP2_LT"] = (f"{_seat} {_word} Source CAP 2 light", "On", "Off")
+        STANDALONE_LAMPS[f"MD11_{_side}_INP_{_src}FO1_LT"] = (f"{_seat} {_word} Source FO 1 light", "On", "Off")
+    for _tok, _tail in (("EIS_CAP2", "CAP 2"), ("EIS_CAPAUX", "CAP AUX"), ("EIS_FO1", "FO 1"), ("EIS_FOAUX", "FO AUX")):
+        STANDALONE_LAMPS[f"MD11_{_side}_INP_{_tok}_LT"] = (f"{_seat} EIS Source {_tail} light", "On", "Off")
+    for _tok, _tail in (("IRS_CAPTAUX", "CAPT AUX"), ("IRS_FOAUX", "FO AUX")):
+        STANDALONE_LAMPS[f"MD11_{_side}_INP_{_tok}_LT"] = (f"{_seat} IRS Source {_tail} light", "On", "Off")
+
 
 def breaker_label(node_id, label):
     """'MD11_BKR_BWU_C24' + 'Tank 1 Transfer Pump Power Breaker' -> 'C24 Tank 1 Transfer Pump Power'.
@@ -341,6 +530,151 @@ def finalize_controls(controls):
         if c["label"]:
             c["label"] = speakable(c["label"])
     return kept
+
+
+def _legend_from_id(lamp_id):
+    """The printed legend of a lamp with no owner, read off its node id: '..._AC1_OFF_LT' -> 'OFF'.
+    Falls back to 'ON' when the last token is not a known legend ('..._IRS_1_LT')."""
+    m = re.search(r"_([A-Z0-9]+)_LT$", lamp_id)
+    return m.group(1) if m and m.group(1) in LEGEND_MEANINGS else "ON"
+
+
+def dark_text(legends, node_id):
+    """Meaning of every legend dark: the legend-set rule, unless curated."""
+    if node_id in DARK_OVERRIDES:
+        return DARK_OVERRIDES[node_id]
+    legends = list(legends)
+    if not legends:
+        return None
+    if "OFF" in legends:
+        return "On"
+    if any(l in ("ON", "AVAIL", "ARM", "SEL", "A", "B", "OPEN", "UP", "STOW", "MIC", "VOL") for l in legends):
+        return "Off"
+    return "Normal"
+
+
+def latch_for(control, node_ids):
+    """The L:var that holds this button's position, ONLY where that is proven.
+
+    TFDi's tooltip reading '(L:<node>)' for its state text is the proof for ~167 buttons
+    (anti-ice, system-mode selectors, source selects, breakers…); the battery is proven live.
+    A tooltip reading ANOTHER CONTROL's var (ECON reads the air-system mode button) is not a
+    latch; a tooltip reading a plain state var that is no control (the door-slide levers read
+    MD11_EXT_DOOR_PAX_1L_ARMED_LVR) is.
+    """
+    nid = control["node_id"]
+    if control["kind"] == "guard":
+        return {"var": nid, "on": "Open", "off": "Closed"}
+    if control["kind"] != "button":
+        return None
+    if nid in LATCH_FIXED:
+        on, off = LATCH_FIXED[nid]
+        return {"var": nid, "on": on, "off": off}
+    vm = control.get("value_map") or {}
+    sv = control.get("state_var")
+    if sv and "1" in vm and "0" in vm and (sv == nid or sv not in node_ids):
+        return {"var": sv, "on": vm["1"], "off": vm["0"]}
+    return None
+
+
+def pair_lamps(controls):
+    """lamp node id -> (owner button, legend). Curated pairings first, then the stem rule:
+    <stem>_<LEGEND>_LT with LEGEND a key of LEGEND_MEANINGS, or the bare <stem>_LT (legend ON
+    unless overridden). Only BUTTONS fold lamps into their state; a knob's or switch's lamps
+    become named rows instead (see lamp_name)."""
+    lamps = {c["node_id"]: c for c in controls if c["kind"] == "annun"}
+    owners = {}
+
+    def attach(owner, lamp_id, legend):
+        if lamp_id in lamps and lamp_id not in owners:
+            owners[lamp_id] = (owner, legend)
+
+    for c in controls:
+        if c["kind"] != "button":
+            continue
+        for lamp_id, legend in STATE_LAMPS.get(c["node_id"], []):
+            attach(c, lamp_id, legend)
+        stem = _strip_suffix(c["node_id"])
+        for lamp_id in lamps:
+            if not (lamp_id.startswith(stem + "_") and lamp_id.endswith("_LT")):
+                continue
+            rest = lamp_id[len(stem) + 1:-3]
+            if rest and rest not in LEGEND_MEANINGS:
+                continue
+            attach(c, lamp_id, LAMP_LEGEND_OVERRIDES.get(lamp_id, rest or "ON"))
+    return owners
+
+
+def _owner_by_stem(lamp_id, non_buttons):
+    """The knob/switch/handle/lever whose stem the lamp id starts with, if any."""
+    for c in non_buttons:
+        stem = _strip_suffix(c["node_id"])
+        if lamp_id.startswith(stem + "_") and lamp_id.endswith("_LT"):
+            return c, lamp_id[len(stem) + 1:-3]
+    return None, None
+
+
+def lamp_name(lamp, owners, non_buttons):
+    """(label, lit, dark, label_source) for one lamp."""
+    nid = lamp["node_id"]
+    if nid in owners:
+        owner, legend = owners[nid]
+        legend_word = legend.replace("_", " ")
+        lit = LAMP_LIT_OVERRIDES.get(nid, LEGEND_MEANINGS.get(legend, legend_word.title()))
+        return f"{owner['label']} {legend_word} light", lit, None, "paired"
+    if nid in STANDALONE_LAMPS:
+        name, lit, dark = STANDALONE_LAMPS[nid]
+        return name, lit, dark, "curated"
+    owner, rest = _owner_by_stem(nid, non_buttons)
+    if owner is not None:
+        legend = LAMP_LEGEND_OVERRIDES.get(nid, rest or "ON").replace("_", " ")
+        return f"{owner['label']} {legend} light", "On", "Off", "curated"
+    return humanize(nid), "On", "Off", "derived"
+
+
+def apply_state(controls):
+    """Attach the 'state' block and lamp names. Pure; call after finalize_controls."""
+    owners = pair_lamps(controls)
+    # Widened with STATE_LAMPS' own keys: those are hand-curated, always-real OTHER buttons
+    # (e.g. the system-mode selectors ECON's tooltip borrows for its Off/On wording), so a
+    # var equal to one is "another control's var", never this control's own latch, even on a
+    # fixture too small to include that other button as a control of its own. A no-op against
+    # the real ~1500-control run: every STATE_LAMPS key is already collected as a real button.
+    node_ids = {c["node_id"] for c in controls} | set(STATE_LAMPS)
+    non_buttons = [c for c in controls if c["kind"] in ("knob", "knob_push", "knob_pp", "switch", "handle", "lever")]
+    by_lamp_owner = {}
+    for lamp_id, (owner, legend) in owners.items():
+        by_lamp_owner.setdefault(owner["node_id"], []).append((lamp_id, legend))
+
+    for c in controls:
+        nid = c["node_id"]
+        if c["kind"] == "annun":
+            label, lit, dark, source = lamp_name(c, owners, non_buttons)
+            c["label"], c["label_source"] = label, source
+            legend = owners[nid][1] if nid in owners else LAMP_LEGEND_OVERRIDES.get(nid, _legend_from_id(nid))
+            state = {"lamps": [{"var": c["state_var"], "legend": legend, "lit": lit}]}
+            if dark is not None:
+                state["dark"] = dark
+            c["state"] = state
+            continue
+        if c["kind"] not in ("button", "guard"):
+            continue
+        lamps = []
+        for lamp_id, legend in by_lamp_owner.get(nid, []):
+            lamp = next(l for l in controls if l["node_id"] == lamp_id)
+            lamps.append({"var": lamp["state_var"], "legend": legend,
+                          "lit": LAMP_LIT_OVERRIDES.get(lamp_id, LEGEND_MEANINGS.get(legend, legend.replace("_", " ").title()))})
+        latch = latch_for(c, node_ids)
+        dark = dark_text([l["legend"] for l in lamps], nid)
+        if not lamps and latch is None and dark is None:
+            continue            # a momentary button: no state block at all, so MainForm shows a bare label
+        state = {"lamps": lamps}
+        if latch:
+            state["latch"] = latch
+        if dark is not None:
+            state["dark"] = dark
+        c["state"] = state
+    return controls
 
 
 def kind_counts(controls):
@@ -941,6 +1275,7 @@ def main():
 
     controls, stats = collect(pkg)
     controls = finalize_controls(controls)
+    controls = apply_state(controls)
     # by_kind (below) and the printed summary both come from the FINALIZED list via
     # kind_counts(), never from `stats` (collect()'s pre-finalize per-kind tally) --
     # see kind_counts()'s docstring for why patching stats on the side double-counts.

@@ -125,5 +125,99 @@ class KindCountsTests(unittest.TestCase):
         self.assertEqual(len(out), sum(counts.values()))
 
 
+class StateTests(unittest.TestCase):
+    def lamp(self, nid, area=None):
+        return ctl(nid, kind="annun", area=area)
+
+    def state_of(self, controls, nid):
+        out = g.apply_state(g.finalize_controls(controls))
+        return {c["node_id"]: c for c in out}[nid]
+
+    def test_stem_rule_attaches_single_token_legends_only(self):
+        gen = ctl("MD11_OVHD_ELEC_GEN1_BT", label="Generator 1", events={"LEFT_BUTTON_DOWN": 1, "LEFT_BUTTON_UP": 2})
+        drive = ctl("MD11_OVHD_ELEC_GEN1_DRIVE_BT", label="Generator 1 IDG Disconnect", events={"LEFT_BUTTON_DOWN": 3, "LEFT_BUTTON_UP": 4})
+        lamps = [self.lamp(n) for n in ("MD11_OVHD_ELEC_GEN1_OFF_LT", "MD11_OVHD_ELEC_GEN1_ARM_LT",
+                                        "MD11_OVHD_ELEC_GEN1_DRIVE_FAULT_LT", "MD11_OVHD_ELEC_GEN1_DRIVE_DISCONNECT_LT")]
+        s = self.state_of([gen, drive] + lamps, "MD11_OVHD_ELEC_GEN1_BT")["state"]
+        self.assertEqual([("MD11_OVHD_ELEC_GEN1_OFF_LT", "OFF", "Off"), ("MD11_OVHD_ELEC_GEN1_ARM_LT", "ARM", "Armed")],
+                         [(l["var"], l["legend"], l["lit"]) for l in s["lamps"]])
+        d = self.state_of([gen, drive] + lamps, "MD11_OVHD_ELEC_GEN1_DRIVE_BT")["state"]
+        self.assertEqual({"FAULT", "DISCONNECT"}, {l["legend"] for l in d["lamps"]})
+
+    def test_multi_token_legend_and_dark_rule(self):
+        econ = ctl("MD11_OVHD_PNEU_ECON_BT", label="ECON Mode", value_map={"1": "Off", "0": "On"},
+                   state_var="MD11_OVHD_PNEU_SYSTEM_SEL_BT", events={"LEFT_BUTTON_DOWN": 1})
+        s = self.state_of([econ, self.lamp("MD11_OVHD_PNEU_ECON_OFF_LT"), self.lamp("MD11_OVHD_PNEU_ECON_CAB_ALT_LT")],
+                          "MD11_OVHD_PNEU_ECON_BT")["state"]
+        self.assertEqual({"OFF": "Off", "CAB_ALT": "Cabin altitude"}, {l["legend"]: l["lit"] for l in s["lamps"]})
+        self.assertEqual("On", s["dark"])          # an OFF legend dark means the system is on
+        self.assertNotIn("latch", s)               # its tooltip reads a FOREIGN var: not a latch
+
+    def test_bare_lamp_defaults_to_on_and_honours_the_override(self):
+        nav = ctl("MD11_OVHD_LTS_NAV_BT", label="Navigation Lights", events={"LEFT_BUTTON_DOWN": 1})
+        stby = ctl("MD11_OVHD_LTS_STBY_COMP_BT", label="Standby Compass Light", events={"LEFT_BUTTON_DOWN": 2})
+        out = g.apply_state(g.finalize_controls([nav, stby, self.lamp("MD11_OVHD_LTS_NAV_LT"), self.lamp("MD11_OVHD_LTS_STBY_COMP_LT")]))
+        by = {c["node_id"]: c for c in out}
+        self.assertEqual([("MD11_OVHD_LTS_NAV_LT", "OFF", "Off")], [(l["var"], l["legend"], l["lit"]) for l in by["MD11_OVHD_LTS_NAV_BT"]["state"]["lamps"]])
+        self.assertEqual("On", by["MD11_OVHD_LTS_NAV_BT"]["state"]["dark"])
+        self.assertEqual([("MD11_OVHD_LTS_STBY_COMP_LT", "ON", "On")], [(l["var"], l["legend"], l["lit"]) for l in by["MD11_OVHD_LTS_STBY_COMP_BT"]["state"]["lamps"]])
+        self.assertEqual("Off", by["MD11_OVHD_LTS_STBY_COMP_BT"]["state"]["dark"])
+        self.assertEqual("Navigation Lights OFF light", by["MD11_OVHD_LTS_NAV_LT"]["label"])
+        self.assertEqual("paired", by["MD11_OVHD_LTS_NAV_LT"]["label_source"])
+
+    def test_curated_pairing_and_dark_override(self):
+        tie = ctl("MD11_OVHD_ELEC_AC_TIE1_BT", label="AC Bus Tie 1", events={"LEFT_BUTTON_DOWN": 1})
+        ext = ctl("MD11_OVHD_ELEC_EXT_PWR_BT", label="External Power", events={"LEFT_BUTTON_DOWN": 2})
+        lamps = [self.lamp(n) for n in ("MD11_OVHD_ELEC_AC1_TIE_ARM_LT", "MD11_OVHD_ELEC_AC1_TIE_OFF_LT",
+                                        "MD11_OVHD_ELEC_EXT_PWR_AVAIL_LT", "MD11_OVHD_ELEC_EXT_PWR_ON_LT")]
+        out = {c["node_id"]: c for c in g.apply_state(g.finalize_controls([tie, ext] + lamps))}
+        self.assertEqual({"ARM", "OFF"}, {l["legend"] for l in out["MD11_OVHD_ELEC_AC_TIE1_BT"]["state"]["lamps"]})
+        self.assertEqual("Closed", out["MD11_OVHD_ELEC_AC_TIE1_BT"]["state"]["dark"])
+        self.assertEqual("Not available", out["MD11_OVHD_ELEC_EXT_PWR_BT"]["state"]["dark"])
+        self.assertEqual("External Power AVAIL light", out["MD11_OVHD_ELEC_EXT_PWR_AVAIL_LT"]["label"])
+
+    def test_latch_from_own_tooltip_keeps_tfdi_polarity(self):
+        aice = ctl("MD11_OVHD_AICE_ENG1_BT", label="Engine 1 Anti Ice", value_map={"1": "On", "0": "Off"}, events={"LEFT_BUTTON_DOWN": 1})
+        defog = ctl("MD11_OVHD_WNDSHLD_AICE_DEFOG_BT", label="Windshield Defog", value_map={"1": "Off", "0": "On"}, events={"LEFT_BUTTON_DOWN": 2})
+        out = {c["node_id"]: c for c in g.apply_state(g.finalize_controls([aice, defog]))}
+        self.assertEqual({"var": "MD11_OVHD_AICE_ENG1_BT", "on": "On", "off": "Off"}, out["MD11_OVHD_AICE_ENG1_BT"]["state"]["latch"])
+        self.assertEqual({"var": "MD11_OVHD_WNDSHLD_AICE_DEFOG_BT", "on": "Off", "off": "On"}, out["MD11_OVHD_WNDSHLD_AICE_DEFOG_BT"]["state"]["latch"])
+
+    def test_battery_and_guards_latch(self):
+        batt = ctl("MD11_OVHD_ELEC_BATT_BT", label="Battery", guard_id="MD11_OVHD_ELEC_BATT_GRD", events={"LEFT_BUTTON_DOWN": 1})
+        grd = ctl("MD11_OVHD_ELEC_BATT_GRD", kind="guard", label="Battery", events={"LEFT_BUTTON_DOWN": 2})
+        out = {c["node_id"]: c for c in g.apply_state(g.finalize_controls([batt, grd, self.lamp("MD11_OVHD_ELEC_BATT_OFF_LT")]))}
+        self.assertEqual({"var": "MD11_OVHD_ELEC_BATT_BT", "on": "On", "off": "Off"}, out["MD11_OVHD_ELEC_BATT_BT"]["state"]["latch"])
+        self.assertEqual({"var": "MD11_OVHD_ELEC_BATT_GRD", "on": "Open", "off": "Closed"}, out["MD11_OVHD_ELEC_BATT_GRD"]["state"]["latch"])
+
+    def test_fault_only_button_is_normal_when_dark(self):
+        self.assertEqual("Normal", g.dark_text(["FAULT", "DISAG"], "X"))
+        self.assertEqual("On", g.dark_text(["OFF", "LOW"], "X"))
+        self.assertEqual("Off", g.dark_text(["ON", "AVAIL"], "X"))
+        self.assertIsNone(g.dark_text([], "X"))
+
+    def test_standalone_lamp_gets_a_system_name_and_states(self):
+        out = {c["node_id"]: c for c in g.apply_state(g.finalize_controls([self.lamp("MD11_OVHD_ELEC_AC1_OFF_LT"), self.lamp("MD11_OVHD_HYD_SYS_2_PRESS_LT")]))}
+        ac = out["MD11_OVHD_ELEC_AC1_OFF_LT"]
+        self.assertEqual("AC Bus 1", ac["label"])
+        self.assertEqual([{"var": "MD11_OVHD_ELEC_AC1_OFF_LT", "legend": "OFF", "lit": "Off"}], ac["state"]["lamps"])
+        self.assertEqual("Powered", ac["state"]["dark"])
+        self.assertEqual("Hydraulic System 2 Pressure", out["MD11_OVHD_HYD_SYS_2_PRESS_LT"]["label"])
+
+    def test_lamp_of_a_knob_becomes_a_named_row_not_a_fold(self):
+        knob = ctl("MD11_OVHD_ELEC_EMER_PWR_KB", kind="knob", label="Emergency Power", value_map={"0": "Off", "1": "Armed", "2": "On"}, events={"LEFT_BUTTON_DOWN": 1})
+        out = {c["node_id"]: c for c in g.apply_state(g.finalize_controls([knob, self.lamp("MD11_OVHD_ELEC_EMER_PWR_ON_LT")]))}
+        self.assertNotIn("state", out["MD11_OVHD_ELEC_EMER_PWR_KB"])
+        row = out["MD11_OVHD_ELEC_EMER_PWR_ON_LT"]
+        self.assertEqual("Emergency Power ON light", row["label"])
+        self.assertEqual("On", row["state"]["lamps"][0]["lit"])
+        self.assertEqual("Off", row["state"]["dark"])
+
+    def test_side_panel_source_lamps_are_named(self):
+        out = {c["node_id"]: c for c in g.apply_state(g.finalize_controls([self.lamp("MD11_LSIDE_INP_APPRCAP2_LT"), self.lamp("MD11_RSIDE_INP_EIS_FOAUX_LT")]))}
+        self.assertEqual("Captain ILS Source CAP 2 light", out["MD11_LSIDE_INP_APPRCAP2_LT"]["label"])
+        self.assertEqual("First Officer EIS Source FO AUX light", out["MD11_RSIDE_INP_EIS_FOAUX_LT"]["label"])
+
+
 if __name__ == "__main__":
     unittest.main()
