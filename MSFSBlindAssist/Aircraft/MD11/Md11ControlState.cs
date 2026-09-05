@@ -37,7 +37,7 @@ public static class Md11ControlState
         if (spec.Latch != null && read(spec.Latch.Var) is { } position)
             return position > LitThreshold ? spec.Latch.On : spec.Latch.Off;
 
-        if (!powered && (spec.Lamps.Count > 0 || spec.Dark != null)) return Unpowered;
+        if (!powered && (spec.Lamps.Count > 0 || !string.IsNullOrEmpty(spec.Dark))) return Unpowered;
 
         return string.IsNullOrEmpty(spec.Dark) ? null : spec.Dark;
     }

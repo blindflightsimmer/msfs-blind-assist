@@ -28,6 +28,19 @@ public class Md11ControlStateTests
         Dark = "On",
     };
 
+    // An "APU blank light"-style lamp: it lights up but has no spoken word of its own, e.g. a
+    // legend position with no text painted on it. Paired here with a normal named lamp so both
+    // halves of the empty-Lit clause in rule 1 get exercised.
+    private static Md11StateSpec BlankAndNamedLamp() => new()
+    {
+        Lamps = new()
+        {
+            new() { Var = "BLANK", Legend = "", Lit = "" },
+            new() { Var = "NAMED", Legend = "ON", Lit = "On" },
+        },
+        Dark = "Off",
+    };
+
     private static Func<string, double?> Values(params (string var, double? value)[] pairs)
         => v => pairs.FirstOrDefault(p => p.var == v).value;
 
@@ -44,6 +57,25 @@ public class Md11ControlStateTests
     {
         var spec = new Md11StateSpec { Lamps = new() { new() { Var = "A", Legend = "ON", Lit = "On" }, new() { Var = "B", Legend = "PA", Lit = "On" } } };
         Assert.Equal("On", Md11ControlState.Compose(spec, Values(("A", 1), ("B", 1)), true));
+    }
+
+    [Fact]
+    public void BlankLitWord_ContributesNothingWhenAnotherLegendIsAlsoLit()
+    {
+        // Both lamps are lit, but the blank one has no word to say — only "On" is spoken.
+        var text = Md11ControlState.Compose(BlankAndNamedLamp(),
+            Values(("BLANK", 1), ("NAMED", 1)), powered: true);
+        Assert.Equal("On", text);
+    }
+
+    [Fact]
+    public void BlankLitWord_IsNotSpoken_FallsThroughToTheDarkMeaning()
+    {
+        // Only the blank lamp is lit; it contributes nothing, so rule 1 has no answer and the
+        // dark meaning applies (the control is powered, so this is not "unpowered" either).
+        var text = Md11ControlState.Compose(BlankAndNamedLamp(),
+            Values(("BLANK", 1), ("NAMED", 0)), powered: true);
+        Assert.Equal("Off", text);
     }
 
     [Fact]
@@ -92,6 +124,20 @@ public class Md11ControlStateTests
         Assert.Null(Md11ControlState.Compose(null, Values(), true));
         var empty = new Md11StateSpec();   // no lamps, no latch, no dark
         Assert.Null(Md11ControlState.Compose(empty, Values(), true));
+        // Rule 3 only speaks "unpowered" when the spec actually has a lamp or a dark word to
+        // withhold; an empty spec has nothing to say regardless of power state, so unpowered
+        // must stay a no-opinion null too, not manufacture "unpowered" out of nothing.
+        Assert.Null(Md11ControlState.Compose(empty, Values(), false));
+    }
+
+    [Fact]
+    public void EmptyDark_IsNotADarkWordToWithhold_EvenUnpowered()
+    {
+        // No lamps, no latch, and Dark is "" rather than null — rule 4 already treats an empty
+        // Dark as "nothing to say" (IsNullOrEmpty), so rule 3's gate must agree and not fire
+        // "unpowered" over a blank word it would never actually speak.
+        var spec = new Md11StateSpec { Dark = "" };
+        Assert.Null(Md11ControlState.Compose(spec, Values(), powered: false));
     }
 
     [Fact]
