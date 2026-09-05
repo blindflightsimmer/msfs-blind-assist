@@ -171,6 +171,16 @@ position - which on an aircraft with no flap gauge is your only confirmation tha
 actually took). The current COM frequencies are also in the Read-outs section, Radios panel.
 
 
+THE TRANSPONDER
+
+The Pedestal section's Transponder panel has a Squawk field: type the four digits and press Set
+(or Enter). MSFS Blind Assist presses the aircraft's own keypad for you, then reads the
+transponder back and tells you what it actually shows - "Squawk 1200", or "Squawk entry did not
+take, the transponder reads 5473" if the aircraft refused it. The current code is the panel's
+last row, "Squawk code". The eight digit keys are not listed any more; the field replaces them.
+Ident, Clear, the mode knob, the system select and the TCAS filter are where they were.
+
+
 THE FLAP HANDLE
 
 The MD-11 has ONE handle for flaps and slats together, plus a separate Dial-A-Flap thumbwheel

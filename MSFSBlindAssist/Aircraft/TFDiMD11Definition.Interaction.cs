@@ -44,7 +44,59 @@ public partial class TFDiMD11Definition
     /// </summary>
     public override bool HandleUIVariableSet(string varKey, double value, SimVarDefinition varDef,
         SimConnectManager simConnect, ScreenReaderAnnouncer announcer)
-        => SetControl(varKey, value, simConnect, announcer);
+    {
+        if (varKey == Md11Squawk.SetKey)
+        {
+            SetSquawk(value, simConnect, announcer);
+            return true;   // always ours: the generic path would send the stock XPNDR_SET event
+        }
+        return SetControl(varKey, value, simConnect, announcer);
+    }
+
+    /// <summary>How long the aircraft gets to accept the fourth digit before the read-back.</summary>
+    private const int SquawkCommitMs = 1000;
+
+    /// <summary>
+    /// The typed squawk: validated (a refusal is spoken and nothing is sent), then the panel's
+    /// own digit keys are pressed in order through the paced CEVENT bus, then the stock
+    /// TRANSPONDER CODE:1 is force-read and the result is spoken — the code when it took, and
+    /// what the transponder actually reads when it did not, because an entry that silently
+    /// failed would look exactly like one that worked.
+    /// </summary>
+    private void SetSquawk(double typed, SimConnectManager simConnect, ScreenReaderAnnouncer announcer)
+    {
+        Attach(simConnect);
+        _uiContext ??= SynchronizationContext.Current;
+        if (!Md11Squawk.TryParse(typed, out var code, out var error))
+        {
+            announcer.Announce(error);
+            return;
+        }
+        if (_bus == null) return;
+        _ = SetSquawkAsync(code, simConnect, announcer);
+    }
+
+    private async Task SetSquawkAsync(string code, SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    {
+        try
+        {
+            foreach (var digit in code)
+            {
+                if (!_byNodeId.TryGetValue(Md11Squawk.DigitButton(digit), out var key) || _bus == null) return;
+                await _bus.PressAndSettleAsync(key, settleMs: 150).ConfigureAwait(false);
+            }
+            await Task.Delay(SquawkCommitMs).ConfigureAwait(false);
+            sim.RequestVariable(Md11Squawk.CodeKey, forceUpdate: true);
+            await Task.Delay(400).ConfigureAwait(false);
+            var read = sim.GetCachedVariableValue(Md11Squawk.CodeKey);
+            var readBack = read is double v ? Md11Squawk.Decode(v) : null;
+            OnUiThread(() => announcer.Announce(Md11Squawk.Confirmation(code, readBack)));
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("MD11", $"Squawk entry failed: {ex.Message}");
+        }
+    }
 
     /// <summary>
     /// The actual write, callable without a <see cref="SimVarDefinition"/>.
@@ -544,6 +596,12 @@ public partial class TFDiMD11Definition
         if (Md11Radios.IsComKey(varKey))
         {
             displayText = Md11Radios.Display(value);   // "135.500", or "--" while the radio reads nothing
+            return true;
+        }
+
+        if (varKey == Md11Squawk.CodeKey)
+        {
+            displayText = Md11Squawk.Decode(value);    // BCO16 word -> "5473"
             return true;
         }
 

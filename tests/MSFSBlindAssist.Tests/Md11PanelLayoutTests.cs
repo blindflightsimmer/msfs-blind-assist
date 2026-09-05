@@ -20,8 +20,15 @@ public class Md11PanelLayoutTests
         Assert.Empty(P.MissingKeys);   // a typo in the table would land here
         var all = P.Controls.Values.SelectMany(k => k).ToList();
         Assert.Equal(all.Count, all.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        // Every operable control is a row exactly once — except one that a panel field supersedes
+        // (the transponder keypad, pressed by the typed squawk entry): those are registered, never
+        // listed, and must not surface through the safety net either.
         var operable = Map.Controls.Where(c => c.Kind != Md11Kinds.Annunciator && c.Kind != Md11Kinds.Option).Select(c => c.NodeId);
-        foreach (var key in operable) Assert.Contains(key, all);
+        foreach (var key in operable)
+        {
+            if (Md11PanelLayout.SupersededByEntryField.Contains(key)) Assert.DoesNotContain(key, all);
+            else Assert.Contains(key, all);
+        }
         Assert.DoesNotContain(P.Structure.Values.SelectMany(n => n), n => n.EndsWith("(other)"));
     }
 

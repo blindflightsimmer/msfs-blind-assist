@@ -116,6 +116,29 @@ public partial class TFDiMD11Definition
         foreach (var key in Md11Radios.Keys)
             v[key] = ComRadio(key);
 
+        // ---- Transponder -------------------------------------------------------------
+        // A typed four-digit squawk (text box + Set, the "_SET" convention) replaces the eight
+        // keypad buttons on the panel: HandleUIVariableSet presses the aircraft's own digit keys
+        // in order and reads the stock TRANSPONDER CODE:1 back to confirm. The Name is the stock
+        // XPNDR_SET event only so the registration is a real event; the MD-11 handler always
+        // claims the key first, so that event is never sent on this aircraft.
+        v[Md11Squawk.SetKey] = new SimVarDefinition
+        {
+            Name = "XPNDR_SET",
+            DisplayName = "Squawk",
+            Type = SimVarType.Event,
+            UpdateFrequency = UpdateFrequency.OnRequest,
+        };
+        v[Md11Squawk.CodeKey] = new SimVarDefinition
+        {
+            Name = "TRANSPONDER CODE:1",
+            DisplayName = "Squawk code",
+            Type = SimVarType.SimVar,
+            Units = "BCO16",
+            UpdateFrequency = UpdateFrequency.OnRequest,
+            RenderAsReadOnlyStatus = true,
+        };
+
         return v;
     }
 
@@ -201,6 +224,7 @@ public partial class TFDiMD11Definition
             Log.Warn("MD11", $"{placement.Unplaced.Count} controls are not in the layout table and were appended: {string.Join(", ", placement.Unplaced.Take(10))}");
 
         AddReadoutPanels(placement.Structure, placement.Controls);
+        AddSquawkEntry(placement.Controls);
 
         _panelStructure = placement.Structure;
         _panelControls = placement.Controls;
@@ -214,6 +238,19 @@ public partial class TFDiMD11Definition
     /// least reachable by keyboard even where no hotkey exists (there is no V1/VR/V2 HotkeyAction
     /// in the shared enum — adding one is a follow-up).
     /// </summary>
+    /// <summary>
+    /// The transponder panel's typed entry and read-back are not map controls, so the layout
+    /// table cannot name them: the field goes right after the panel's four selectors (where
+    /// the digit keys used to start), the read-back row last, with the status rows.
+    /// </summary>
+    private static void AddSquawkEntry(Dictionary<string, List<string>> controls)
+    {
+        if (!controls.TryGetValue("Transponder", out var keys)) return;
+        int at = keys.IndexOf("MD11_PED_XPNDR_ABV_BLW_SW");
+        keys.Insert(at < 0 ? 0 : at + 1, Md11Squawk.SetKey);
+        keys.Add(Md11Squawk.CodeKey);
+    }
+
     private static void AddReadoutPanels(
         Dictionary<string, List<string>> structure,
         Dictionary<string, List<string>> controls)

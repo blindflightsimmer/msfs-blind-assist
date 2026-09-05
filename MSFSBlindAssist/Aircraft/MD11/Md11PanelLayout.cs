@@ -326,14 +326,23 @@ public static class Md11PanelLayout
         $"MD11_PED_{p}_OUTER_RADIO_FREQ_SEL_KB", $"MD11_PED_{p}_INNER_RADIO_FREQ_SEL_KB", $"MD11_PED_{p}_RADIO_PNL_XFER_BT",
     };
 
+    // The eight digit keys are deliberately absent: the panel carries a typed squawk field
+    // instead (Md11Squawk.SetKey, inserted after the TCAS filter by the definition), which
+    // presses these keys itself. They stay registered controls, just not rows.
     private static readonly string[] Transponder =
     {
         "MD11_PED_XPNDR_MODE_KB", "MD11_PED_XPNDR_SEL_KB", "MD11_PED_XPNDR_ALT_RPTG_KB", "MD11_PED_XPNDR_ABV_BLW_SW",
-        "MD11_PED_XPNDR_0_BT", "MD11_PED_XPNDR_1_BT", "MD11_PED_XPNDR_2_BT", "MD11_PED_XPNDR_3_BT",
-        "MD11_PED_XPNDR_4_BT", "MD11_PED_XPNDR_5_BT", "MD11_PED_XPNDR_6_BT", "MD11_PED_XPNDR_7_BT",
         "MD11_PED_XPNDR_CLR_BT", "MD11_PED_XPNDR_IDENT_BT", "MD11_PED_XPNDR_TEST_BT",
         "MD11_PED_XPNDR_FAIL_LT",
     };
+
+    /// <summary>
+    /// Controls a panel row supersedes: pressed by the app on the pilot's behalf, never listed,
+    /// and exempt from the safety net that appends every unlisted control. Today the transponder
+    /// keypad, driven by the typed squawk field.
+    /// </summary>
+    public static readonly HashSet<string> SupersededByEntryField =
+        new(Md11Squawk.DigitButtons, StringComparer.OrdinalIgnoreCase);
 
     private static readonly string[] WeatherRadar =
     {
@@ -544,6 +553,7 @@ public static class Md11PanelLayout
         foreach (var c in map.Controls)
         {
             if (c.Kind is Md11Kinds.Annunciator or Md11Kinds.Option || placed.Contains(c.NodeId)) continue;
+            if (SupersededByEntryField.Contains(c.NodeId)) continue;
             unplaced.Add(c.NodeId);
             var sectionName = SectionForArea(c.Area);
             var panelName = $"{c.Area} (other)";
