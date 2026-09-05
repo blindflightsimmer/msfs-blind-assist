@@ -40,6 +40,7 @@ public partial class TFDiMD11Definition
     }
 
     private readonly Md11AnnouncementGate _gate = new();
+    private readonly Md11ComAnnouncer _com = new();   // COM 1-3 active/standby, baseline-first
 
     /// <summary>
     /// The UI thread's context, captured by <see cref="SetControl"/> the first time it runs (every
@@ -252,6 +253,7 @@ public partial class TFDiMD11Definition
         _lampLastVal.Clear();
         _lampChangeTicks.Clear();
         _gate.Reset();
+        _com.Reset();
         _announceGeneration++;   // drops any dark transition still waiting out its settle
     }
 }

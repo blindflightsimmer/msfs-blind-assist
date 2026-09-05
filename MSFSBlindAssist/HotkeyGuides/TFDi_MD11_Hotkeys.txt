@@ -164,9 +164,11 @@ Ctrl+M opens the monitor manager. Every announcing item is listed by name, sorte
 alphabetically; uncheck one to stop it announcing. Your choices are remembered between
 sessions.
 
-Also announced as they change: autopilot engagement, APU state, and flap movement ("flaps
-moving" then the new position - which on an aircraft with no flap gauge is your only
-confirmation that a selection actually took).
+Also announced as they change: autopilot engagement, APU state, the COM radios ("COM 1 active
+135.500" - active and standby for COM 1, 2 and 3, so a tuner click and a frequency swap both read
+back; each radio has its own line in Ctrl+M), and flap movement ("flaps moving" then the new
+position - which on an aircraft with no flap gauge is your only confirmation that a selection
+actually took). The current COM frequencies are also in the Read-outs section, Radios panel.
 
 
 THE FLAP HANDLE

@@ -108,8 +108,28 @@ public partial class TFDiMD11Definition
             [0] = "set", [1] = "moving",
         });
 
+        // ---- COM radios --------------------------------------------------------------
+        // TFDi's radio panel drives the simulator's own COM radios (COM1 read 135.500 live,
+        // 2026-09-06), so the stock variables ARE the frequency on this aircraft. Announced on
+        // change from ProcessSimVarUpdate ("COM 1 active 135.500"), standby included so a tuner
+        // click and an XFER both read back; the Ctrl+M rows come with IsAnnounced.
+        foreach (var key in Md11Radios.Keys)
+            v[key] = ComRadio(key);
+
         return v;
     }
+
+    /// <summary>One stock COM frequency, in kHz, batch-covered and announced on change.</summary>
+    private static SimVarDefinition ComRadio(string key) => new()
+    {
+        Name = Md11Radios.SimVarName(key),
+        DisplayName = Md11Radios.DisplayName(key),
+        Type = SimVarType.SimVar,
+        Units = "kHz",
+        UpdateFrequency = UpdateFrequency.Continuous,
+        IsAnnounced = true,
+        RenderAsReadOnlyStatus = true,
+    };
 
     /// <summary>A silent cached read-out: continuously updated, never narrated on its own.</summary>
     private static SimVarDefinition Export(string name, string display) => new()
@@ -215,10 +235,11 @@ public partial class TFDiMD11Definition
             "MD11_OVHD_TANK_1_VAL", "MD11_OVHD_TANK_2_VAL", "MD11_OVHD_TANK_3_VAL",
             "MD11_OVHD_TANK_AUX_VAL", "MD11_OVHD_TANK_TAIL_VAL",
         };
+        controls["Radios"] = new List<string>(Md11Radios.Keys);
 
         structure["Read-outs"] = new List<string>
         {
-            "V-Speeds", "Minimums and Altimeters", "Autoflight Status", "APU Status", "Fuel Quantity",
+            "V-Speeds", "Minimums and Altimeters", "Autoflight Status", "APU Status", "Fuel Quantity", "Radios",
         };
     }
 }

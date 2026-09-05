@@ -410,6 +410,15 @@ public partial class TFDiMD11Definition
                 return true;
         }
 
+        // COM radios: baseline-first and airband-gated ("COM 1 active 135.500"). Consumed here so
+        // the generic path never narrates the raw kHz; Ctrl+M mutes through MainForm's wrap.
+        if (Md11Radios.IsComKey(varName))
+        {
+            var com = _com.OnUpdate(varName, value);
+            if (com != null) announcer.Announce(com);
+            return true;
+        }
+
         // Silent numeric read-outs: cached for the hotkeys, never narrated on change. Consuming
         // them here suppresses the generic auto-announce (an N1/fuel stream spoken every second).
         // The single exception is the take-off cue: engine N1 first reaching 70% (ATS takeover).
@@ -530,6 +539,12 @@ public partial class TFDiMD11Definition
             case Md11FlapSystem.DialKey:
                 displayText = $"{_flaps.DegreesFor(value).ToString("0", CultureInfo.InvariantCulture)} degrees";
                 return true;
+        }
+
+        if (Md11Radios.IsComKey(varKey))
+        {
+            displayText = Md11Radios.Display(value);   // "135.500", or "--" while the radio reads nothing
+            return true;
         }
 
         return base.TryGetDisplayOverride(varKey, value, out displayText);
