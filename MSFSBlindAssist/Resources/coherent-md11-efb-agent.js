@@ -164,8 +164,61 @@
     // BUTTON
     o.kind = 'button';
     o.clickable = true;
-    o.text = A.txt(el) || el.getAttribute('aria-label') || el.getAttribute('title') || '';
+    o.text = A.txt(el) || el.getAttribute('aria-label') || el.getAttribute('title') || A.iconButtonName(el) || '';
     return o;
+  };
+
+  // ---------------------------------------------------------------------------------
+  // icon-only buttons
+  // ---------------------------------------------------------------------------------
+
+  // An icon-only button (an SVG child, no text, no aria-label, no title) says NOTHING to a screen
+  // reader — and, unnamed, it was dropped from the scrape altogether. The EFB's own Select
+  // component (src/components/Select.tsx) is built from exactly two of them: a DISABLED input
+  // showing the current choice, flanked by a ChevronUp and a ChevronDown button that step
+  // through the options. That is the departure and arrival runway pickers on the Perf page,
+  // and Thrust Setting, Anti-Ice, Runway Condition, Autobrake and Reversers besides — the
+  // pilot heard "Runway: 09L" and had no control that could ever change it (2026-09-05).
+  //
+  // lucide-react stamps the icon's name on the SVG's class ("lucide lucide-chevron-up"); that
+  // class is the only name these buttons carry anywhere in the DOM.
+  A.ICON_WORDS = {
+    'chevron-up': 'previous', 'chevron-down': 'next',
+    'chevron-left': 'previous', 'chevron-right': 'next',
+    'x': 'close', 'search': 'search', 'delete': 'delete',
+    'zoom-in': 'zoom in', 'zoom-out': 'zoom out'
+  };
+
+  A.iconName = function (el) {
+    var svgs = el.getElementsByTagName('svg');
+    for (var i = 0; i < svgs.length; i++) {
+      // SVG className is an SVGAnimatedString, not a string — read the attribute.
+      var cls = svgs[i].getAttribute('class') || '';
+      var m = /(?:^|\s)lucide-([a-z0-9-]+)/.exec(cls);
+      if (m && m[1]) return m[1];
+    }
+    return '';
+  };
+
+  // A stepper button is named after the field it steps and carries the CURRENT choice —
+  // "Runway next (now 09L)" — so the pilot hears what will change and where it stands. The
+  // "(now …)" suffix is dynamic: the shell strips it from its reconcile key (so the button is
+  // patched in place, keeping focus on it) and speaks the new label after the pilot's own
+  // press, which is how "Runway next (now 27R)" reaches them without hunting for the field.
+  A.iconButtonName = function (el) {
+    var icon = A.iconName(el);
+    if (!icon) return '';
+    var word = A.ICON_WORDS[icon] || icon.replace(/-/g, ' ');
+    var p = el.parentElement;
+    if (p && (icon === 'chevron-up' || icon === 'chevron-down')) {
+      var inputs = p.getElementsByTagName('input');
+      if (inputs.length === 1) {
+        var field = A.labelFor(inputs[0]);
+        var cur = String(inputs[0].value == null ? '' : inputs[0].value).replace(/\s+/g, ' ').trim();
+        if (field) return field + ' ' + word + (cur ? ' (now ' + cur + ')' : '');
+      }
+    }
+    return word.charAt(0).toUpperCase() + word.slice(1);
   };
 
   // Returns {text, src}: the field's label, and the ELEMENT it was taken from (null when the label

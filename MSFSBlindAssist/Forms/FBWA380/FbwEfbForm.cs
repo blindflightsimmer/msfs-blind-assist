@@ -851,15 +851,21 @@ public class FbwEfbForm : Form
   // key is stabilised.
   function baseLabel(t) {
     return (t || '')
+      .replace(/\s*\(now [^)]*\)\s*$/i, '')     // a stepper's current choice: 'Runway next (now 09L)'
       .replace(/\s*\((active|called|selected|current page|expanded|collapsed)\)\s*$/i, '')
       .replace(/:\s*(placed|not placed)\s*$/i, '');
   }
   function keyOf(it) { return rk(it) + '|' + baseLabel(it.text || ''); }
 
+  // The control the pilot activated last, and when: a label that changes on THAT node within
+  // a few seconds is the outcome of their own press (a stepper moving to the next runway), and
+  // is spoken — a value patched silently into a focused button is a change nobody hears.
+  var lastClick = { node: null, at: 0 };
   function onActivate(e) {
     var idx = this.getAttribute('data-idx');
     if (this.getAttribute('data-disabled') === 'true') { announce('Unavailable'); return; }
     announce('Activating ' + (this.textContent || ''));
+    lastClick.node = this; lastClick.at = Date.now();
     post({ type: 'click', idx: idx });
   }
 
@@ -983,7 +989,11 @@ public class FbwEfbForm : Form
       var label = text || (type === 'btn' ? '(button)' : '(link)');
       if (it.disabled) { c.setAttribute('data-disabled', 'true'); label += ', dimmed'; }
       else if (c.getAttribute('data-disabled') === 'true') { c.removeAttribute('data-disabled'); }
+      var before = c.textContent;
       setText(c, label);
+      // The pilot's own press changed this control's label (a stepper now shows its next
+      // choice): say so, once, while they are still on it. Anything else patches silently.
+      if (before !== label && c === lastClick.node && document.activeElement === c && Date.now() - lastClick.at < 5000) announce(label);
       return;
     }
     setText(c, text);   // plain text <p>
