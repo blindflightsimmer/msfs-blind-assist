@@ -23,6 +23,20 @@ public class Md11DefinitionStateTests
         Assert.Contains("MD11_OVHD_ELEC_BATT_OFF_LT", d.StateVariables!);
         Assert.Contains("MD11_OVHD_ELEC_BATT_BT", d.StateVariables!);
         Assert.Contains(TFDiMD11Definition.DcPowerKey, d.StateVariables!);
+        Assert.Contains(TFDiMD11Definition.Dc1BusOffKey, d.StateVariables!);
+    }
+
+    [Fact]
+    public void EveryStateBearingRow_WatchesBothHalvesOfThePowerGate()
+    {
+        // The gate is volts AND the DC bus 1 OFF lamp, so a change in either can flip every
+        // composed state on a visible panel to "unpowered" and back. MainForm's reverse index
+        // only relabels rows that named the variable as a dependency.
+        var missing = Vars.Where(kv => kv.Value.StateVariables != null)
+            .Where(kv => !kv.Value.StateVariables!.Contains(TFDiMD11Definition.DcPowerKey)
+                      || !kv.Value.StateVariables!.Contains(TFDiMD11Definition.Dc1BusOffKey))
+            .Select(kv => kv.Key).ToList();
+        Assert.Empty(missing);
     }
 
     [Fact]
@@ -52,6 +66,17 @@ public class Md11DefinitionStateTests
         Assert.True(d.IsAnnounced);
         Assert.True(d.RenderAsReadOnlyStatus);
         Assert.Contains(TFDiMD11Definition.DcPowerKey, d.StateVariables!);
+    }
+
+    [Fact]
+    public void TheDcBusOneLamp_IsAnOrdinaryRegisteredAnnunciator()
+    {
+        // Half the power gate, and it must stay a batch-covered lamp: the gate reads it from the
+        // same cache every other lamp lands in, so it costs no data definition of its own.
+        var d = Vars[TFDiMD11Definition.Dc1BusOffKey];
+        Assert.Equal(UpdateFrequency.Continuous, d.UpdateFrequency);
+        Assert.True(d.IsAnnounced);
+        Assert.False(d.ExcludeFromBatch);
     }
 
     [Fact]

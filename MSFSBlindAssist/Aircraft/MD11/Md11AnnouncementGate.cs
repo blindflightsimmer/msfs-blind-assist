@@ -42,6 +42,31 @@ public sealed class Md11AnnouncementGate
         return true;
     }
 
+    /// <summary>
+    /// What a lit→dark lamp transition says, decided at the moment its deferral FIRES rather than
+    /// when the lamp went out (spec §3.7, amended 2026-09-05). Returns the sentence to speak, or
+    /// null for silence.
+    ///
+    /// Two things can only be known late. First, POWER: the 528 continuous lamps ride two
+    /// SimConnect batches, and the DC bus 1 lamp the gate reads sits in a different batch from the
+    /// hydraulic and pneumatic lamps, so at shutdown a lamp can go dark a beat before the gate
+    /// learns the busses died. Speaking on the spot narrated the whole panel losing power one
+    /// control at a time — "Tank 1 Fuel Pumps: On", "Pack 1: On", … — which is exactly the
+    /// per-control power narration §3.7 forbids. Second, the CURRENT STATE: a control with several
+    /// legends may still have one lit, and the answer worth speaking is what it reads NOW, not
+    /// which lamp moved.
+    ///
+    /// So the caller re-composes at fire time and hands the result here. Unpowered drops it;
+    /// otherwise the normal background dedup decides, which is what keeps a lamp that relit inside
+    /// the deferral from being announced twice.
+    /// </summary>
+    public string? SpeakDarkTransition(string owner, string? composedNow, bool poweredNow, long nowMs)
+    {
+        if (!poweredNow) return null;                        // the panel lost power, not the system
+        if (string.IsNullOrEmpty(composedNow)) return null;   // nothing to say about this control
+        return ShouldSpeakBackground(owner, composedNow, nowMs) ? composedNow : null;
+    }
+
     public string Feedback(string owner, string text)
     {
         _lastSpoken[owner] = text;

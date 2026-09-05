@@ -59,6 +59,53 @@ public class Md11AnnouncementGateTests
     }
 
     [Fact]
+    public void DarkTransition_WhileUnpowered_IsSilent()
+    {
+        // The normal shutdown order (external power off, battery still on) takes every OFF-legend
+        // lamp on the DC busses dark at once. Speaking each one's dark meaning would narrate the
+        // panel losing power a control at a time: "Tank 1 Fuel Pumps: On", "Pack 1: On", …
+        var g = new Md11AnnouncementGate();
+        Assert.Null(g.SpeakDarkTransition("FUEL_PUMP_1", "On", poweredNow: false, nowMs: 10_000));
+    }
+
+    [Fact]
+    public void DarkTransition_ThatLosesPowerBeforeItFires_IsDropped()
+    {
+        // The lamps ride two SimConnect batches, so a batch-2 lamp can go dark while the gate's
+        // batch-1 DC bus lamp still says "powered". The verdict is taken at fire time, not at the
+        // moment the lamp went out — by then the gate has caught up.
+        var g = new Md11AnnouncementGate();
+        Assert.Null(g.SpeakDarkTransition("PACK_1", "On", poweredNow: false, nowMs: 11_500));
+        Assert.True(g.ShouldSpeakBackground("PACK_1", "On", 20_000));   // and nothing was recorded
+    }
+
+    [Fact]
+    public void DarkTransition_StillPoweredAtFireTime_SpeaksOnce()
+    {
+        var g = new Md11AnnouncementGate();
+        Assert.Equal("On", g.SpeakDarkTransition("PACK_1", "On", poweredNow: true, nowMs: 11_500));
+        Assert.Null(g.SpeakDarkTransition("PACK_1", "On", poweredNow: true, nowMs: 13_000));
+    }
+
+    [Fact]
+    public void DarkTransition_OfALampThatRelitFirst_DoesNotRepeatTheRelight()
+    {
+        // Lamp out, then back on inside the settle: the relight speaks immediately, and the
+        // deferred verdict re-composes the CURRENT (lit) state, which the dedup already holds.
+        var g = new Md11AnnouncementGate();
+        Assert.True(g.ShouldSpeakBackground("PACK_1", "Off", 10_500));
+        Assert.Null(g.SpeakDarkTransition("PACK_1", "Off", poweredNow: true, nowMs: 11_500));
+    }
+
+    [Fact]
+    public void DarkTransition_WithNothingToSay_IsSilent()
+    {
+        var g = new Md11AnnouncementGate();
+        Assert.Null(g.SpeakDarkTransition("X", null, poweredNow: true, nowMs: 1));
+        Assert.Null(g.SpeakDarkTransition("X", "", poweredNow: true, nowMs: 2));
+    }
+
+    [Fact]
     public void Reset_ForgetsEverything()
     {
         var g = new Md11AnnouncementGate();

@@ -79,8 +79,15 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     private readonly Md11FlapSystem _flaps;
     private readonly Dictionary<string, Md11Control> _byNodeId;
 
-    /// <summary>Stock DC bus voltage: the "annunciators have power" gate (spec §3.4). Silent; read from the cache by the hook.</summary>
+    /// <summary>Stock DC bus voltage: half of the "annunciators have power" gate. Silent; read from the cache by the hook.</summary>
     public const string DcPowerKey = "MD11_DC_BUS_VOLTAGE";
+
+    /// <summary>
+    /// The other half of that gate: DC bus 1's own OFF annunciator, already registered as an
+    /// ordinary lamp. Lit means the DC busses that feed the systems annunciators are dead, which
+    /// is the normal battery-only state at 24 V — see <see cref="Md11ControlState.IsPowered"/>.
+    /// </summary>
+    public const string Dc1BusOffKey = "MD11_OVHD_ELEC_DC1_BUS_OFF_LT";
 
     /// <summary>L:var name → variable KEY (a lamp's node id is its key; a few lamps light from a foreign VIS_VAR).</summary>
     private readonly Dictionary<string, string> _keyByStateVar = new(StringComparer.OrdinalIgnoreCase);
@@ -140,7 +147,11 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
         var deps = new List<string>();
         foreach (var lamp in c.State.Lamps) deps.Add(KeyFor(lamp.Var));
         if (c.State.Latch != null) deps.Add(KeyFor(c.State.Latch.Var));
+        // Both halves of the power gate: a change in either can turn every composed state on the
+        // visible panel into "unpowered" or back, and MainForm's reverse index only relabels a row
+        // whose dependencies it was told about.
         deps.Add(DcPowerKey);
+        deps.Add(Dc1BusOffKey);
         return deps;
     }
 
@@ -411,7 +422,7 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                     ValueDescriptions = new Dictionary<double, string> { [0] = dark, [1] = lit },
                     RenderAsReadOnlyStatus = true,
                     ExcludeFromMonitorManager = string.IsNullOrEmpty(lit),   // a lamp with nothing to say (APU BLANK)
-                    StateVariables = new[] { c.NodeId, DcPowerKey },
+                    StateVariables = new[] { c.NodeId, DcPowerKey, Dc1BusOffKey },
                 };
             }
 

@@ -149,14 +149,32 @@ public class Md11ControlStateTests
     }
 
     [Theory]
-    [InlineData(null, false)]
-    [InlineData(0.0, false)]
-    [InlineData(19.9, false)]
-    [InlineData(20.0, true)]
-    [InlineData(24.0, true)]   // measured: battery or external power on
-    public void IsPowered_UsesTheTwentyVoltGate(double? volts, bool expected)
+    // volts, DC bus 1 OFF lamp, powered
+    [InlineData(null, null, false)]   // nothing delivered yet
+    [InlineData(0.0, 0.0, false)]     // cold and dark
+    [InlineData(19.9, 0.0, false)]
+    [InlineData(24.0, 1.0, false)]    // measured: battery only — 24 V, but DC bus 1 annunciated off
+    [InlineData(24.0, null, false)]   // the lamp has not arrived; unknown means unpowered
+    [InlineData(20.0, 0.0, true)]
+    [InlineData(24.0, 0.0, true)]     // measured: external, APU or generator power
+    public void IsPowered_NeedsALiveBusAndDcBusOneNotAnnunciatedOff(double? volts, double? dc1BusOff, bool expected)
     {
-        Assert.Equal(expected, Md11ControlState.IsPowered(volts));
+        // Volts alone say only that something is on: on the battery the main bus already reads
+        // 24 V while the DC busses feeding the systems annunciators are dead, so every OFF-legend
+        // lamp reads 0 and a volts-only gate composed "Tank 1 Fuel Pumps: On" for a pump that was
+        // off (measured live, 2026-09-05).
+        Assert.Equal(expected, Md11ControlState.IsPowered(volts, dc1BusOff));
+    }
+
+    [Fact]
+    public void OnBatteryAlone_ALampOnlyControlReadsUnpowered_ButALatchedOneStillAnswers()
+    {
+        // The two halves of the battery-only picture, together: 24 V, DC bus 1 OFF lit.
+        bool powered = Md11ControlState.IsPowered(24.0, 1.0);
+        Assert.Equal(Md11ControlState.Unpowered, Md11ControlState.Compose(ExtPower(),
+            Values(("MD11_OVHD_ELEC_EXT_PWR_AVAIL_LT", 0), ("MD11_OVHD_ELEC_EXT_PWR_ON_LT", 0)), powered));
+        Assert.Equal("On", Md11ControlState.Compose(Battery(),
+            Values(("MD11_OVHD_ELEC_BATT_OFF_LT", 0), ("MD11_OVHD_ELEC_BATT_BT", 1)), powered));
     }
 
     [Fact]

@@ -29,6 +29,9 @@ public partial class TFDiMD11Definition
     private const long LampFlapWindowMs = 5000;
     private const int LampFlapThreshold = 3;   // 3+ transitions inside the window ⇒ blinking
 
+    /// <summary>Lamps are 0/1 booleans arriving as doubles; anything closer than this is the same value.</summary>
+    private const double LampEpsilon = 0.0001;
+
     // =================================================================================
     // Writes
     // =================================================================================
@@ -443,7 +446,7 @@ public partial class TFDiMD11Definition
             _lampLastVal[varName] = value;
             return false;                                   // first sight — baseline-first, let it through
         }
-        if (Math.Abs(last - value) < 0.0001) return false;  // unchanged — downstream already dedups
+        if (Math.Abs(last - value) < LampEpsilon) return false;  // unchanged — downstream already dedups
         _lampLastVal[varName] = value;
 
         long now = Environment.TickCount64;
