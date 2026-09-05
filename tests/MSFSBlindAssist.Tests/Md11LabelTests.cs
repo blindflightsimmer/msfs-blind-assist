@@ -33,6 +33,20 @@ public class Md11LabelTests
     }
 
     [Fact]
+    public void NoTwoLamps_ShareASpokenName()
+    {
+        // Every lamp is a Ctrl+M row and a status row; two rows with one name cannot be told
+        // apart by a screen reader (the Captain's and First Officer's master caution lights
+        // were both "Master Caution CAUT light" until LAMP_NAME_OVERRIDES told them apart).
+        var dupes = Map.Controls.Where(c => c.Kind == Md11Kinds.Annunciator)
+            .GroupBy(c => c.DisplayLabel, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => $"{g.Key}: {string.Join(", ", g.Select(c => c.NodeId))}")
+            .ToList();
+        Assert.Empty(dupes);
+    }
+
+    [Fact]
     public void EveryGuard_IsNamedAfterItsControl_AndNeverCollidesWithIt()
     {
         foreach (var g in Map.Controls.Where(c => c.Kind == Md11Kinds.Guard))

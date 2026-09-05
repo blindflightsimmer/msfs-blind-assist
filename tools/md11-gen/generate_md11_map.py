@@ -674,8 +674,44 @@ def _owner_by_stem(lamp_id, non_buttons):
     return None, None
 
 
+# Labels for lamps whose generated name would collide with another lamp's. Every lamp is a
+# Ctrl+M row (and a status row), and two rows with one name cannot be told apart by a screen
+# reader — the Captain's and First Officer's master caution lights were both "Master Caution
+# CAUT light". Discriminator first, per the house rule. The LTS panel's bare `_LT` vars drive
+# the BUTTON's own emissive (TFDi's MD11_PA_Lights_Template binds MD11_OVHD_LTS_PA_LT to the PA
+# button node), not a legend of their own, so they are named as the button's light; the
+# `_CALL_LT` / `_ON_LT` annunciators beside them keep their legend names. Only the LABEL is
+# curated here — the lamp's legend and lit word (its share of the composed state) are untouched.
+LAMP_NAME_OVERRIDES = {
+    "MD11_GSL_MST_CAUT_LT": "Captain Master Caution CAUT light",
+    "MD11_GSR_MST_CAUT_LT": "First Officer Master Caution CAUT light",
+    "MD11_GSL_MST_WRN_LT": "Captain Master Warning WARN light",
+    "MD11_GSR_MST_WRN_LT": "First Officer Master Warning WARN light",
+    "MD11_GSL_GS_INHIBIT_LT": "Captain Glideslope Inhibit INHIBIT light",
+    "MD11_GSR_GS_INHIBIT_LT": "First Officer Glideslope Inhibit INHIBIT light",
+    "MD11_CTR_AUX_HYD_PUMP_LT": "Center Panel Auxiliary Hydraulic Pump ON light",
+    "MD11_OVHD_LTS_PA_LT": "Passenger Addressing light",
+    "MD11_OVHD_LTS_FWD_ATTND_LT": "Forward Attendant Call light",
+    "MD11_OVHD_LTS_MID_ATTND_LT": "Middle Attendant Call light",
+    "MD11_OVHD_LTS_OVW_ATTND_LT": "Overwing Attendant Call light",
+    "MD11_OVHD_LTS_AFT_ATTND_LT": "Aft Attendant Call light",
+    "MD11_OVHD_LTS_MAINT_INTP_LT": "Maintenance Interphone light",
+    "MD11_OVHD_LTS_MECH_LT": "Mechanic Call light",
+    "MD11_OVHD_LTS_CREW_REST_LT": "Crew Rest Call light",
+}
+
+
 def lamp_name(lamp, owners, non_buttons):
-    """(label, lit, dark, label_source) for one lamp."""
+    """(label, lit, dark, label_source) for one lamp; LAMP_NAME_OVERRIDES wins the label only."""
+    label, lit, dark, source = _lamp_name(lamp, owners, non_buttons)
+    nid = lamp["node_id"]
+    if nid in LAMP_NAME_OVERRIDES:
+        return LAMP_NAME_OVERRIDES[nid], lit, dark, "curated"
+    return label, lit, dark, source
+
+
+def _lamp_name(lamp, owners, non_buttons):
+    """The generated (label, lit, dark, label_source) for one lamp, before LAMP_NAME_OVERRIDES."""
     nid = lamp["node_id"]
     if nid in owners:
         owner, legend = owners[nid]
@@ -734,6 +770,17 @@ def apply_state(controls):
         if dark is not None:
             state["dark"] = dark
         c["state"] = state
+    # Two lamps with one spoken name are two Ctrl+M rows a screen reader cannot tell apart.
+    # Refuse to generate rather than ship the collision — add a LAMP_NAME_OVERRIDES entry.
+    seen = {}
+    for c in controls:
+        if c["kind"] != "annun":
+            continue
+        if c["label"] in seen:
+            raise ValueError(f"lamp label collision: {c['label']!r} on {seen[c['label']]} and {c['node_id']} "
+                             f"— add a LAMP_NAME_OVERRIDES entry")
+        seen[c["label"]] = c["node_id"]
+
     return controls
 
 

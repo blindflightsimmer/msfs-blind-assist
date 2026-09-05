@@ -242,6 +242,23 @@ class StateTests(unittest.TestCase):
         self.assertEqual("Powered", ac["state"]["dark"])
         self.assertEqual("Hydraulic System 2 Pressure", out["MD11_OVHD_HYD_SYS_2_PRESS_LT"]["label"])
 
+    def test_colliding_lamp_names_are_curated_apart(self):
+        out = {c["node_id"]: c for c in g.apply_state(g.finalize_controls(
+            [self.lamp("MD11_GSL_MST_CAUT_LT"), self.lamp("MD11_GSR_MST_CAUT_LT")]))}
+        self.assertEqual("Captain Master Caution CAUT light", out["MD11_GSL_MST_CAUT_LT"]["label"])
+        self.assertEqual("First Officer Master Caution CAUT light", out["MD11_GSR_MST_CAUT_LT"]["label"])
+        self.assertEqual("curated", out["MD11_GSL_MST_CAUT_LT"]["label_source"])
+        # The override touches the label only: the legend and lit word still come from the tables.
+        self.assertEqual("CAUT", out["MD11_GSL_MST_CAUT_LT"]["state"]["lamps"][0]["legend"])
+
+    def test_two_lamps_with_one_spoken_name_refuse_to_generate(self):
+        from unittest import mock
+        # Force a collision through the override table itself: two different lamps curated onto
+        # one name must stop the generator, not ship as two indistinguishable Ctrl+M rows.
+        with mock.patch.dict(g.LAMP_NAME_OVERRIDES, {"MD11_A_LT": "Same light", "MD11_B_LT": "Same light"}):
+            with self.assertRaises(ValueError):
+                g.apply_state(g.finalize_controls([self.lamp("MD11_A_LT"), self.lamp("MD11_B_LT")]))
+
     def test_lamp_of_a_knob_becomes_a_named_row_not_a_fold(self):
         knob = ctl("MD11_OVHD_ELEC_EMER_PWR_KB", kind="knob", label="Emergency Power", value_map={"0": "Off", "1": "Armed", "2": "On"}, events={"LEFT_BUTTON_DOWN": 1})
         out = {c["node_id"]: c for c in g.apply_state(g.finalize_controls([knob, self.lamp("MD11_OVHD_ELEC_EMER_PWR_ON_LT")]))}
