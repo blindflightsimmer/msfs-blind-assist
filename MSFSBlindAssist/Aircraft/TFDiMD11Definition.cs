@@ -105,6 +105,16 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
         _map = Md11ControlMap.Load();
         _byNodeId = new Dictionary<string, Md11Control>(StringComparer.OrdinalIgnoreCase);
         foreach (var c in _map.Controls) _byNodeId[c.NodeId] = c;
+        // TWO PASSES, and the order is load-bearing. A control whose state var IS its own node id
+        // owns that name outright — its own definition is the one registered under it. Only then
+        // may a FOREIGN control claim a name it merely reads. First-wins alone let map order decide:
+        // MD11_OVHD_PNEU_ECON_BT's tooltip reads the air-system selector's var, so it too carries
+        // state_var = MD11_OVHD_PNEU_SYSTEM_SEL_BT and, sorting first, claimed it — pointing the
+        // selector's own latch at a write-only (UpdateFrequency.Never) def that is never registered,
+        // so "Air System Mode" could never say Auto or Manual.
+        foreach (var c in _map.Controls)
+            if (!string.IsNullOrEmpty(c.StateVar) && string.Equals(c.StateVar, c.NodeId, StringComparison.OrdinalIgnoreCase))
+                _keyByStateVar[c.StateVar] = c.NodeId;
         foreach (var c in _map.Controls)
             if (!string.IsNullOrEmpty(c.StateVar) && !_keyByStateVar.ContainsKey(c.StateVar))
                 _keyByStateVar[c.StateVar] = c.NodeId;

@@ -90,6 +90,41 @@ public class Md11DefinitionStateTests
     }
 
     [Fact]
+    public void EveryStateDependency_ResolvesToAReadableVariable()
+    {
+        // A StateVariables entry is a KEY MainForm force-reads and watches. A key that is not
+        // registered, or registered UpdateFrequency.Never (write-only, zero data definitions), is
+        // never read — GetCachedVariableValue answers null forever and Compose silently skips the
+        // rule that key was there to feed. That is how MD11_OVHD_PNEU_SYSTEM_SEL_BT's own latch
+        // resolved to MD11_OVHD_PNEU_ECON_BT (which merely READS the selector's var and sorts
+        // first) and "Air System Mode" could never say Auto or Manual.
+        var unreadable = new List<string>();
+        foreach (var (key, d) in Vars)
+        {
+            if (d.StateVariables == null) continue;
+            foreach (var dep in d.StateVariables)
+            {
+                if (!Vars.TryGetValue(dep, out var target))
+                    unreadable.Add($"{key} → {dep} (not registered)");
+                else if (target.UpdateFrequency == UpdateFrequency.Never)
+                    unreadable.Add($"{key} → {dep} (write-only)");
+            }
+        }
+        Assert.Empty(unreadable);
+    }
+
+    [Fact]
+    public void AirSystemSelector_ReadsItsOwnLatch_NotTheEconButtonsCopyOfIt()
+    {
+        // The regression above, named: ECON's tooltip reads the selector's var, so both controls
+        // carry state_var = MD11_OVHD_PNEU_SYSTEM_SEL_BT. The selector owns its own name.
+        var d = Vars["MD11_OVHD_PNEU_SYSTEM_SEL_BT"];
+        Assert.Equal(UpdateFrequency.OnRequest, d.UpdateFrequency);
+        Assert.Contains("MD11_OVHD_PNEU_SYSTEM_SEL_BT", d.StateVariables!);
+        Assert.DoesNotContain("MD11_OVHD_PNEU_ECON_BT", d.StateVariables!);
+    }
+
+    [Fact]
     public void BatchCoveredNames_AreUnique()
     {
         // Two batch entries with one Name shift every later slot (VarNameCollision invariant).
