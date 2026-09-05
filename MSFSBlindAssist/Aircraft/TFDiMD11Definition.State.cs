@@ -75,8 +75,9 @@ public partial class TFDiMD11Definition
     private const int DarkSettleMs = 1500;
 
     /// <summary>
-    /// Bumped by <see cref="ResetAnnouncementBaselines"/> so a deferred dark transition scheduled
-    /// before an aircraft switch or a reconnect cannot speak the old session's state afterwards.
+    /// Bumped by <see cref="ResetAnnouncementBaselines"/> (a reconnect) and by
+    /// <see cref="Dispose"/> (an aircraft switch disposes the outgoing definition) so a deferred
+    /// dark transition scheduled before either cannot speak the old session's state afterwards.
     /// </summary>
     private int _announceGeneration;
 

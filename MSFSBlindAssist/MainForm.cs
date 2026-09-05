@@ -577,6 +577,11 @@ public partial class MainForm : Form
 
         simConnectManager = new SimConnectManager(this.Handle);
         simConnectManager.CurrentAircraft = currentAircraft;
+        // The saved-aircraft path never goes through SwitchAircraft, so the MD-11's Attach (the
+        // SimConnect handle and the UI SynchronizationContext its control-state hook needs) has
+        // to happen here as well — otherwise every panel row opens without a state, and nothing
+        // is described until the pilot's first press. Idempotent: a later switch re-attaches.
+        if (currentAircraft is TFDiMD11Definition startupMd11) startupMd11.Attach(simConnectManager);
         simConnectManager.ConnectionStatusChanged += OnConnectionStatusChanged;
         // A calc path that never came up is a DEGRADED session on FBW aircraft — overhead
         // switches can silently revert and the FCU can ignore commands. Say so once, rather

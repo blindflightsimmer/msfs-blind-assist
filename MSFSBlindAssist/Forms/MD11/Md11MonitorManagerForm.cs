@@ -38,9 +38,12 @@ public partial class Md11MonitorManagerForm : Form
         foreach (var kv in variables)
         {
             if (kv.Value.UpdateFrequency != UpdateFrequency.Continuous || !kv.Value.IsAnnounced) continue;
-            // A row that mutes nothing is worse than no row: the DC-bus voltage gate and the
-            // lamps with no word of their own (APU BLANK) are consumed silently, so unticking
-            // them changes nothing a pilot can hear. This form predates MonitorManagerFormBase
+            // A row that mutes nothing is worse than no row: the DC-bus voltage gate, the lamps
+            // with no word of their own (APU BLANK) and the silent numeric read-outs (Export())
+            // are consumed without speech, so unticking them changes nothing a pilot can hear.
+            // A var that DOES speak from ProcessSimVarUpdate must not carry the flag — the flap
+            // read-out and the three N1s (the "N1 70 percent" cue) keep their rows for that
+            // reason. This form predates MonitorManagerFormBase
             // and is not one of its subclasses (which honour the flag through MonitorRowBuilder);
             // migrating it onto the base is a follow-up, deliberately not done here.
             if (kv.Value.ExcludeFromMonitorManager) continue;

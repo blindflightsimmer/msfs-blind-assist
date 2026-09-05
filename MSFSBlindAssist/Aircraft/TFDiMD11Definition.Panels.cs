@@ -85,6 +85,13 @@ public partial class TFDiMD11Definition
         v["MD11_ENG1_N1"] = Export("MD11_ENG1_N1", "Engine 1 N1");
         v["MD11_ENG2_N1"] = Export("MD11_ENG2_N1", "Engine 2 N1");
         v["MD11_ENG3_N1"] = Export("MD11_ENG3_N1", "Engine 3 N1");
+        // NOT silent, unlike every other Export() row: the three N1s drive HandleN1Callout's
+        // one-shot "N1 70 percent" take-off cue, which MainForm's Ctrl+M wrap mutes exactly like
+        // the flap read-out — so they keep their Ctrl+M rows. ExcludeFromMonitorManager means
+        // "muted by plumbing" and must never sit on a var that speaks (the MD-11 monitor form
+        // honours the flag; a flagged N1 would have made the cue unmutable).
+        foreach (var n1 in new[] { "MD11_ENG1_N1", "MD11_ENG2_N1", "MD11_ENG3_N1" })
+            v[n1].ExcludeFromMonitorManager = false;
 
         // ---- Fuel --------------------------------------------------------------------
         v["MD11_OVHD_TANK_1_VAL"] = Export("MD11_OVHD_TANK_1_VAL", "Tank 1");

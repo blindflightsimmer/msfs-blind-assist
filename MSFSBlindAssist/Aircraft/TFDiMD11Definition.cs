@@ -526,6 +526,7 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
 
     public void Dispose()
     {
+        _announceGeneration++;   // a deferred dark transition must not speak for a disposed definition
         _bus?.Dispose();
         _bus = null;
         DisposeTrackedWindows();
