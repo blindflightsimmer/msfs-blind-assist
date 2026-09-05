@@ -56,6 +56,33 @@ public class Md11LabelTests
     }
 
     [Fact]
+    public void OneRowPerPhysicalControl_NoTwoNodesShareAnEventMap()
+    {
+        // An event id IS the action, so two operable nodes firing byte-identical events are one
+        // control reached twice — and a second row asserts a distinction the aircraft does not
+        // make (the EFB toggle's old "(Captain)" / "(First Officer)" pair fired the same 94465).
+        var dupes = Map.Controls
+            .Where(c => c.Kind != Md11Kinds.Annunciator && c.Kind != Md11Kinds.Option && c.Events.Count > 0)
+            .GroupBy(c => (c.Kind, Events: string.Join(",", c.Events.OrderBy(e => e.Key).Select(e => $"{e.Key}={e.Value}"))))
+            .Where(g => g.Count() > 1)
+            .Select(g => string.Join(" / ", g.Select(c => c.NodeId)))
+            .ToList();
+        Assert.Empty(dupes);
+    }
+
+    [Fact]
+    public void TheCollapsedClickspots_KeepTheirPlainNames()
+    {
+        var def = new TFDiMD11Definition().GetVariables();
+        Assert.Equal("Go Around Mode", def["MD11_THR_GA_BT"].DisplayName);
+        Assert.Equal("EFB Toggle", def["MD11_EFB_TOGGLE"].DisplayName);
+        // The door-slide levers read alike across all eight doors — no "(cabin lever)" on two of
+        // them for a second row that no longer exists.
+        Assert.Equal("Door 1L Slides", def["MD11_EXT_DOOR_PAX_1L_ARMED_LVR_OBJ"].DisplayName);
+        Assert.Equal("Door 2L Slides", def["Cylinder12061"].DisplayName);
+    }
+
+    [Fact]
     public void TheFourTruncatedTooltips_AreWhole()
     {
         var def = new TFDiMD11Definition().GetVariables();

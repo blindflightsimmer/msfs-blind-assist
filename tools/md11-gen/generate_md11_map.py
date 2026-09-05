@@ -225,17 +225,21 @@ LABEL_FIXES = {
     "MD11_MIP_ISFD_STD_BT": "Standby Display STD",
     "MD11_PED_XPNDR_CLR_BT": "Transponder Clear",
     "MD11_CABIN_OXY_MASKS_DOOR": "Cabin Oxygen Masks Door",
-    "MD11_EFB_TOGGLE": "EFB Toggle (Captain)",
-    "MD11_EFB_TOGGLE_FO": "EFB Toggle (First Officer)",
+    # ONE toggle: MD11_EFB_TOGGLE and MD11_EFB_TOGGLE_FO both fire event 94465, so the
+    # "(Captain)" / "(First Officer)" labels this used to carry asserted a distinction the
+    # aircraft does not make. Only the first survives _second_clickspots.
+    "MD11_EFB_TOGGLE": "EFB Toggle",
     "MD11_FLIGHTDECK_DOOR": "Flight Deck Door",
     "l_window_shade_pull": "Left Window Shade",
     "Mirror_l_window_shade_pull": "Right Window Shade",
-    "GA_BT_ALT": "Go Around Mode (alternate button)",
     "MD11_LYOKE_TRIM_SW001": "First Officer Elevator Trim Switch",
     "MD11_THR_L_ATS_BT": "Left Autothrust Disconnect",
     "MD11_THR_R_ATS_BT": "Right Autothrust Disconnect",
-    "MD11_EXT_DOOR_PAX_1L_ARMED_LVR_OBJ": "Door 1L Slides (cabin lever)",
-    "MD11_EXT_DOOR_PAX_1R_ARMED_LVR_OBJ": "Door 1R Slides (cabin lever)",
+    # Same lever as Cylinder11904 / Cylinder11813 (same event, same L:var), which is why only
+    # one of each pair survives; the "(cabin lever)" qualifier named a second row that no
+    # longer exists, and it read oddly beside the plain "Door 2L Slides" of every other door.
+    "MD11_EXT_DOOR_PAX_1L_ARMED_LVR_OBJ": "Door 1L Slides",
+    "MD11_EXT_DOOR_PAX_1R_ARMED_LVR_OBJ": "Door 1R Slides",
 }
 
 # MCDU keys: the derived 'Lsk 1l button' / 'Dir intc button' forms, spelled as the keycap.
@@ -477,29 +481,57 @@ def _strip_suffix(node_id):
     return node_id
 
 
+def _second_clickspots(controls):
+    """Node ids that are a SECOND clickspot for a control kept elsewhere in the list.
+
+    The test is the EVENTS map, not the name: two controls of the same kind whose events are
+    byte-identical are one physical action reached from two 3D nodes, because an event id IS the
+    action on this aircraft. That catches the '001' / '_F' twins ('MD11_OVHD_PNEU_ECON_BT001'),
+    and also the pairs no naming rule would have found -- 'GA_BT_ALT' beside 'MD11_THR_GA_BT',
+    'MD11_EFB_TOGGLE_FO' beside 'MD11_EFB_TOGGLE' (one toggle, 94465, from either seat), and the
+    door-slide levers reachable at the door and from the cabin. Spec 3.8 wants one row per
+    physical control, and a second row asserts a distinction the aircraft does not make.
+
+    Which one survives is decided deterministically, never by file-traversal order: the
+    MD11_-prefixed node id (the aircraft's own naming, over a raw 3D name), then the shortest,
+    then the ordinally smallest. That keeps the base of a '001' / '_F' pair, exactly as the
+    name-shaped rule this replaces did.
+    """
+    groups = defaultdict(list)
+    for c in controls:
+        if c["kind"] == "annun" or not c["events"]:
+            continue
+        groups[(c["kind"], tuple(sorted(c["events"].items())))].append(c["node_id"])
+
+    drop = set()
+    for nids in groups.values():
+        if len(nids) < 2:
+            continue
+        keep = min(nids, key=lambda n: (not n.startswith("MD11_"), len(n), n))
+        drop.update(n for n in nids if n != keep)
+    return drop
+
+
 def finalize_controls(controls):
     """Labels, duplicates, areas and option flags — pure, so it is testable on fixtures.
 
     Order matters: duplicates are collapsed FIRST (so a guard names the surviving button),
     then areas, then labels.
     """
-    # 1. Collapse duplicates: a second clickspot of one button (same kind, same events,
-    #    node id = base + '001' / '_F'), and a second lamp node on the same L:var (VIS_VAR
-    #    duplicates: the Captain/F-O audio panel families, the '_LT001' / '_LT_F' nodes).
-    #    Two lamps on one var would also be two continuous batch entries with one Name,
-    #    which shifts every later batch slot (the VarNameCollision invariant).
-    kept, seen_lamp_var, by_id = [], set(), {c["node_id"]: c for c in controls}
+    # 1. Collapse duplicates: a second clickspot of one control (same kind, same events — see
+    #    _second_clickspots), and a second lamp node on the same L:var (VIS_VAR duplicates: the
+    #    Captain/F-O audio panel families, the '_LT001' / '_LT_F' nodes). Two lamps on one var
+    #    would also be two continuous batch entries with one Name, which shifts every later
+    #    batch slot (the VarNameCollision invariant).
+    kept, seen_lamp_var = [], set()
+    second_clickspots = _second_clickspots(controls)
     for c in controls:
-        nid = c["node_id"]
         if c["kind"] == "annun":
             if c["state_var"] in seen_lamp_var:
                 continue
             seen_lamp_var.add(c["state_var"])
-        else:
-            m = re.match(r"^(.*?)(001|_F)$", nid)
-            base = by_id.get(m.group(1)) if m else None
-            if base is not None and base["kind"] == c["kind"] and base["events"] == c["events"]:
-                continue
+        elif c["node_id"] in second_clickspots:
+            continue
         kept.append(c)
 
     labels = {c["node_id"]: c["label"] for c in kept}

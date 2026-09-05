@@ -64,6 +64,31 @@ class FinalizeTests(unittest.TestCase):
         ])
         self.assertEqual(["MD11_OVHD_PNEU_ECON_BT", "MD11_OVHD_LTS_CREW_REST_BT"], [c["node_id"] for c in out])
 
+    def test_two_nodes_firing_the_same_events_are_one_control(self):
+        # An event id IS the action on this aircraft, so identical events mean one physical
+        # control reached from two 3D nodes — however differently the nodes are named. The
+        # MD11_-prefixed id wins over a raw 3D name; between two MD11_ ids the shortest wins.
+        out = g.finalize_controls([
+            ctl("GA_BT_ALT", events={"LEFT_BUTTON_DOWN": 77851, "LEFT_BUTTON_UP": 77852}),
+            ctl("MD11_THR_GA_BT", label="Go Around Mode", events={"LEFT_BUTTON_DOWN": 77851, "LEFT_BUTTON_UP": 77852}),
+            ctl("MD11_EFB_TOGGLE", events={"LEFT_BUTTON_DOWN": 94465}),
+            ctl("MD11_EFB_TOGGLE_FO", events={"LEFT_BUTTON_DOWN": 94465}),
+        ])
+        self.assertEqual(["MD11_THR_GA_BT", "MD11_EFB_TOGGLE"], [c["node_id"] for c in out])
+        # And the surviving EFB row no longer claims a seat the events do not distinguish.
+        self.assertEqual("EFB Toggle", out[1]["label"])
+
+    def test_the_survivor_does_not_depend_on_the_order_nodes_were_collected_in(self):
+        ev = {"LEFT_BUTTON_DOWN": 94465}
+        pair = [ctl("MD11_EFB_TOGGLE_FO", events=ev), ctl("MD11_EFB_TOGGLE", events=ev)]
+        self.assertEqual(["MD11_EFB_TOGGLE"], [c["node_id"] for c in g.finalize_controls(pair)])
+
+    def test_a_control_with_no_events_is_never_deduped(self):
+        # Annunciators and any node the exporter gave no events must not collapse onto each
+        # other just because both maps are empty.
+        out = g.finalize_controls([ctl("MD11_A_SW", kind="switch", events={}), ctl("MD11_B_SW", kind="switch", events={})])
+        self.assertEqual(2, len(out))
+
     def test_distinct_events_are_not_duplicates(self):
         out = g.finalize_controls([
             ctl("MD11_LYOKE_TRIM_SW", kind="switch", label="Captain Elevator Trim Switch", events={"LEFT_BUTTON_DOWN": 1}),

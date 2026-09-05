@@ -110,19 +110,18 @@ public class Md11FlightControlPanelTests
 
     /// <summary>
     /// Go Around is ONE function reachable from two clickspots: the throttle-lever button and a
-    /// glareshield clickspot share event ids 77851/77852. Pinning this stops the window growing a
-    /// second "Go Around" button that fires the identical event.
+    /// glareshield clickspot (<c>GA_BT_ALT</c>) fired the identical event pair 77851/77852. The
+    /// generator now collapses any two nodes with byte-identical events into one row, keeping the
+    /// aircraft's own MD11_-prefixed node id, so this pins the absence of the second row rather
+    /// than the fact that it fired the same event.
     /// </summary>
     [Fact]
-    public void GoAround_ThrottleAndGlareshieldClickspots_ShareOneEventPair()
+    public void GoAround_IsOneRow_NotTwoClickspotsOnTheSameEventPair()
     {
-        var thr = Find("MD11_THR_GA_BT");
-        var alt = Find("GA_BT_ALT");
-
-        Assert.NotNull(thr);
-        Assert.NotNull(alt);
-        Assert.Equal(thr!.Event("LEFT_BUTTON_DOWN"), alt!.Event("LEFT_BUTTON_DOWN"));
-        Assert.Equal(thr.Event("LEFT_BUTTON_UP"), alt.Event("LEFT_BUTTON_UP"));
+        Assert.NotNull(Find("MD11_THR_GA_BT"));
+        Assert.Null(Find("GA_BT_ALT"));
+        Assert.DoesNotContain(Map.Controls,
+            c => c.NodeId != "MD11_THR_GA_BT" && c.Event("LEFT_BUTTON_DOWN") == 77851);
     }
 
     /// <summary>The two autothrust disconnects are genuinely separate buttons, unlike Go Around.</summary>

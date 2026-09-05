@@ -2,13 +2,13 @@
  "_generated_by": "tools/md11-gen/generate_md11_map.py",
  "_source": "TFDi MD-11 ModelBehaviorDefs + md11host.wasm",
  "counts": {
-  "controls": 1365,
+  "controls": 1361,
   "wasm_control_vars": 1504,
   "export_vars": 58,
   "state_only_vars": 238,
   "by_kind": {
    "annun": 488,
-   "button": 664,
+   "button": 660,
    "guard": 32,
    "handle": 4,
    "knob": 99,
@@ -29,8 +29,8 @@
    "Center Instrument": 12,
    "Circuit Breakers": 116,
    "Dial-A-Flap": 1,
-   "Doors and Exterior": 39,
-   "EFB": 2,
+   "Doors and Exterior": 37,
+   "EFB": 1,
    "F/O EFIS Control Panel": 23,
    "F/O Side Panel": 35,
    "F/O Yoke": 1,
@@ -47,7 +47,7 @@
    "Overhead": 422,
    "Pedestal": 211,
    "Speedbrake": 1,
-   "Throttle Quadrant": 20
+   "Throttle Quadrant": 19
   }
  },
  "controls": [
@@ -7980,60 +7980,6 @@
    }
   },
   {
-   "node_id": "Cylinder11813",
-   "kind": "button",
-   "template": "TFDi_Design_MD11_Button_Template",
-   "area": "Doors and Exterior",
-   "label": "Door 1R Slides",
-   "label_source": "tooltip",
-   "state_var": "MD11_EXT_DOOR_PAX_1R_ARMED_LVR",
-   "value_map": {
-    "1": "Armed",
-    "0": "Disarmed"
-   },
-   "num_states": null,
-   "events": {
-    "LEFT_BUTTON_DOWN": 102400
-   },
-   "guard_id": null,
-   "source": "Cabin/PaxCabinFrame.xml",
-   "state": {
-    "lamps": [],
-    "latch": {
-     "var": "MD11_EXT_DOOR_PAX_1R_ARMED_LVR",
-     "on": "Armed",
-     "off": "Disarmed"
-    }
-   }
-  },
-  {
-   "node_id": "Cylinder11904",
-   "kind": "button",
-   "template": "TFDi_Design_MD11_Button_Template",
-   "area": "Doors and Exterior",
-   "label": "Door 1L Slides",
-   "label_source": "tooltip",
-   "state_var": "MD11_EXT_DOOR_PAX_1L_ARMED_LVR",
-   "value_map": {
-    "1": "Armed",
-    "0": "Disarmed"
-   },
-   "num_states": null,
-   "events": {
-    "LEFT_BUTTON_DOWN": 102404
-   },
-   "guard_id": null,
-   "source": "Cabin/PaxCabinFrame.xml",
-   "state": {
-    "lamps": [],
-    "latch": {
-     "var": "MD11_EXT_DOOR_PAX_1L_ARMED_LVR",
-     "on": "Armed",
-     "off": "Disarmed"
-    }
-   }
-  },
-  {
    "node_id": "Cylinder12038",
    "kind": "button",
    "template": "TFDi_Design_MD11_Button_Template",
@@ -8473,7 +8419,7 @@
    "kind": "button",
    "template": "TFDi_Design_MD11_Button_Template",
    "area": "Doors and Exterior",
-   "label": "Door 1L Slides (cabin lever)",
+   "label": "Door 1L Slides",
    "label_source": "curated",
    "state_var": "MD11_EXT_DOOR_PAX_1L_ARMED_LVR",
    "value_map": {
@@ -8500,7 +8446,7 @@
    "kind": "button",
    "template": "TFDi_Design_MD11_Button_Template",
    "area": "Doors and Exterior",
-   "label": "Door 1R Slides (cabin lever)",
+   "label": "Door 1R Slides",
    "label_source": "curated",
    "state_var": "MD11_EXT_DOOR_PAX_1R_ARMED_LVR",
    "value_map": {
@@ -8663,7 +8609,7 @@
    "kind": "button",
    "template": "TFDi_Design_MD11_Clickspot",
    "area": "EFB",
-   "label": "EFB Toggle (Captain)",
+   "label": "EFB Toggle",
    "label_source": "curated",
    "state_var": "MD11_EFB_TOGGLE",
    "value_map": {},
@@ -8673,22 +8619,6 @@
    },
    "guard_id": null,
    "source": "FlightDeck/CaptainInstrument.xml"
-  },
-  {
-   "node_id": "MD11_EFB_TOGGLE_FO",
-   "kind": "button",
-   "template": "TFDi_Design_MD11_Clickspot",
-   "area": "EFB",
-   "label": "EFB Toggle (First Officer)",
-   "label_source": "curated",
-   "state_var": "MD11_EFB_TOGGLE_FO",
-   "value_map": {},
-   "num_states": null,
-   "events": {
-    "LEFT_BUTTON_DOWN": 94465
-   },
-   "guard_id": null,
-   "source": "FlightDeck/FOInstrument.xml"
   },
   {
    "node_id": "MD11_RECP_ADF1_BT",
@@ -30518,23 +30448,6 @@
    },
    "guard_id": null,
    "source": "FlightDeck/FootPedestalLower.xml"
-  },
-  {
-   "node_id": "GA_BT_ALT",
-   "kind": "button",
-   "template": "TFDi_Design_MD11_Clickspot_UD",
-   "area": "Throttle Quadrant",
-   "label": "Go Around Mode (alternate button)",
-   "label_source": "curated",
-   "state_var": "GA_BT_ALT",
-   "value_map": {},
-   "num_states": null,
-   "events": {
-    "LEFT_BUTTON_DOWN": 77851,
-    "LEFT_BUTTON_UP": 77852
-   },
-   "guard_id": null,
-   "source": "FlightDeck/Glareshield.xml"
   },
   {
    "node_id": "MD11_THR_C_FUEL_LT",

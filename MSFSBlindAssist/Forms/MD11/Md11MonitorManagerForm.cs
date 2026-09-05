@@ -8,9 +8,9 @@ namespace MSFSBlindAssist.Forms.MD11;
 /// Per-variable background-announcement manager for the TFDi MD-11 (Ctrl+M).
 ///
 /// This matters more here than on any other aircraft in the app. The MD-11's six display units are
-/// WASM-rendered and unreadable, so its 532 announcing annunciator lamps ARE the instrument panel —
+/// WASM-rendered and unreadable, so its 488 announcing annunciator lamps ARE the instrument panel —
 /// a blind pilot has no other way to know a light came on. That is exactly why they all announce,
-/// and equally why they need to be individually mutable: 532 lamps is a lot of voice in a busy
+/// and equally why they need to be individually mutable: 488 lamps is a lot of voice in a busy
 /// phase, and one chatty lamp can bury the one that matters.
 ///
 /// Enumerates every auto-announced variable (UpdateFrequency.Continuous + IsAnnounced, minus the
@@ -47,7 +47,7 @@ public partial class Md11MonitorManagerForm : Form
             _keys.Add(kv.Key);
         }
         // Sorted by the SPOKEN name, not the node id: the pilot is looking for "Left fuel light",
-        // not MD11_THR_L_FUEL_LT, and with ~530 entries the ordering is the only way to find one.
+        // not MD11_THR_L_FUEL_LT, and with ~500 entries the ordering is the only way to find one.
         _keys.Sort((a, b) =>
             string.Compare(DisplayNameFor(variables, a), DisplayNameFor(variables, b), StringComparison.OrdinalIgnoreCase));
         _labels.AddRange(_keys.Select(k => DisplayNameFor(variables, k)));

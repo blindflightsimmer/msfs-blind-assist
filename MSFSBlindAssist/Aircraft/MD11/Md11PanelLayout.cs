@@ -302,7 +302,7 @@ public static class Md11PanelLayout
     {
         "MD11_THR_L_START_SW", "MD11_THR_C_START_SW", "MD11_THR_R_START_SW",
         "MD11_THR_L_FUEL_SW", "MD11_THR_C_FUEL_SW", "MD11_THR_R_FUEL_SW",
-        "MD11_THR_GA_BT", "GA_BT_ALT", "MD11_THR_L_ATS_BT", "MD11_THR_R_ATS_BT",
+        "MD11_THR_GA_BT", "MD11_THR_L_ATS_BT", "MD11_THR_R_ATS_BT",
         "MD11_THR_PARK_LVR", "MD11_THR_GEAR_HORN_BT",
         "MD11_THR_L_START_LT", "MD11_THR_C_START_LT", "MD11_THR_R_START_LT",
         "MD11_THR_L_FUEL_LT", "MD11_THR_C_FUEL_LT", "MD11_THR_R_FUEL_LT", "MD11_THR_PARK_LT",
@@ -387,7 +387,9 @@ public static class Md11PanelLayout
         "Object7525", "Object7524", "Object7527", "Object7526", "Object7537", "Object7536", "Object7530", "Object7531",
         "MD11_EXT_DOOR_PAXC_1L_OPEN_SW", "MD11_EXT_DOOR_PAXC_1R_OPEN_SW",
         "MD11_EXT_DOOR_PAX_1L_ARMED_LVR_OBJ", "MD11_EXT_DOOR_PAX_1R_ARMED_LVR_OBJ",
-        "Cylinder11904", "Cylinder11813", "Cylinder12061", "Cylinder12038",
+        // Doors 1L and 1R have a second clickspot each (Cylinder11904 / Cylinder11813) that
+        // fires the same event as the _OBJ node above, so the generator keeps only one of each.
+        "Cylinder12061", "Cylinder12038",
         "Cylinder12064", "Cylinder12058", "Cylinder12057_08", "Cylinder11762_03",
         "MD11_EXT_DOOR_CRG_MAIN_ARM_GRD", "MD11_EXT_DOOR_CRG_MAIN_ARM_SW",
         "MD11_EXT_DOOR_CRG_MAIN_OPEN_SW", "MD11_EXT_DOOR_CRG_MAIN_DOWN_TO_CAN_BT",
@@ -398,7 +400,8 @@ public static class Md11PanelLayout
 
     private static readonly string[] Cabin = { "MD11_CABIN_OXY_MASKS_DOOR", "MD11_CABIN_OXY_MASKS", "MD11_CABIN_POWER" };
     private static readonly string[] AircraftOptions = { "MD11_OVHD_1_PAX_LOAD_SW", "MD11_OVHD_10_PAX_LOAD_SW", "MD11_OVHD_100_PAX_LOAD_SW" };
-    private static readonly string[] Efb = { "MD11_EFB_TOGGLE", "MD11_EFB_TOGGLE_FO" };
+    // One toggle, not two: both nodes fired event 94465, so the generator keeps a single row.
+    private static readonly string[] Efb = { "MD11_EFB_TOGGLE" };
 
     // ---- MCDU keys ------------------------------------------------------------------------
     private static readonly string[] McduKeyOrder =

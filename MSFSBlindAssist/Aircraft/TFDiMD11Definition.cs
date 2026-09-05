@@ -46,7 +46,7 @@ namespace MSFSBlindAssist.Aircraft;
 ///
 /// ═══ THE CONTROL MAP ═══
 ///
-/// The 1404 controls are not hand-written. <c>tools/md11-gen/generate_md11_map.py</c> reads the
+/// The 1361 controls are not hand-written. <c>tools/md11-gen/generate_md11_map.py</c> reads the
 /// aircraft's own ModelBehaviorDefs + wasm and emits <c>md11_control_map.json</c> (embedded);
 /// this class turns that into variables and panels. Labels, detent names and switch positions
 /// are TFDi's own tooltip wording, so the screen reader says what the real cockpit says.
@@ -54,11 +54,11 @@ namespace MSFSBlindAssist.Aircraft;
 ///
 /// ═══ THE DATA-DEFINITION BUDGET ═══
 ///
-/// SimConnect caps a client at ~1000 data definitions and 1404 controls would obliterate that,
+/// SimConnect caps a client at ~1000 data definitions and 1361 controls would obliterate that,
 /// so the split below is deliberate, not incidental:
-///   • buttons (666)       → UpdateFrequency.Never  → write-only, registered as 0 defs
-///   • annunciators (532)  → Continuous+IsAnnounced → batch-covered, 0 individual defs
-///   • everything else     → OnRequest              → ~206 individual defs (cap is 900)
+///   • momentary buttons (497) → UpdateFrequency.Never  → write-only, registered as 0 defs
+///   • annunciators (488)     → Continuous+IsAnnounced → batch-covered, 0 individual defs
+///   • everything else        → OnRequest              → 378 individual defs (cap is 900)
 /// Watch <c>registration.log</c>'s approxTotalDefs after any change here.
 ///
 /// ═══ VERIFY IN SIM (nothing below has been flown) ═══
@@ -67,7 +67,7 @@ namespace MSFSBlindAssist.Aircraft;
 ///     log line "step polarity calibrated to …" appears at most once per control.
 ///   • Flap handle: all six detents, and that the 28 gate behaves (35/50 → 28 on a go-around).
 ///   • Dial-A-Flap: 10–25° selection lands on whole degrees; check the analog walk converges.
-///   • Annunciator chattiness: 532 announcing lamps may be a torrent on startup. If so, the
+///   • Annunciator chattiness: 488 announcing lamps may be a torrent on startup. If so, the
 ///     answer is Ctrl+M (monitor manager) and/or trimming IsAnnounced to a safety subset here.
 /// </summary>
 public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
