@@ -1,5 +1,6 @@
 using MSFSBlindAssist.Aircraft.MD11;
 using MSFSBlindAssist.SimConnect;
+using MSFSBlindAssist.Utils.Logging;
 
 namespace MSFSBlindAssist.Aircraft;
 
@@ -150,70 +151,32 @@ public partial class TFDiMD11Definition
     }
 
     /// <summary>
-    /// Derives sections and panels from the control map.
+    /// Derives sections and panels from <see cref="Md11PanelLayout"/> — the curated table is the
+    /// ONLY source of panel order (spec §3.8): sections in the order a preparation flows, panels
+    /// named as TFDi's Systems Guide names them, controls in physical panel order, a guard cover
+    /// immediately before the control it covers, status rows (standalone lamps) last.
     ///
-    /// Section = the cockpit area the generator assigned from the node id ("Overhead",
-    /// "Pedestal", …). Panel = the SUBSYSTEM token, i.e. the third token of
-    /// <c>MD11_&lt;AREA&gt;_&lt;SUBSYSTEM&gt;_…</c>. Both come from TFDi's own naming.
+    /// A control the table does not name is still appended (never dropped) rather than silently
+    /// missing — see <see cref="Md11PanelLayout.Place"/>'s safety net — and logged loudly so a
+    /// regenerated map that adds a control is noticed instead of hidden.
     ///
-    /// The subsystem split is not cosmetic — it is what makes the aircraft navigable. The
-    /// Overhead alone holds 429 controls; as one flat panel that is unusable with a screen
-    /// reader. Split by subsystem it becomes Electrical (74), Pneumatic (74), Fuel (69),
-    /// Lights (58), Hydraulics (37), Flight Controls (28)… i.e. the panels a pilot already has
-    /// a mental model of.
-    ///
-    /// Annunciators are excluded: they announce on change instead (see BuildControlVariable).
-    /// A panel is for operating controls, not for scanning 532 lamp rows.
+    /// Annunciators not named by the table are excluded: they announce on change instead (see
+    /// BuildControlVariable). A panel is for operating controls, not for scanning lamp rows.
     /// </summary>
     private void BuildPanelsOnce()
     {
         if (_panelStructure != null && _panelControls != null) return;
 
-        var structure = new Dictionary<string, List<string>>();
-        var controls = new Dictionary<string, List<string>>();
+        var placement = Md11PanelLayout.Place(_map);
+        if (placement.MissingKeys.Count > 0)
+            Log.Warn("MD11", $"Layout names {placement.MissingKeys.Count} keys the map lacks: {string.Join(", ", placement.MissingKeys.Take(10))}");
+        if (placement.Unplaced.Count > 0)
+            Log.Warn("MD11", $"{placement.Unplaced.Count} controls are not in the layout table and were appended: {string.Join(", ", placement.Unplaced.Take(10))}");
 
-        // area -> subsystem -> keys, preserving the map's (area, node_id) sort order.
-        var grouped = new Dictionary<string, Dictionary<string, List<string>>>();
+        AddReadoutPanels(placement.Structure, placement.Controls);
 
-        foreach (var c in _map.Controls)
-        {
-            if (c.Kind == Md11Kinds.Annunciator) continue;
-
-            var area = string.IsNullOrWhiteSpace(c.Area) ? "Other" : c.Area;
-            var sub = SubsystemLabel(c);
-
-            if (!grouped.TryGetValue(area, out var subs))
-                grouped[area] = subs = new Dictionary<string, List<string>>();
-            if (!subs.TryGetValue(sub, out var keys))
-                subs[sub] = keys = new List<string>();
-            keys.Add(c.NodeId);
-        }
-
-        // Panel names are the app's global key for a panel, so they must be unique across every
-        // section — "CPT" legitimately occurs under both Pedestal and the Captain audio panel.
-        // Qualify only on an actual collision, so the common case stays a short, spoken-friendly
-        // name rather than "Overhead — Electrical" everywhere.
-        var nameCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var subs in grouped.Values)
-            foreach (var sub in subs.Keys)
-                nameCounts[sub] = nameCounts.GetValueOrDefault(sub) + 1;
-
-        foreach (var (area, subs) in grouped.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            var panelNames = new List<string>();
-            foreach (var (sub, keys) in subs.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
-            {
-                var panelName = nameCounts[sub] > 1 ? $"{sub} ({area})" : sub;
-                panelNames.Add(panelName);
-                controls[panelName] = keys;
-            }
-            structure[area] = panelNames;
-        }
-
-        AddReadoutPanels(structure, controls);
-
-        _panelStructure = structure;
-        _panelControls = controls;
+        _panelStructure = placement.Structure;
+        _panelControls = placement.Controls;
     }
 
     /// <summary>
@@ -251,91 +214,4 @@ public partial class TFDiMD11Definition
             "V-Speeds", "Minimums and Altimeters", "Autoflight Status", "APU Status", "Fuel Quantity",
         };
     }
-
-    /// <summary>
-    /// The subsystem token, expanded to something a screen reader should say. TFDi's tokens are
-    /// terse ("PNEU", "AICE", "FLTCTL"); a reader spelling those out letter-by-letter is worse
-    /// than useless, so the common ones are expanded to the panel names a pilot would use.
-    /// Unknown tokens fall through title-cased rather than being dropped.
-    /// </summary>
-    private static string SubsystemLabel(Md11Control c)
-    {
-        var parts = c.NodeId.Split('_');
-        var token = parts.Length >= 3 ? parts[2] : string.Empty;
-        if (string.IsNullOrEmpty(token)) return "General";
-
-        if (SubsystemNames.TryGetValue(token, out var name)) return name;
-        // A pure digit or single letter is an MCDU key row etc. — group them together rather
-        // than emitting a panel called "7".
-        if (token.Length <= 1 || token.All(char.IsDigit)) return "Keys";
-        return char.ToUpperInvariant(token[0]) + token[1..].ToLowerInvariant();
-    }
-
-    private static readonly Dictionary<string, string> SubsystemNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["ELEC"] = "Electrical",
-        ["PNEU"] = "Pneumatic",
-        ["FUEL"] = "Fuel",
-        ["LTS"] = "Lights",
-        ["HYD"] = "Hydraulics",
-        ["FLTCTL"] = "Flight Controls",
-        ["ENG"] = "Engines",
-        ["AICE"] = "Anti-Ice",
-        ["GEN"] = "Generators",
-        ["WNDSHLD"] = "Windshield",
-        ["IRS"] = "IRS",
-        ["AIL"] = "Aileron",
-        ["GALLEY"] = "Galley",
-        ["ANNUNLT"] = "Annunciator Lights",
-        ["APU"] = "APU",
-        ["GPWS"] = "GPWS",
-        ["EVAC"] = "Evacuation",
-        ["EMER"] = "Emergency",
-        ["CRGSMK"] = "Cargo Smoke",
-        ["APUFIRE"] = "APU Fire",
-        ["ENG1FIRE"] = "Engine 1 Fire",
-        ["ENG2FIRE"] = "Engine 2 Fire",
-        ["ENG3FIRE"] = "Engine 3 Fire",
-        ["CPT"] = "Captain",
-        ["FO"] = "First Officer",
-        ["OBS"] = "Observer",
-        ["SD"] = "System Display",
-        ["XPNDR"] = "Transponder",
-        ["WXR"] = "Weather Radar",
-        ["CKPTDOOR"] = "Cockpit Door",
-        ["AUDIO"] = "Audio",
-        ["BAROSET"] = "Barometer",
-        ["MINIMUMS"] = "Minimums",
-        ["MAGTRU"] = "Magnetic/True",
-        ["TCAS"] = "TCAS",
-        ["LSK"] = "Line Select Keys",
-        ["OXY"] = "Oxygen",
-        ["TIMER"] = "Timer",
-        ["INP"] = "Input Panel",
-        ["DOOR"] = "Doors",
-        ["TRIM"] = "Trim",
-        ["AP"] = "Autopilot",
-        ["HDG"] = "Heading",
-        ["ALT"] = "Altitude",
-        ["VS"] = "Vertical Speed",
-        ["NAV"] = "Navigation",
-        ["SLAT"] = "Slats",
-        ["ANTISKID"] = "Antiskid",
-        ["AUTOBRAKE"] = "Autobrake",
-        ["GEAR"] = "Gear",
-        ["PARK"] = "Parking Brake",
-        ["LONG"] = "Longitudinal Trim",
-        ["GA"] = "Go Around",
-        ["WHEEL"] = "Dial-A-Flap",
-        ["LATCH"] = "Flap Handle",
-        ["HANDLE"] = "Speedbrake Handle",
-        ["MST"] = "Master",
-        ["GS"] = "Ground Service",
-        ["ISFD"] = "Standby Display",
-        ["FLOOD"] = "Floodlights",
-        ["PNL"] = "Panel Lights",
-        ["DOME"] = "Dome Light",
-        ["MAP"] = "Map Light",
-        ["BRT"] = "Brightness",
-    };
 }
