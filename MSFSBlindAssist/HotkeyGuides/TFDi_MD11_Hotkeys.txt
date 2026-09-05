@@ -160,9 +160,10 @@ The MD-11 announces 532 indicator lights as they change. That is deliberate: wit
 displays, those lights ARE this aircraft's instrument panel, and a light coming on is
 something you would otherwise have no way to notice. It is also a lot of talking.
 
-Ctrl+M opens the monitor manager. Every announcing item is listed by name, sorted
-alphabetically; uncheck one to stop it announcing. Your choices are remembered between
-sessions.
+Ctrl+M opens the monitor manager, the same one every other aircraft has: type in the search
+box to narrow the list ("fuel" finds every fuel lamp), use the Show filter to see only the
+muted rows, and uncheck an item to stop it announcing. The list is sorted by spoken name, and
+your choices are remembered between sessions.
 
 Also announced as they change: autopilot engagement, APU state, the COM radios ("COM 1 active
 135.500" - active and standby for COM 1, 2 and 3, so a tuner click and a frequency swap both read

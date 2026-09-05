@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+using MSFSBlindAssist.Services;
 using MSFSBlindAssist.Settings;
 using MSFSBlindAssist.SimConnect;
 
@@ -11,145 +11,24 @@ namespace MSFSBlindAssist.Forms.MD11;
 /// WASM-rendered and unreadable, so its 488 announcing annunciator lamps ARE the instrument panel —
 /// a blind pilot has no other way to know a light came on. That is exactly why they all announce,
 /// and equally why they need to be individually mutable: 488 lamps is a lot of voice in a busy
-/// phase, and one chatty lamp can bury the one that matters.
+/// phase, and one chatty lamp can bury the one that matters. With ~530 rows the search box and the
+/// Show filter the base class provides are not conveniences, they are how a row gets found at all.
 ///
-/// Enumerates every auto-announced variable (UpdateFrequency.Continuous + IsAnnounced, minus the
-/// ones flagged ExcludeFromMonitorManager) from the aircraft definition dynamically — mirroring
-/// the Fenix / A380 / A32NX / HS787 / iFly managers — so the list needs no maintenance as the
-/// definition grows. Unchecked items are written to
-/// UserSettings.Md11DisabledMonitorVariables. MainForm.OnSimVarUpdated honours the list TWICE: via
-/// the Suppressed-wrap (the MD-11 announces its composed flap read-out from INSIDE
+/// Rows come from <see cref="MonitorRowBuilder"/> like every other aircraft's: every
+/// UpdateFrequency.Continuous + IsAnnounced variable minus those flagged ExcludeFromMonitorManager
+/// (the DC-bus voltage gate, the wordless lamps, the silent numeric read-outs — rows that would
+/// mute nothing), sorted by spoken name. Unticked keys go to
+/// UserSettings.Md11DisabledMonitorVariables, which MainForm.OnSimVarUpdated honours TWICE: via the
+/// Suppressed wrap (the MD-11 speaks its lamps, flaps, COM frequencies and speedbrake from INSIDE
 /// ProcessSimVarUpdate, where the generic gate never runs — the HS787 pattern) and via the generic
-/// gate (the annunciators, AP/APU state and everything else on the normal path).
+/// gate for everything on the normal path. All behaviour lives in <see cref="MonitorManagerFormBase"/>;
+/// this used to be a hand-rolled form with no search field, which is why it was migrated.
 /// </summary>
-public partial class Md11MonitorManagerForm : Form
+public sealed class Md11MonitorManagerForm : MonitorManagerFormBase
 {
-    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    private CheckedListBox variableListBox = null!;
-    private readonly List<string> _keys = new();    // parallel to variableListBox.Items
-    private readonly List<string> _labels = new();
-    private IntPtr previousWindow;
-    private static int lastSelectedItemIndex;
-
     public Md11MonitorManagerForm(Dictionary<string, SimVarDefinition> variables)
-    {
-        foreach (var kv in variables)
-        {
-            if (kv.Value.UpdateFrequency != UpdateFrequency.Continuous || !kv.Value.IsAnnounced) continue;
-            // A row that mutes nothing is worse than no row: the DC-bus voltage gate, the lamps
-            // with no word of their own (APU BLANK) and the silent numeric read-outs (Export())
-            // are consumed without speech, so unticking them changes nothing a pilot can hear.
-            // A var that DOES speak from ProcessSimVarUpdate must not carry the flag — the flap
-            // read-out and the three N1s (the "N1 70 percent" cue) keep their rows for that
-            // reason. This form predates MonitorManagerFormBase
-            // and is not one of its subclasses (which honour the flag through MonitorRowBuilder);
-            // migrating it onto the base is a follow-up, deliberately not done here.
-            if (kv.Value.ExcludeFromMonitorManager) continue;
-            _keys.Add(kv.Key);
-        }
-        // Sorted by the SPOKEN name, not the node id: the pilot is looking for "Left fuel light",
-        // not MD11_THR_L_FUEL_LT, and with ~500 entries the ordering is the only way to find one.
-        _keys.Sort((a, b) =>
-            string.Compare(DisplayNameFor(variables, a), DisplayNameFor(variables, b), StringComparison.OrdinalIgnoreCase));
-        _labels.AddRange(_keys.Select(k => DisplayNameFor(variables, k)));
+        : base("MD-11 Monitor Manager", MonitorRowBuilder.Build(variables)) { }
 
-        InitializeComponent();
-        SetupAccessibility();
-        PopulateVariables();
-    }
-
-    private static string DisplayNameFor(Dictionary<string, SimVarDefinition> vars, string key) =>
-        vars.TryGetValue(key, out var d) && !string.IsNullOrEmpty(d.DisplayName) ? d.DisplayName : key;
-
-    public void ShowForm()
-    {
-        previousWindow = GetForegroundWindow();
-        Show();
-        BringToFront();
-        Activate();
-        TopMost = true;
-        TopMost = false;
-        if (variableListBox.Items.Count > 0)
-            variableListBox.SelectedIndex = Math.Min(lastSelectedItemIndex, variableListBox.Items.Count - 1);
-        variableListBox.Focus();
-    }
-
-    private void InitializeComponent()
-    {
-        Text = "MD-11 Monitor Manager";
-        Size = new Size(460, 380);
-        StartPosition = FormStartPosition.CenterScreen;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = true;
-        ShowInTaskbar = true;
-
-        var label = new Label
-        {
-            Text = "Uncheck a variable to stop announcing it as it changes:",
-            Location = new Point(10, 10),
-            Size = new Size(430, 20),
-            AccessibleName = "Instructions"
-        };
-
-        variableListBox = new CheckedListBox
-        {
-            Location = new Point(10, 35),
-            Size = new Size(425, 290),
-            TabIndex = 0,
-            AccessibleName = "Auto-announced variables",
-            CheckOnClick = true
-        };
-        variableListBox.ItemCheck += VariableListBox_ItemCheck;
-        variableListBox.KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) { Close(); e.Handled = true; } };
-        variableListBox.SelectedIndexChanged += (_, _) => { if (variableListBox.SelectedIndex >= 0) lastSelectedItemIndex = variableListBox.SelectedIndex; };
-
-        Controls.Add(label);
-        Controls.Add(variableListBox);
-    }
-
-    private void SetupAccessibility()
-    {
-        FormClosing += (_, e) =>
-        {
-            e.Cancel = true;
-            Hide();
-            if (previousWindow != IntPtr.Zero) SetForegroundWindow(previousWindow);
-        };
-    }
-
-    private void PopulateVariables()
-    {
-        var disabledVars = SettingsManager.Current.Md11DisabledMonitorVariables;
-        variableListBox.BeginUpdate();
-        variableListBox.Items.Clear();
-        for (int i = 0; i < _labels.Count; i++)
-        {
-            variableListBox.Items.Add(_labels[i]);
-            variableListBox.SetItemChecked(i, !disabledVars.Contains(_keys[i])); // checked = announcing
-        }
-        variableListBox.EndUpdate();
-    }
-
-    private void VariableListBox_ItemCheck(object? sender, ItemCheckEventArgs e)
-    {
-        if (e.Index < 0 || e.Index >= _keys.Count) return;
-        string key = _keys[e.Index];
-        var settings = SettingsManager.Current;
-        if (e.NewValue == CheckState.Checked)
-            settings.Md11DisabledMonitorVariables.Remove(key);
-        else if (!settings.Md11DisabledMonitorVariables.Contains(key))
-            settings.Md11DisabledMonitorVariables.Add(key);
-        // Save rebuilds the HashSet sidecar the announcement gate actually reads, so a mute takes
-        // effect on the very next update rather than at the next launch.
-        SettingsManager.Save();
-    }
-
-    protected override bool ProcessDialogKey(Keys keyData)
-    {
-        if (keyData == Keys.Escape) { Close(); return true; }
-        return base.ProcessDialogKey(keyData);
-    }
+    protected override ICollection<string> DisabledVariables
+        => SettingsManager.Current.Md11DisabledMonitorVariables;
 }
