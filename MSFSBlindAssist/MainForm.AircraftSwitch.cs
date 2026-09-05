@@ -655,7 +655,7 @@ public partial class MainForm
         // The MD-11's composed-state hook reads the SimConnect cache through the handle Attach
         // captures. Without this the first panel opens before any control has been pressed and
         // every button shows a bare label (Attach used to run only from a press or a hotkey).
-        if (newAircraft is TFDiMD11Definition newMd11 && simConnectManager != null)
+        if (newAircraft is TFDiMD11Definition newMd11)
             newMd11.Attach(simConnectManager);
 
         taxiGuidanceManager.TurnLeadSeconds = newAircraft.TaxiTurnLeadSeconds;
