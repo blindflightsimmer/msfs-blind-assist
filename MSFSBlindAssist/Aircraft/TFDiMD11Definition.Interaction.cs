@@ -72,17 +72,23 @@ public partial class TFDiMD11Definition
             // best-effort: if the guard can't be read it is left alone and the press proceeds
             // exactly as before — never worse than today.
             case Md11Kinds.Button:
-                if (!string.IsNullOrEmpty(control.GuardId))
+            {
+                bool guarded = !string.IsNullOrEmpty(control.GuardId);
+                _gate.NotePress(control.NodeId, Environment.TickCount64);
+                if (guarded)
                     _ = GuardedPressAsync(control, simConnect, announcer);
                 else
                     _bus.Press(control);
+                _ = PressFeedbackAsync(control, simConnect, announcer, guarded);
                 return true;
+            }
 
             // A guard cover is itself a click-toggle (empty value map, one LEFT_BUTTON_DOWN event):
             // pressing it lifts or lowers the cover. Exposed as an operable control so the pilot has
             // a manual open/close — the fallback for when the auto-open above cannot read the state.
             case Md11Kinds.Guard:
                 _bus.Press(control);
+                _ = GuardRefreshAsync(control, simConnect);
                 return true;
 
             // The thumbwheel is continuous, not detented: walk it by measured step size, then
@@ -404,12 +410,14 @@ public partial class TFDiMD11Definition
             return true;
         }
 
-        // Annunciator anti-flap: swallow a lamp that is blinking. Returning true consumes the
-        // update so neither the generic announce nor the monitor baseline runs; when the lamp
-        // settles the next change falls under the threshold and speaks the settled state normally.
-        if (_byNodeId.TryGetValue(varName, out var ctrl) && ctrl.Kind == Md11Kinds.Annunciator
-            && SuppressAnnunciatorFlap(varName, value))
+        // The DC-power gate: consumed silently; the hook reads it from the cache.
+        if (varName == DcPowerKey) return true;
+
+        // Every lamp is handled here (owner state or standalone lit/dark) and consumed, so the
+        // generic announce path never speaks a raw "X light: on" again.
+        if (_byNodeId.TryGetValue(varName, out var ctrl) && ctrl.Kind == Md11Kinds.Annunciator)
         {
+            HandleLampUpdate(ctrl, varName, value, announcer);
             return true;
         }
 
