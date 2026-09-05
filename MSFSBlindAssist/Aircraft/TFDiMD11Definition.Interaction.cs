@@ -61,6 +61,12 @@ public partial class TFDiMD11Definition
 
         if (_bus == null) return true;
 
+        // Captured once: every caller (MainForm's panel handlers, the FCP dialog's combos in
+        // Md11AutopilotWindow) invokes SetControl on the UI thread. PressFeedbackAsync needs this
+        // to hop back to the UI thread after its ConfigureAwait(false) delays — see OnUiThread in
+        // the State partial.
+        _uiContext ??= SynchronizationContext.Current;
+
         switch (control.Kind)
         {
             // Momentary: press AND release. A press-only pulse leaves the button held for the

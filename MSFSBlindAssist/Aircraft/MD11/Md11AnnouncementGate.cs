@@ -5,6 +5,11 @@ namespace MSFSBlindAssist.Aircraft.MD11;
 /// supplies the clock. Two channels share it: BACKGROUND lamp changes (dedup on text, silent
 /// inside the echo window of the pilot's own press) and PRESS FEEDBACK (always spoken, and it
 /// seeds the dedup so the lamps that press lights do not repeat it).
+///
+/// Every call lands on the UI thread — <c>HandleLampUpdate</c> runs there as the event-batch
+/// consumer, and <c>TFDiMD11Definition</c> marshals <c>PressFeedbackAsync</c>'s tail back to it
+/// (via its captured <c>SynchronizationContext</c>) after that method's ConfigureAwait(false)
+/// delays — so the plain <see cref="Dictionary{TKey,TValue}"/> fields below need no lock.
 /// </summary>
 public sealed class Md11AnnouncementGate
 {

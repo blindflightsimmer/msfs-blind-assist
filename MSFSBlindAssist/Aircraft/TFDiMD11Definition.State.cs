@@ -35,9 +35,31 @@ public partial class TFDiMD11Definition
 
     private readonly Md11AnnouncementGate _gate = new();
 
+    /// <summary>
+    /// The UI thread's context, captured by <see cref="SetControl"/> the first time it runs (every
+    /// caller is a WinForms event handler). The gate's plain dictionaries are also mutated by
+    /// <see cref="HandleLampUpdate"/> on the event-batch consumer thread, so
+    /// <see cref="PressFeedbackAsync"/>'s tail — which runs on a thread-pool thread after its
+    /// ConfigureAwait(false) delays — must hop back via <see cref="OnUiThread"/> rather than touch
+    /// the gate or the announcer directly.
+    /// </summary>
+    private SynchronizationContext? _uiContext;
+
     /// <summary>Lamps ride the 1 Hz batch; a press's effect is visible within this. Guarded presses add the guard settle.</summary>
     private const int PressSettleMs = 1200;
     private const int GuardedPressExtraMs = 500;
+
+    /// <summary>
+    /// Runs <paramref name="action"/> on the UI thread when one was captured (the announcer and the
+    /// gate's dictionaries are UI-thread objects — HandleLampUpdate mutates the same gate on the
+    /// event-batch consumer thread), else inline as a last resort.
+    /// </summary>
+    private void OnUiThread(Action action)
+    {
+        var ctx = _uiContext;
+        if (ctx != null) ctx.Post(_ => action(), null);
+        else action();
+    }
 
     /// <summary>
     /// A lamp value arrived. Baseline-first (the first sight of every lamp is silent — connecting
@@ -90,9 +112,24 @@ public partial class TFDiMD11Definition
                 sim.RequestVariable(c.NodeId, forceUpdate: true);
                 await Task.Delay(300).ConfigureAwait(false);
             }
-            var text = Md11ControlState.Compose(c.State, ReadStateVar, IsDcPowered());
-            if (text == null) return;
-            announcer.Announce($"{c.DisplayLabel}: {_gate.Feedback(c.NodeId, text)}");
+
+            // The delays above leave this on a thread-pool thread. Compose + feedback + announce
+            // must run on the UI thread: the gate's dictionaries are also mutated by
+            // HandleLampUpdate on the event-batch consumer thread (a same-thread invariant, not a
+            // locked one), and ScreenReaderAnnouncer.Announce is unreliable off the UI thread.
+            OnUiThread(() =>
+            {
+                try
+                {
+                    var text = Md11ControlState.Compose(c.State, ReadStateVar, IsDcPowered());
+                    if (text == null) return;
+                    announcer.Announce($"{c.DisplayLabel}: {_gate.Feedback(c.NodeId, text)}");
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug("MD11", $"Press feedback (UI-thread tail) for {c.NodeId} threw: {ex.Message}");
+                }
+            });
         }
         catch (Exception ex)
         {
