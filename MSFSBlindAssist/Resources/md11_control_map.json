@@ -7,16 +7,16 @@
   "export_vars": 58,
   "state_only_vars": 238,
   "by_kind": {
-   "button": 666,
-   "switch": 59,
-   "annun": 532,
-   "knob": 99,
+   "annun": 488,
+   "button": 664,
    "guard": 32,
    "handle": 4,
+   "knob": 99,
+   "knob_pp": 3,
    "knob_push": 7,
    "lever": 2,
-   "knob_pp": 3,
-   "option": 7
+   "option": 7,
+   "switch": 59
   },
   "by_area": {
    "Aft Overhead": 63,

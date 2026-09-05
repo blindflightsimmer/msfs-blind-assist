@@ -107,5 +107,23 @@ class FinalizeTests(unittest.TestCase):
         self.assertEqual("Glareshield (First Officer)", g.area_of("MD11_GSR_MST_WRN_BT"))
 
 
+class KindCountsTests(unittest.TestCase):
+    def test_reclassified_option_is_counted_once_not_under_annun_too(self):
+        # MD11_OPT_* nodes arrive from collect() tagged "annun" (that's their template
+        # kind) and finalize_controls repoints them to "option". kind_counts() must be
+        # called on that FINALIZED list, so the row is tallied under "option" only --
+        # never counted a second time under "annun", which is what happened when the
+        # generator instead patched an "option" tally onto collect()'s pre-finalize
+        # per-kind stats (the two counts landed on the same 7 rows).
+        out = g.finalize_controls([
+            ctl("MD11_OPT_EFB", kind="annun"),
+            ctl("MD11_OVHD_PNEU_ECON_OFF_LT", kind="annun"),
+        ])
+        counts = g.kind_counts(out)
+        self.assertEqual(1, counts["option"])
+        self.assertEqual(1, counts["annun"])
+        self.assertEqual(len(out), sum(counts.values()))
+
+
 if __name__ == "__main__":
     unittest.main()

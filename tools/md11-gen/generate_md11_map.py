@@ -343,6 +343,21 @@ def finalize_controls(controls):
     return kept
 
 
+def kind_counts(controls):
+    """Per-kind tallies for the JSON `counts.by_kind` block and the printed summary.
+
+    Must be called on the FINALIZED control list, never the pre-finalize one
+    `collect()` returns. `finalize_controls` reclassifies every `MD11_OPT_*` row from
+    'annun' to 'option'; at the source-template level those rows are still 'annun',
+    so tallying `collect()`'s pre-finalize `stats` and then patching an 'option'
+    count in on the side counts each reclassified row twice -- once under 'annun'
+    (still in the pre-finalize tally) and once under 'option' (the patch). Counting
+    the finalized list instead means every control lands under exactly the one kind
+    it actually renders as, and the tallies sum to `len(controls)`.
+    """
+    return Counter(c["kind"] for c in controls)
+
+
 # Fields that carry a CEVENT id.
 EVENT_FIELDS = (
     "LEFT_BUTTON_DOWN",
@@ -926,10 +941,10 @@ def main():
 
     controls, stats = collect(pkg)
     controls = finalize_controls(controls)
-    # by_kind (below) and the printed summary both read from `stats`, which collect()
-    # populated pre-finalize -- so "option" (repointed from "annun" by finalize_controls)
-    # would otherwise never show up in either.
-    stats["kind:option"] = sum(1 for c in controls if c["kind"] == "option")
+    # by_kind (below) and the printed summary both come from the FINALIZED list via
+    # kind_counts(), never from `stats` (collect()'s pre-finalize per-kind tally) --
+    # see kind_counts()'s docstring for why patching stats on the side double-counts.
+    by_kind = kind_counts(controls)
     all_vars, export_vars = wasm_vars(wasm)
 
     _exit_if_incomplete(args.out, pkg, wasm, controls, all_vars)
@@ -951,7 +966,7 @@ def main():
             "wasm_control_vars": len(all_vars),
             "export_vars": len(export_vars),
             "state_only_vars": len(orphan_vars),
-            "by_kind": {k.split(":", 1)[1]: v for k, v in stats.items() if k.startswith("kind:")},
+            "by_kind": dict(sorted(by_kind.items())),
             "by_area": {a: len(v) for a, v in sorted(by_area.items())},
         },
         "controls": sorted(controls, key=lambda c: (c["area"], c["node_id"])),
@@ -971,9 +986,8 @@ def main():
     print(f"  export vars     : {len(export_vars)}")
     print(f"  state-only vars : {len(orphan_vars)}")
     print("  by kind         :")
-    for k, v in sorted(stats.items()):
-        if k.startswith("kind:"):
-            print(f"    {k[5:]:10s} {v}")
+    for k, v in sorted(by_kind.items()):
+        print(f"    {k:10s} {v}")
     tip = sum(1 for c in controls if c["label_source"] == "tooltip")
     derived = sum(1 for c in controls if c["label_source"] == "derived")
     mapped = sum(1 for c in controls if c["value_map"])
