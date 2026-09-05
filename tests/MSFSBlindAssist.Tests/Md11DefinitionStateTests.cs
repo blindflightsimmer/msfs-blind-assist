@@ -125,6 +125,21 @@ public class Md11DefinitionStateTests
     }
 
     [Fact]
+    public void OnlyTheSilentlyConsumedVariables_AreKeptOffCtrlM()
+    {
+        // Md11MonitorManagerForm now honours ExcludeFromMonitorManager, so the flag decides
+        // whether a pilot gets a checkbox. It must mean exactly "muted by plumbing": the lamp
+        // with no word of its own (APU BLANK) and the silent read-outs. The flap lever and
+        // thumbwheel DO speak — through ProcessSimVarUpdate rather than the generic gate — so
+        // unticking them silences something and they must keep their rows.
+        Assert.True(Vars["MD11_AOVHD_APU_BLANK_LT"].ExcludeFromMonitorManager);
+        Assert.False(Vars["MD11_FLAP_LATCH"].ExcludeFromMonitorManager);
+        Assert.False(Vars["MD11_DIALAFLAP_WHEEL_RNG"].ExcludeFromMonitorManager);
+        // Every other lamp is a real announcement and stays mutable.
+        Assert.False(Vars["MD11_OVHD_ELEC_AC1_OFF_LT"].ExcludeFromMonitorManager);
+    }
+
+    [Fact]
     public void BatchCoveredNames_AreUnique()
     {
         // Two batch entries with one Name shift every later slot (VarNameCollision invariant).

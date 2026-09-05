@@ -468,7 +468,10 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                     IsAnnounced = flapStream,               // required to join continuous monitoring
                     ExcludeFromBatch = flapStream,          // per-var subscription, not the 1 Hz batch
                     HighFrequency = flapStream,             // SIM_FRAME + CHANGED: fresh reads for the walk
-                    ExcludeFromMonitorManager = flapStream, // ProcessSimVarUpdate owns the wording
+                    // NOT ExcludeFromMonitorManager, even though ProcessSimVarUpdate owns the
+                    // wording: that flag means "muted by plumbing, a checkbox here would silence
+                    // nothing", and these two DO speak (the composed flap read-out). Unticking
+                    // either really does silence its trigger, so both stay Ctrl+M rows.
                     ValueDescriptions = values,
                     // No ValueDescriptions means a bare number with no meaning to speak — render
                     // it read-only rather than offering an empty combo the user cannot use.

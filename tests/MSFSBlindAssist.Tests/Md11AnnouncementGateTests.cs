@@ -37,6 +37,28 @@ public class Md11AnnouncementGateTests
     }
 
     [Fact]
+    public void Feedback_ClosesTheEchoWindow_SoALaterCorrectionIsStillSpoken()
+    {
+        // A guarded press spends 550 ms lifting its cover before the button is written, so its
+        // lamp can land after the feedback has already spoken the OLD state. That later lamp is
+        // the correction, not an echo: it must speak. Same text still stays quiet.
+        var g = new Md11AnnouncementGate();
+        g.NotePress("HYD_TEST", 50_000);
+        g.Feedback("HYD_TEST", "Off");                                     // spoke the stale state
+        Assert.True(g.ShouldSpeakBackground("HYD_TEST", "Test", 50_100));  // the real lamp, inside the old window
+        Assert.False(g.ShouldSpeakBackground("HYD_TEST", "Test", 50_200)); // and only once
+    }
+
+    [Fact]
+    public void Feedback_StillSwallowsTheEchoOfItsOwnPress()
+    {
+        var g = new Md11AnnouncementGate();
+        g.NotePress("GEN1", 50_000);
+        g.Feedback("GEN1", "Off");
+        Assert.False(g.ShouldSpeakBackground("GEN1", "Off", 50_100));   // same text — the echo
+    }
+
+    [Fact]
     public void Reset_ForgetsEverything()
     {
         var g = new Md11AnnouncementGate();

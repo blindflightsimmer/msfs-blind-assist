@@ -13,9 +13,10 @@ namespace MSFSBlindAssist.Forms.MD11;
 /// and equally why they need to be individually mutable: 532 lamps is a lot of voice in a busy
 /// phase, and one chatty lamp can bury the one that matters.
 ///
-/// Enumerates EVERY auto-announced variable (UpdateFrequency.Continuous + IsAnnounced) from the
-/// aircraft definition dynamically — mirroring the Fenix / A380 / A32NX / HS787 / iFly managers —
-/// so the list needs no maintenance as the definition grows. Unchecked items are written to
+/// Enumerates every auto-announced variable (UpdateFrequency.Continuous + IsAnnounced, minus the
+/// ones flagged ExcludeFromMonitorManager) from the aircraft definition dynamically — mirroring
+/// the Fenix / A380 / A32NX / HS787 / iFly managers — so the list needs no maintenance as the
+/// definition grows. Unchecked items are written to
 /// UserSettings.Md11DisabledMonitorVariables. MainForm.OnSimVarUpdated honours the list TWICE: via
 /// the Suppressed-wrap (the MD-11 announces its composed flap read-out from INSIDE
 /// ProcessSimVarUpdate, where the generic gate never runs — the HS787 pattern) and via the generic
@@ -37,6 +38,12 @@ public partial class Md11MonitorManagerForm : Form
         foreach (var kv in variables)
         {
             if (kv.Value.UpdateFrequency != UpdateFrequency.Continuous || !kv.Value.IsAnnounced) continue;
+            // A row that mutes nothing is worse than no row: the DC-bus voltage gate and the
+            // lamps with no word of their own (APU BLANK) are consumed silently, so unticking
+            // them changes nothing a pilot can hear. This form predates MonitorManagerFormBase
+            // and is not one of its subclasses (which honour the flag through MonitorRowBuilder);
+            // migrating it onto the base is a follow-up, deliberately not done here.
+            if (kv.Value.ExcludeFromMonitorManager) continue;
             _keys.Add(kv.Key);
         }
         // Sorted by the SPOKEN name, not the node id: the pilot is looking for "Left fuel light",
