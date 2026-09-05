@@ -30,6 +30,7 @@ Usage:
 """
 
 import argparse
+import html
 import json
 import os
 import re
@@ -120,8 +121,8 @@ AREA_LABELS = {
     "FLAP": "Flaps",
     "DIALAFLAP": "Dial-A-Flap",
     "SPDBRK": "Speedbrake",
-    "GSL": "Ground Service (Left)",
-    "GSR": "Ground Service (Right)",
+    "GSL": "Glareshield (Captain)",
+    "GSR": "Glareshield (First Officer)",
     "CAB": "Cabin",
     "WIPER": "Wipers",
     "TOEBRAKE": "Toe Brakes",
@@ -134,6 +135,23 @@ AREA_LABELS = {
     "EFB": "EFB",
     "FLIGHTDECK": "Flight Deck Door",
     "YOKE": "Yoke",
+}
+
+# Raw 3D node names carry no MD11_<AREA> token. Place them by hand.
+AREA_FIXES = {
+    **{n: "Doors and Exterior" for n in (
+        "1L_DN", "1L_UP", "1R_DN", "1R_UP", "2L_DN", "2L_UP", "2R_DN", "2R_UP",
+        "Object7524", "Object7525", "Object7526", "Object7527", "Object7530", "Object7531",
+        "Object7536", "Object7537", "Cylinder11762_03", "Cylinder11813", "Cylinder11904",
+        "Cylinder12038", "Cylinder12057_08", "Cylinder12058", "Cylinder12061", "Cylinder12064")},
+    "GA_BT_ALT": "Throttle Quadrant",
+    "knob_kohlsman": "Main Instrument Panel",
+    "l_window_shade_pull": "Captain Side Panel",
+    "Mirror_l_window_shade_pull": "Captain Side Panel",
+    "MANF_DRAIN_LT": "Overhead",
+    "MD11_OVHD_1_PAX_LOAD_SW": "Aircraft Options",
+    "MD11_OVHD_10_PAX_LOAD_SW": "Aircraft Options",
+    "MD11_OVHD_100_PAX_LOAD_SW": "Aircraft Options",
 }
 
 # ---------------------------------------------------------------------------
@@ -184,6 +202,147 @@ CURATED = {
     },
 }
 
+# Controls whose exported tooltip is missing or garbage. TFDi's wording where it exists,
+# otherwise the cockpit's own placard wording. Discriminator first ("Left Rain Repellent").
+LABEL_FIXES = {
+    "MD11_OVHD_AICE_AUTO_BT": "Anti-Ice Auto",
+    "MD11_OVHD_L_RAIN_REPLNT_BT": "Left Rain Repellent",
+    "MD11_OVHD_R_RAIN_REPLNT_BT": "Right Rain Repellent",
+    "MD11_OVHD_PNEU_OUTFLOW_VALVE_POS_SW": "Outflow Valve Position",
+    "MD11_OVHD_1_PAX_LOAD_SW": "Passenger Load Units",
+    "MD11_OVHD_10_PAX_LOAD_SW": "Passenger Load Tens",
+    "MD11_OVHD_100_PAX_LOAD_SW": "Passenger Load Hundreds",
+    "MD11_AOVHD_EVAC_GRD": "EVAC guard",
+    "MD11_AOVHD_GPWS_GRD": "GPWS guard",
+    "MD11_CTR_FLTNO1_SW": "Flight Number Digit 1",
+    "MD11_CTR_FLTNO2_SW": "Flight Number Digit 2",
+    "MD11_CTR_FLTNO3_SW": "Flight Number Digit 3",
+    "MD11_CTR_FLTNO4_SW": "Flight Number Digit 4",
+    "MD11_MIP_ISFD_STD_BT": "Standby Display STD",
+    "MD11_PED_XPNDR_CLR_BT": "Transponder Clear",
+    "MD11_CABIN_OXY_MASKS_DOOR": "Cabin Oxygen Masks Door",
+    "MD11_EFB_TOGGLE": "EFB Toggle (Captain)",
+    "MD11_EFB_TOGGLE_FO": "EFB Toggle (First Officer)",
+    "MD11_FLIGHTDECK_DOOR": "Flight Deck Door",
+    "l_window_shade_pull": "Left Window Shade",
+    "Mirror_l_window_shade_pull": "Left Window Shade (mirror)",
+    "GA_BT_ALT": "Go Around Mode (alternate button)",
+    "MD11_LYOKE_TRIM_SW001": "First Officer Elevator Trim Switch",
+    "MD11_THR_L_ATS_BT": "Left Autothrust Disconnect",
+    "MD11_THR_R_ATS_BT": "Right Autothrust Disconnect",
+    "MD11_EXT_DOOR_PAX_1L_ARMED_LVR_OBJ": "Door 1L Slides (cabin lever)",
+    "MD11_EXT_DOOR_PAX_1R_ARMED_LVR_OBJ": "Door 1R Slides (cabin lever)",
+}
+
+# MCDU keys: the derived 'Lsk 1l button' / 'Dir intc button' forms, spelled as the keycap.
+MCDU_KEY_LABELS = {
+    "DIR_INTC": "DIR INTC", "FPLN": "F-PLN", "SEC_FPLN": "SEC F-PLN", "NAV_RAD": "NAV RAD",
+    "NEXTPAGE": "NEXT PAGE", "TOAPPR": "TO/APPR", "ENG_OUT": "ENG OUT", "CLR": "CLR",
+    "INIT": "INIT", "REF": "REF", "PERF": "PERF", "PROG": "PROG", "MENU": "MENU", "FIX": "FIX",
+    "UP": "Up", "DOWN": "Down", "SP": "Space", "DOT": "Dot",
+    "MINUS": "Minus", "PLUS": "Plus", "SLASH": "Slash",
+    # NOTE: MD11_xMCDU_L_BT / R_BT are the LETTERS L and R (the humanizer's ABBREV table turned
+    # them into "Left"/"Right"); they fall through to the key token itself.
+}
+MCDU_SIDES = {"LMCDU": "Left", "CMCDU": "Center", "RMCDU": "Right"}
+
+
+def breaker_label(node_id, label):
+    """'MD11_BKR_BWU_C24' + 'Tank 1 Transfer Pump Power Breaker' -> 'C24 Tank 1 Transfer Pump Power'.
+
+    The grid position is how the real panel identifies a breaker and it is the only thing
+    separating the two 'Tank 1 Transfer Pump Power' breakers (C24 and D24). The word
+    'Breaker' is dropped because every row of the Circuit Breakers panel is one.
+    """
+    grid = node_id.rsplit("_", 1)[-1]
+    text = re.sub(r"\s+Breaker$", "", label or "").strip() or grid
+    return f"{grid} {text}"
+
+
+def mcdu_key_label(node_id, label):
+    """'MD11_LMCDU_LSK_1L_BT' -> 'LSK 1L'; 'MD11_LMCDU_A_BT' -> 'A'; brightness knob keeps its tooltip."""
+    parts = node_id.split("_")
+    if len(parts) < 3 or parts[1] not in MCDU_SIDES:
+        return label
+    key = "_".join(parts[2:-1]) if parts[-1] in ("BT", "KB") else "_".join(parts[2:])
+    if parts[-1] == "KB":
+        return label or f"{MCDU_SIDES[parts[1]]} MCDU Brightness"
+    if key.startswith("LSK_"):
+        return "LSK " + key[4:]
+    return MCDU_KEY_LABELS.get(key, key)
+
+
+def _strip_suffix(node_id):
+    for suf in ("_BT001", "_BT_F", "_BT", "_GRD", "_SW", "_KB", "_LVR"):
+        if node_id.endswith(suf):
+            return node_id[: -len(suf)]
+    return node_id
+
+
+def finalize_controls(controls):
+    """Labels, duplicates, areas and option flags — pure, so it is testable on fixtures.
+
+    Order matters: duplicates are collapsed FIRST (so a guard names the surviving button),
+    then areas, then labels.
+    """
+    # 1. Collapse duplicates: a second clickspot of one button (same kind, same events,
+    #    node id = base + '001' / '_F'), and a second lamp node on the same L:var (VIS_VAR
+    #    duplicates: the Captain/F-O audio panel families, the '_LT001' / '_LT_F' nodes).
+    #    Two lamps on one var would also be two continuous batch entries with one Name,
+    #    which shifts every later batch slot (the VarNameCollision invariant).
+    kept, seen_lamp_var, by_id = [], set(), {c["node_id"]: c for c in controls}
+    for c in controls:
+        nid = c["node_id"]
+        if c["kind"] == "annun":
+            if c["state_var"] in seen_lamp_var:
+                continue
+            seen_lamp_var.add(c["state_var"])
+        else:
+            m = re.match(r"^(.*?)(001|_F)$", nid)
+            base = by_id.get(m.group(1)) if m else None
+            if base is not None and base["kind"] == c["kind"] and base["events"] == c["events"]:
+                continue
+        kept.append(c)
+
+    labels = {c["node_id"]: c["label"] for c in kept}
+
+    for c in kept:
+        nid = c["node_id"]
+        # 2. Option flags are not lamps: they describe the installed configuration.
+        if nid.startswith("MD11_OPT_"):
+            c["kind"] = "option"
+        # 3. Areas for raw 3D names and the misplaced options.
+        if nid in AREA_FIXES:
+            c["area"] = AREA_FIXES[nid]
+        # 4. Labels.
+        if nid in LABEL_FIXES:
+            c["label"], c["label_source"] = LABEL_FIXES[nid], "curated"
+        elif nid.startswith("MD11_BKR_"):
+            c["label"] = breaker_label(nid, c["label"])
+        elif nid.split("_")[1:2] and nid.split("_")[1] in MCDU_SIDES and c["kind"] != "annun":
+            c["label"] = mcdu_key_label(nid, c["label"])
+        elif c["kind"] == "guard":
+            covered = next((o for o in kept if o.get("guard_id") == nid), None)
+            if covered is not None:
+                c["label"] = f"{labels.get(covered['node_id']) or covered['node_id']} guard"
+            elif c["label"] and c["label"].lower().endswith(" guard"):
+                pass
+            else:
+                c["label"] = f"{c['label'] or humanize(nid)} guard"
+        elif c["label_source"] == "derived":
+            # collect() already runs humanize() when there is no tooltip, so in the real
+            # pipeline `c["label"]` is never actually None here -- but finalize_controls is a
+            # pure function tested on fixtures that skip collect() entirely, so it must be
+            # able to derive the fallback itself rather than assume a caller already did.
+            text = c["label"] or humanize(nid)
+            if text and text.lower().endswith(" button"):
+                text = text[: -len(" button")]
+            c["label"] = text
+        if c["label"]:
+            c["label"] = speakable(c["label"])
+    return kept
+
+
 # Fields that carry a CEVENT id.
 EVENT_FIELDS = (
     "LEFT_BUTTON_DOWN",
@@ -228,18 +387,35 @@ def speakable(text):
 
     Symbols that are fine to look at are noise to hear: NVDA reads a bare '°' as
     'degrees' only in some punctuation modes and skips it entirely in others, so
-    spell it out here rather than depending on the reader's settings.
+    spell it out here rather than depending on the reader's settings. TFDi's XML
+    carries HTML entities ('1&lt;-&gt;2'); decode them, and render the arrow as
+    'to' because no reader has a good reading for '<->'.
     """
     if not text:
         return text
+    text = html.unescape(text)
     text = (
-        text.replace("°", " degrees")
+        text.replace("<->", " to ")
+        .replace("°", " degrees")
         .replace("△", "delta")
         .replace("�", "")
         .replace("–", "-")
         .replace("—", "-")
     )
     return re.sub(r"\s+", " ", text).strip()
+
+
+def strip_outer_parens(label):
+    """Strip ONE wrapping pair of parentheses, never a lone one.
+
+    The old ``label.strip("()")`` removed the closing parenthesis of a label that merely
+    ENDS with a parenthetical — 'APU Generator (APU Panel)' became 'APU Generator (APU
+    Panel', and four labels shipped that way.
+    """
+    label = label.strip()
+    if label.startswith("(") and label.endswith(")") and label.count("(") == 1:
+        return label[1:-1].strip()
+    return label
 
 
 USETEMPLATE_RE = re.compile(
@@ -351,7 +527,7 @@ def parse_tooltip(tooltip):
     label = re.sub(r"%![^!]*!", "", label)
     label = re.sub(r"%\{[^}]*\}", "", label)
 
-    label = re.sub(r"\s+", " ", label).strip().strip("()").strip()
+    label = strip_outer_parens(re.sub(r"\s+", " ", label))
     label = re.sub(r"\s+([,/])", r"\1", label)
     label = speakable(label)
     value_map = {k: speakable(v) for k, v in value_map.items()}
@@ -749,6 +925,11 @@ def main():
     pkg, wasm = resolve_paths(args.pkg, args.wasm)
 
     controls, stats = collect(pkg)
+    controls = finalize_controls(controls)
+    # by_kind (below) and the printed summary both read from `stats`, which collect()
+    # populated pre-finalize -- so "option" (repointed from "annun" by finalize_controls)
+    # would otherwise never show up in either.
+    stats["kind:option"] = sum(1 for c in controls if c["kind"] == "option")
     all_vars, export_vars = wasm_vars(wasm)
 
     _exit_if_incomplete(args.out, pkg, wasm, controls, all_vars)
