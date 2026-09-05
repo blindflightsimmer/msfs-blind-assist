@@ -10,12 +10,12 @@ Tip: Press the same bracket key again to cancel a mode you activated by accident
 
 READ THIS FIRST - WHAT THIS AIRCRAFT CAN AND CANNOT DO
 
-All three MCDUs read fully, as text - Left, Center and Right. Press Shift+M to open the MCDU
-window. TFDi publish the MCDU screens as text specifically so tools like this one can read
-them, so this is the real screen, live, not a reconstruction.
+All three MCDUs read fully, as text - Left, Center and Right. Press left bracket, then Shift+M,
+to open the MCDU window. TFDi publish the MCDU screens as text specifically so tools like this
+one can read them, so this is the real screen, live, not a reconstruction.
 
-The EFB reads too - press Shift+T. All of it: Dispatch, Payload, Perf, Charts, Services,
-State and Options.
+The EFB reads too - press left bracket, then Shift+T. All of it: Dispatch, Payload, Perf,
+Charts, Services, State and Options.
 
 The six display units (PFD, ND, EAD, SD) and the standby instrument are a different matter:
 those are drawn from inside the aircraft's own code module with no text behind them, so there
@@ -65,10 +65,11 @@ cannot be announced. Pressing a mode button on the panel is not the same as that
 so those buttons are not reported as engaged modes.
 
 
-THE MCDU - Press Shift+M
+THE MCDU - Press left bracket, then Shift+M
 
 The MD-11 has three MCDUs and all three are readable independently. The window opens on the
-Left (Captain's) unit.
+Left (Captain's) unit. Shift+M on its own does nothing - the left bracket is what puts the app
+into input mode first. (In OUTPUT mode - right bracket - Shift+M reads the METAR instead.)
 
   Ctrl+Shift+L / C / R    Switch between the Left, Center and Right MCDU
   Alt+Home                Jump to the screen (then use the arrow keys to read it line by line)
