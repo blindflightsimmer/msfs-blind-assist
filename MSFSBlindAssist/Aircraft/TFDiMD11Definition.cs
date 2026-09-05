@@ -57,8 +57,10 @@ namespace MSFSBlindAssist.Aircraft;
 /// SimConnect caps a client at ~1000 data definitions and 1361 controls would obliterate that,
 /// so the split below is deliberate, not incidental:
 ///   • momentary buttons (497) → UpdateFrequency.Never  → write-only, registered as 0 defs
-///   • annunciators (488)     → Continuous+IsAnnounced → batch-covered, 0 individual defs
-///   • everything else        → OnRequest              → 378 individual defs (cap is 900)
+///   • annunciators (488)      → Continuous+IsAnnounced → batch-covered, 0 individual defs
+///   • everything else         → OnRequest              → the latching buttons, guards, switches,
+///                                                        knobs, levers and handles, plus the base
+///                                                        and export vars: 378 defs (cap is 900)
 /// Watch <c>registration.log</c>'s approxTotalDefs after any change here.
 ///
 /// ═══ VERIFY IN SIM (nothing below has been flown) ═══
@@ -198,6 +200,13 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     {
         _sim = sim;
         _bus ??= new Md11EventBus(sim);
+        // Every caller reaches here on the UI thread (MainForm's aircraft switch, a panel write, a
+        // hotkey), and this is the EARLIEST of them — it runs before the first lamp can arrive.
+        // A deferred dark transition needs the context to exist by then: OnUiThread falls back to
+        // running inline, which on that path would be a thread-pool thread mutating the gate's
+        // unlocked dictionaries beside HandleLampUpdate. SetControl's capture used to be the only
+        // one, so until the pilot pressed something there was nothing to marshal to.
+        _uiContext ??= SynchronizationContext.Current;
     }
 
     /// <summary>

@@ -133,10 +133,10 @@ public partial class TFDiMD11Definition
     /// <summary>
     /// A lamp went out. Wait <see cref="DarkSettleMs"/>, then decide from what is true THEN.
     ///
-    /// Two reasons, both measured. POWER: the 528 batch-covered variables (488 of them lamps)
-    /// ride two SimConnect batches
-    /// sorted by name, and <c>MD11_OVHD_ELEC_DC1_BUS_OFF_LT</c> (which the gate reads) sits in
-    /// batch 1 while the <c>MD11_OVHD_HYD_*</c> and <c>MD11_OVHD_PNEU_*</c> lamps sit in batch 2 —
+    /// Two reasons, both measured. POWER: the 528 batch-covered variables (488 of them lamps) ride
+    /// two SimConnect batches sorted by name, and <c>MD11_OVHD_ELEC_DC1_BUS_OFF_LT</c> (which the
+    /// gate reads) sits in batch 1 while the <c>MD11_OVHD_HYD_*</c> and <c>MD11_OVHD_PNEU_*</c>
+    /// lamps sit in batch 2 —
     /// so in the normal shutdown order (external power off, battery still on) a batch-2 lamp can
     /// go dark while the gate has not yet learned the DC busses died, and every OFF-legend button
     /// on them would announce its dark meaning: "Tank 1 Fuel Pumps: On", "Pack 1: On", … one per
