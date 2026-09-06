@@ -22,12 +22,13 @@ those are drawn from inside the aircraft's own code module with no text behind t
 is no PFD or EICAS readout. This is a property of the MD-11 itself and cannot be fixed from
 this side - it has been checked thoroughly, three separate ways.
 
-One consequence worth knowing: the flight mode annunciator cannot be read either. So MSFS
-Blind Assist can tell you what is SELECTED on the flight control panel - speed, heading,
-altitude, vertical speed, and the autopilot's own state - but not which mode is currently
-engaged (PROF, NAV and so on). The panel's mode buttons only report that a button was pressed,
-which is not the same thing as the mode engaging, so they are deliberately not read out as if
-they were.
+One consequence worth knowing: the flight mode annunciator cannot be read either. What CAN be
+read is what the flight control panel itself shows. The heading window goes to dashes while NAV
+is flying the aircraft, and the speed window goes to dashes while FMS speed is, so NAV and FMS
+Speed are reported as engaged or not engaged from those windows. PROF and Approach/Land have no
+such cue - their state lives only on the annunciator - so they are never reported as engaged.
+The mode buttons themselves only report that they were pressed, which is not the same thing as
+the mode engaging.
 
 What replaces the screens: TFDi publish the numbers a sighted pilot would read off the glass as
 separate values, and MSFS Blind Assist reads those instead. That is where your V-speeds,
@@ -37,32 +38,38 @@ live in the Read-outs section (Ctrl+1) as well as on the keys below.
 
 THE FLIGHT CONTROL PANEL - Press Ctrl+P in input mode
 
-The MD-11's flight control panel is what other aircraft call the MCP or FCU. The window has the
-autoflight engage buttons (Autoflight, PROF, NAV, Approach/Land, FMS Speed), the mode selects,
-Go Around, both autothrust disconnects, the bank angle limiter, and - for convenience, since you
-are usually setting it at the same time - the Dial-A-Flap take-off angle.
+The MD-11's flight control panel is what other aircraft call the MCP or FCU. The window opens on
+the Autoflight button, which reads its state: "Autoflight: AP 1, ATS on", or "Autoflight: off".
+NAV and FMS Speed read "engaged" or "not engaged" (from the panel's own windows, see above), and
+the four mode selects read their current mode: "IAS / Mach: Mach", "Heading / Track: Heading",
+"VS / FPA: V/S", "Altitude Unit: feet". PROF, Approach/Land, Go Around, the knob push and pull
+buttons, the vertical speed wheel and the autothrust disconnects have no state to show and read
+as plain buttons.
 
-It also reads back all four windows with their modes, because the mode changes what the number
-means: "Mach 0.82" and "Speed 250 knots" are the same window in different modes.
+Shift+Tab from the Autoflight button reaches a status list with the four windows and the
+autopilot and autothrottle: "Speed: Mach 0.82", "Heading: dashed, NAV engaged", "Altitude: 36000
+feet", "Vertical speed: dashed, not engaged", "Autopilot: AP 1", "Autothrottle: on". It updates
+live while you read it. The bank angle limiter and the Dial-A-Flap take-off angle are at the
+bottom of the window.
 
 Typing values in (press left bracket first for input mode) - these accept a typed value, no
 knob-winding:
-  H          Set heading
-  S          Set speed. Type knots (250) or a Mach number (0.82) - it works out which from
+  Ctrl+H     Set heading
+  Ctrl+S     Set speed. Type knots (250) or a Mach number (0.82) - it works out which from
              the number itself, and sets the unit for you.
-  A          Set altitude
-  V          Set vertical speed. Type feet per minute (-1500) or a flight path angle (-3).
+  Ctrl+A     Set altitude
+  Ctrl+V     Set vertical speed. Type feet per minute (-1500) or a flight path angle (-3).
   Ctrl+B     Set the captain's altimeter. Type hPa (1013) or inHg (29.92) - it converts to
              whichever unit the display is currently in. The dialog also has a Standard button.
 
-Each of these dialogs also has Push and Pull buttons for its knob (speed, heading and altitude
-push and pull on the real aircraft). The same push/pull buttons are in the Ctrl+P window.
+Each dialog also carries the related buttons: the heading dialog has NAV (engaged or not
+engaged) and the knob's Push and Pull, the speed dialog FMS Speed and its knob, the altitude
+dialog PROF and its knob, the vertical speed dialog the wheel. The same buttons are in the
+Ctrl+P window.
 
-Note on modes: the dialogs set and read the SELECTED values and their units (heading vs track,
-knots vs Mach, and so on). Which mode is ENGAGED - PROF, NAV, an armed approach - lives on the
-flight mode annunciator, which is part of the glass that cannot be read on this aircraft, so it
-cannot be announced. Pressing a mode button on the panel is not the same as that mode engaging,
-so those buttons are not reported as engaged modes.
+Note on modes: the dialogs set and read the SELECTED values and their units. NAV and FMS Speed
+are reported from the panel's dashed windows; PROF and an armed approach live on the flight mode
+annunciator, which cannot be read, so they are never reported as engaged.
 
 
 THE MCDU - Press left bracket, then Shift+M
@@ -87,8 +94,8 @@ Line select keys - two layouts, switch them in FMC Settings:
 The screen lines are numbered to match: the line that reads "3:" is the one Ctrl+3 acts on.
 
 Pages:
-  Alt+I   Init          Alt+P   Perf          Alt+F   Fpln       Alt+Shift+F  Sec Fpln
-  Alt+G   Prog          Alt+R   Ref           Alt+N   Nav Rad    Alt+X        Fix
+  Alt+I   Init          Alt+E   Perf          Alt+F   Fpln       Alt+Shift+F  Sec Fpln
+  Alt+P   Prog          Alt+R   Ref           Alt+N   Nav Rad    Alt+X        Fix
   Alt+D   Dir Intc      Alt+T   To Appr       Alt+O   Eng Out    Alt+M        Menu
 
 Editing and moving around:
@@ -98,7 +105,7 @@ Editing and moving around:
                           you, checking the screen after each, and stops the moment it is empty.)
   Page Up / Alt+Up        Slew up
   Page Down / Alt+Down    Slew down
-  Alt+Right               Next page
+  Right Arrow (on the screen), or Alt+Right anywhere    Next page
 
 The MD-11 has no EXEC key, no DEL key and no PREV PAGE key - the real aircraft does not have
 them. It slews with the up and down keys and confirms with the line select keys instead.
@@ -114,15 +121,13 @@ Flaps:
              handle is in the Dial-A-Flap detent)
 
 Flight control panel - what is SELECTED, with the mode it is in:
-  Shift+H    Read selected heading, or track if the window is in track mode
-  Shift+S    Read selected speed, in knots or as a Mach number
+  Shift+H    Read selected heading, or track if the window is in track mode. A dashed window
+             reads "Selected heading dashed, NAV engaged".
+  Shift+S    Read selected speed, in knots or as a Mach number. Dashed reads "FMS speed engaged".
   Shift+A    Read selected altitude, in feet or metres
-  Shift+V    Read selected vertical speed, or flight path angle
+  Shift+V    Read selected vertical speed, or flight path angle. Dashed reads "not engaged".
 
-  A window showing dashes reads as "dashed" rather than as a number.
-
-  These report what is SELECTED. Which mode is currently ENGAGED (PROF, NAV and so on)
-  cannot be read on this aircraft - see the note above.
+  PROF cannot be read on this aircraft - see the note above.
 
 Characteristic Speeds:
   Shift+2    Read slat retraction speed (VSR)
@@ -149,9 +154,19 @@ Aircraft state:
              trim tanks, which the sim's own fuel readout has no place for.
   Shift+F    Read the same in kilograms
   Shift+G    Read gear lever position
-  B          Read the captain's altimeter setting (inches or hectopascals, whichever it is
-             currently set to)
+  B          Read the captain's altimeter in both units, "Altimeter: 1013, 29.92", or
+             "Altimeter standard"
   Shift+W    Read gross weight
+
+
+INDICATOR LIGHTS ON THE PANELS
+
+Every panel's indicator lights are in its Status Display, one list at the end of the panel.
+Press Ctrl+3 to jump to it and arrow through the rows: "AC Bus 1: Off", "External Power AVAIL
+light: On". It updates live and F5 refreshes it. The lights are no longer separate tab stops, so
+Tab moves only between the controls you can operate. A light on a dead bus reads "unpowered".
+The Read-outs section works the same way: each of its panels is one list, with units - "V1: 152
+knots", "Captain altimeter: standard", "Tank 1: 12000 pounds".
 
 
 BACKGROUND ANNOUNCEMENTS - Ctrl+M
