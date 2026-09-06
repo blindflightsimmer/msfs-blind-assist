@@ -25,6 +25,14 @@ namespace MSFSBlindAssist.Forms.MD11;
 /// with distinct PUSH_/PULL_ event pairs), so they get their own buttons. Their exact autoflight
 /// meaning on this airframe is NOT asserted here — the pilot gets the same two actions a sighted
 /// pilot has, labelled as what they physically are.
+///
+/// STATE. A status list (first in the tab order) reads the four windows, the autopilot and the
+/// autothrottle; the buttons whose state the aircraft exports carry it in their caption —
+/// "Autoflight: AP 1, ATS on", "NAV: engaged", "IAS / Mach: Mach" — refreshed twice a second and
+/// only rewritten on change. NAV and FMS Speed come from the FCP's own dashed windows (TFDi
+/// document them as the engagement cue); PROF and Approach / Land stay plain because their
+/// engagement exists only on the FMA, which the aircraft does not export. Every word comes from
+/// Md11AutoflightState, shared with the dialogs and the hotkey read-outs.
 /// </summary>
 public class Md11AutopilotWindow : Form
 {
@@ -39,7 +47,10 @@ public class Md11AutopilotWindow : Form
     private readonly ScreenReaderAnnouncer _announcer;
     private IntPtr _previousWindow;
 
-    private Label _values = null!;
+    private ListBox _status = null!;
+    private Button _autoflight = null!;
+    /// <summary>Buttons whose caption carries live state ("Autoflight: AP 1, ATS on"), refreshed on the timer.</summary>
+    private readonly List<(Button Button, string Label, Func<string> State)> _liveCaptions = new();
     private ComboBox _bankLimit = null!;
     private ComboBox _dialAFlap = null!;
     private System.Windows.Forms.Timer _refresh = null!;
@@ -87,7 +98,7 @@ public class Md11AutopilotWindow : Form
         SuspendLayout();
 
         Text = "MD-11 Flight Control Panel";
-        ClientSize = new Size(560, 640);
+        ClientSize = new Size(560, 680);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -97,24 +108,45 @@ public class Md11AutopilotWindow : Form
 
         var y = 10;
 
-        _values = new Label
+        // The FCP windows and the engagement state, as a read-only list the pilot can Tab to and
+        // arrow through. It replaced a Label, which is not in the tab order — the reason the
+        // window "had no state indications": the state was there, unreachable.
+        _status = new ListBox
         {
             Location = new Point(10, y),
-            Size = new Size(540, 60),
-            AccessibleName = "Selected values",
-            AccessibleDescription = "The four FCP windows and the autoflight state.",
+            Size = new Size(540, 100),
+            IntegralHeight = false,
+            SelectionMode = SelectionMode.One,
+            TabStop = true,
+            AccessibleName = "Flight control panel status",
+            AccessibleDescription = "The four FCP windows with their modes, the autopilot and the autothrottle; updates live.",
         };
-        y += 68;
+        Controls.Add(_status);
+        y += 108;
 
         // ---- Engage buttons ----
+        // State where the aircraft exports one (Md11AutoflightState): AUTO FLIGHT from
+        // MD11_AP_STATE + MD11_ATS_STATE, NAV and FMS SPD from the FCP's own dashed windows.
+        // PROF and APPR/LAND have no readable state (their engagement is FMA-only) and Go Around
+        // is a one-shot, so those stay plain.
         y = AddSection("Autoflight", y);
-        y = AddButtonRow(y, ("&Autoflight", Autoflight), ("&PROF", Prof), ("&NAV", Nav));
-        y = AddButtonRow(y, ("A&pproach / Land", ApprLand), ("&FMS Speed", FmsSpd), ("&Go Around", GoAround));
+        y = AddButtonRow(y,
+            ("&Autoflight", Autoflight, () => Md11AutoflightState.Autoflight(Val("MD11_AP_STATE"), Val("MD11_ATS_STATE"))),
+            ("&PROF", Prof, null),
+            ("&NAV", Nav, () => Md11AutoflightState.Engaged(Md11AutoflightState.NavEngaged(Val(Md11Fcp.ReadHeading)))));
+        y = AddButtonRow(y,
+            ("A&pproach / Land", ApprLand, null),
+            ("&FMS Speed", FmsSpd, () => Md11AutoflightState.Engaged(Md11AutoflightState.FmsSpeedEngaged(Val(Md11Fcp.ReadSpeed)))),
+            ("&Go Around", GoAround, null));
 
-        // ---- Mode selects ----
+        // ---- Mode selects ---- each names its current mode, from the aircraft's own unit vars.
         y = AddSection("Mode select", y);
-        y = AddButtonRow(y, ("&IAS / Mach", IasMachSel), ("&Heading / Track", HdgTrkSel));
-        y = AddButtonRow(y, ("&VS / FPA", VsFpaSel), ("Altitude &Unit", AltUnitSel));
+        y = AddButtonRow(y,
+            ("&IAS / Mach", IasMachSel, () => Val(Md11Fcp.ModeSpeedIsMach) > 0.5 ? "Mach" : "IAS"),
+            ("&Heading / Track", HdgTrkSel, () => Val(Md11Fcp.ModeHeadingIsTrack) > 0.5 ? "Track" : "Heading"));
+        y = AddButtonRow(y,
+            ("&VS / FPA", VsFpaSel, () => Val(Md11Fcp.ModeVerticalIsFpa) > 0.5 ? "FPA" : "V/S"),
+            ("Altitude &Unit", AltUnitSel, () => Val(Md11Fcp.ModeAltitudeIsMetres) > 0.5 ? "metres" : "feet"));
 
         // ---- Vertical speed wheel ----
         // The MD-11 has no "engage V/S" button: rotating the V/S / FPA wheel is what engages the
@@ -131,7 +163,7 @@ public class Md11AutopilotWindow : Form
 
         // ---- Autothrust disconnect ----
         y = AddSection("Autothrust", y);
-        y = AddButtonRow(y, ("Disconnect &Left", AtsDiscL), ("Disconnect &Right", AtsDiscR));
+        y = AddButtonRow(y, ("Disconnect &Left", AtsDiscL, null), ("Disconnect &Right", AtsDiscR, null));
 
         // ---- Combos ----
         y = AddSection("Selectors", y);
@@ -176,8 +208,6 @@ public class Md11AutopilotWindow : Form
         // Auto/5/10/15/20/25 — the aircraft's own value map for the limiter knob.
         _bankLimit.Items.AddRange(new object[] { "Auto", "5 degrees", "10 degrees", "15 degrees", "20 degrees", "25 degrees" });
 
-        Controls.Add(_values);
-
         FormClosing += (s, e) =>
         {
             e.Cancel = true;
@@ -186,7 +216,7 @@ public class Md11AutopilotWindow : Form
         };
 
         _refresh = new System.Windows.Forms.Timer { Interval = 500 };
-        _refresh.Tick += (s, e) => RefreshValues();
+        _refresh.Tick += (s, e) => RefreshStates();
 
         ResumeLayout(false);
     }
@@ -228,19 +258,38 @@ public class Md11AutopilotWindow : Form
         return c;
     }
 
-    private int AddButtonRow(int y, params (string Label, string Node)[] items)
+    /// <summary>
+    /// A row of buttons. A button with a state getter shows "Label: state" and is refreshed on
+    /// the timer; a null getter is a plain one-shot action.
+    /// </summary>
+    private int AddButtonRow(int y, params (string Label, string Node, Func<string>? State)[] items)
     {
         var x = 10;
-        foreach (var (label, node) in items)
+        foreach (var (label, node, state) in items)
         {
             var b = new Button { Text = label, Location = new Point(x, y), Size = new Size(170, 30) };
             var captured = node;
             var name = label.Replace("&", "");
             b.Click += (s, e) => Press(captured, name);
+            if (state != null)
+            {
+                _liveCaptions.Add((b, label, state));
+                ApplyCaption(b, label, state());
+            }
+            if (node == Autoflight) _autoflight = b;
             Controls.Add(b);
             x += 178;
         }
         return y + 34;
+    }
+
+    /// <summary>"Label: state" on the button and its accessible name — assigned only when it changes, so a screen reader is never re-read a stable caption.</summary>
+    private static void ApplyCaption(Button b, string label, string state)
+    {
+        var text = $"{label}: {state}";
+        if (b.Text == text) return;
+        b.Text = text;
+        b.AccessibleName = text.Replace("&", "");
     }
 
     private int AddPushPullRow(int y, string name, string node)
@@ -323,56 +372,31 @@ public class Md11AutopilotWindow : Form
     // ---------------------------------------------------------------------------------
 
     /// <summary>
-    /// The four FCP windows, each with its own mode, plus autopilot and autothrust state.
-    ///
-    /// TFDi publish -999 / -9999 for a window that is showing dashes; those are rendered as
-    /// "dashed" rather than read out as a large negative number.
+    /// The status list and every live caption, from the cache. The list is reconciled in place —
+    /// only a changed row is rewritten and the cursor never moves — so a pilot reading it while
+    /// the aircraft flies is not thrown off the row.
     /// </summary>
-    private void RefreshValues()
+    private void RefreshStates()
     {
-        var spd = Val("MD11_AFS_SPD");
-        var hdg = Val("MD11_AFS_HDG");
-        var alt = Val("MD11_AFS_ALT");
-        var vs = Val("MD11_AFS_VS");
+        var mach = Val(Md11Fcp.ModeSpeedIsMach) > 0.5;
+        var trk = Val(Md11Fcp.ModeHeadingIsTrack) > 0.5;
+        var fpa = Val(Md11Fcp.ModeVerticalIsFpa) > 0.5;
+        var metres = Val(Md11Fcp.ModeAltitudeIsMetres) > 0.5;
 
-        var mach = Val("MD11_AP_IAS_MACH") > 0.5;
-        var trk = Val("MD11_AP_HDG_TRK") > 0.5;
-        var fpa = Val("MD11_AP_VS_FPA") > 0.5;
-        var metres = Val("MD11_AP_FT_M") > 0.5;
-
-        var speed = Dashed(spd)
-            ? "Speed dashed"
-            : mach
-                ? $"Mach {spd.ToString("0.00", CultureInfo.InvariantCulture)}"
-                : $"Speed {spd.ToString("0", CultureInfo.InvariantCulture)} knots";
-
-        var heading = Dashed(hdg)
-            ? (trk ? "Track dashed" : "Heading dashed")
-            : $"{(trk ? "Track" : "Heading")} {hdg.ToString("0", CultureInfo.InvariantCulture)}";
-
-        var altitude = Dashed(alt)
-            ? "Altitude dashed"
-            : $"Altitude {alt.ToString("0", CultureInfo.InvariantCulture)} {(metres ? "metres" : "feet")}";
-
-        var vertical = Dashed(vs)
-            ? (fpa ? "FPA dashed" : "Vertical speed dashed")
-            : fpa
-                ? $"FPA {vs.ToString("0.0", CultureInfo.InvariantCulture)} degrees"
-                : $"Vertical speed {vs.ToString("0", CultureInfo.InvariantCulture)} feet per minute";
-
-        var ap = Val("MD11_AP_STATE") switch
+        var rows = new List<string>(6)
         {
-            >= 2.5 => "AP 1 and 2",
-            >= 1.5 => "AP 2",
-            >= 0.5 => "AP 1",
-            _ => "AP off",
+            Md11AutoflightState.Row(Md11AutoflightState.Speed, Md11AutoflightState.SpeedValue(Val(Md11Fcp.ReadSpeed), mach)),
+            Md11AutoflightState.Row(Md11AutoflightState.HeadingNoun(trk), Md11AutoflightState.HeadingValue(Val(Md11Fcp.ReadHeading))),
+            Md11AutoflightState.Row(Md11AutoflightState.Altitude, Md11AutoflightState.AltitudeValue(Val(Md11Fcp.ReadAltitude), metres)),
+            Md11AutoflightState.Row(Md11AutoflightState.VerticalNoun(fpa), Md11AutoflightState.VerticalValue(Val(Md11Fcp.ReadVerticalSpeed), fpa)),
+            $"Autopilot: {Md11AutoflightState.Autopilot(Val("MD11_AP_STATE"))}",
+            $"Autothrottle: {Md11AutoflightState.Autothrottle(Val("MD11_ATS_STATE"))}",
         };
+        DisplayList.UpdateInPlace(_status, rows);
 
-        _values.Text = $"{speed}   {heading}{Environment.NewLine}{altitude}   {vertical}{Environment.NewLine}{ap}";
+        foreach (var (button, label, state) in _liveCaptions)
+            ApplyCaption(button, label, state());
     }
-
-    /// <summary>TFDi's "this window is showing dashes" sentinels, per their Variables doc.</summary>
-    private static bool Dashed(double v) => v <= -999;
 
     private double Val(string key) => _sim.GetCachedVariableValue(key) ?? 0;
 
@@ -390,7 +414,7 @@ public class Md11AutopilotWindow : Form
         if (bank is >= 0 && bank < _bankLimit.Items.Count) _bankLimit.SelectedIndex = (int)bank.Value;
         _populating = false;
 
-        RefreshValues();
+        RefreshStates();
         _refresh.Start();
 
         Show();
@@ -398,6 +422,11 @@ public class Md11AutopilotWindow : Form
         Activate();
         TopMost = true;
         TopMost = false;
+
+        // Land on the Autoflight button: its caption is the state a pilot opens this window for
+        // ("Autoflight: AP 1, ATS on"). Shift+Tab reaches the status list.
+        ActiveControl = _autoflight;
+        _autoflight.Focus();
     }
 
     protected override void OnVisibleChanged(EventArgs e)
