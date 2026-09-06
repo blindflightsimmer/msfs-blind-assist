@@ -858,12 +858,17 @@ public partial class TFDiMD11Definition
                 return true;
             }
 
+            // B — the captain's altimeter in BOTH units, hPa first, exactly as the PMDG 737/777 and
+            // Fenix say it ("Altimeter: 1013, 29.92"), or "Altimeter standard" (Md11Fcp.IsStandard).
+            // The var carries only the unit the PFD shows; DescribeAltimeter converts the other.
             case HotkeyAction.ReadAltimeter:
             {
-                var b = simConnect.GetCachedVariableValue("MD11_CAP_ALTIMETER");
+                var b = simConnect.GetCachedVariableValue(Md11Fcp.ReadCaptainBaro);
                 announcer.AnnounceImmediate(b == null
                     ? "Altimeter unavailable"
-                    : $"Altimeter {FormatAltimeter(b.Value)}");
+                    : Md11Fcp.IsStandard(b.Value)
+                        ? "Altimeter standard"
+                        : $"Altimeter: {Md11Fcp.DescribeAltimeter(b.Value)}");
                 return true;
             }
 
@@ -975,18 +980,6 @@ public partial class TFDiMD11Definition
     /// 0/1 the control map's value_map claims.
     /// </summary>
     private const double GearLeverDownThreshold = 20;
-
-    /// <summary>
-    /// One altimeter setting, in whichever unit it is currently in.
-    ///
-    /// The var carries BOTH units and TFDi disambiguate by magnitude: their tooltip renders it as
-    /// an integer when `> 500` (hectopascals — 1013) and to two decimals otherwise (inches of
-    /// mercury — 29.92). Formatting it one way always is wrong half the time: a fixed "0.00" reads
-    /// hPa as "1013.00", and a fixed integer reads inHg as "30".
-    /// </summary>
-    private static string FormatAltimeter(double v) => v > 500
-        ? $"{v.ToString("0", CultureInfo.InvariantCulture)} hectopascals"
-        : $"{v.ToString("0.00", CultureInfo.InvariantCulture)} inches";
 
     /// <summary>
     /// Fuel, by tank plus a total.

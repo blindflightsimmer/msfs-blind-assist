@@ -178,4 +178,50 @@ public class Md11FcpTests
     {
         Assert.Equal(expectHpa, Md11Fcp.LooksLikeHpa(v));
     }
+
+    // ---------------------------------------------------------------------------------
+    // Reading the altimeter back — both units, PMDG order, "standard" heuristic
+    // ---------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The var carries whichever unit the PFD shows (29.92 live at FL360, ~1013 in hPa mode) and
+    /// the read-out must speak BOTH, hPa first, exactly as the PMDG 737/777 and Fenix do — the
+    /// report was "B only reads inches". "standard" follows the PMDG rule (29.92 within 0.005 inHg)
+    /// and, in hPa mode, admits 1013 / 1013.2 / 1013.25 (TFDi's QNE is "29.92 or 1013.2 Hp").
+    /// </summary>
+    [Theory]
+    [InlineData(29.92, "standard")]        // the live value at FL360
+    [InlineData(1013, "standard")]
+    [InlineData(1013.2, "standard")]
+    [InlineData(30.12, "1020, 30.12")]
+    [InlineData(29.85, "1011, 29.85")]
+    [InlineData(995, "995, 29.38")]
+    [InlineData(1020, "1020, 30.12")]
+    [InlineData(1014, "1014, 29.94")]      // one hectopascal above standard is a real QNH
+    public void DescribeAltimeter_SpeaksBothUnits_AndStandard(double reading, string expected)
+    {
+        Assert.Equal(expected, Md11Fcp.DescribeAltimeter(reading));
+    }
+
+    [Fact]
+    public void AltimeterBothUnits_UsesThePmdgFactor_SoTheAircraftAgree()
+    {
+        var fromInches = Md11Fcp.AltimeterBothUnits(30.12);
+        Assert.Equal(1020, fromInches.Hpa);
+        Assert.Equal(30.12, fromInches.InHg);
+
+        var fromHpa = Md11Fcp.AltimeterBothUnits(1013);
+        Assert.Equal(1013, fromHpa.Hpa);
+        Assert.Equal(29.91, Math.Round(fromHpa.InHg, 2));
+    }
+
+    [Theory]
+    [InlineData(29.92, true)]
+    [InlineData(29.93, false)]
+    [InlineData(1013.25, true)]
+    [InlineData(1012.4, false)]
+    public void IsStandard_UsesTheToleranceOfTheDisplayedUnit(double reading, bool expected)
+    {
+        Assert.Equal(expected, Md11Fcp.IsStandard(reading));
+    }
 }

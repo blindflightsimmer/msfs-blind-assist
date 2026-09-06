@@ -125,6 +125,50 @@ public static class Md11Fcp
     /// <summary>A typed baro value looks like hPa (three/four digit) rather than inHg (~26-32).</summary>
     public static bool LooksLikeHpa(double v) => v >= 100;
 
+    // ---------------------------------------------------------------------------------
+    // Reading the altimeter back
+    //
+    // MD11_CAP_ALTIMETER carries BOTH units and TFDi disambiguate by magnitude — their tooltip
+    // renders it as an integer above 500 (hectopascals, 1013) and to two decimals otherwise
+    // (inches, 29.92). The read-out speaks both units in the PMDG/Fenix order ("1013, 29.92") so
+    // the MD-11 sounds like every other airliner in this app, and "standard" at 29.92 / 1013.25 —
+    // the same heuristic the PMDG definitions use, because the aircraft's STD flag lives on the
+    // WASM-rendered PFD and the stock KOHLSMAN SETTING STD is never driven (measured 2026-09-06
+    // at FL360: 29.92 on the L:var and on the stock var, STD flag 0).
+    // ---------------------------------------------------------------------------------
+
+    public const double StandardInHg = 29.92;
+    public const double StandardHpa = 1013.25;
+
+    /// <summary>The PMDG definitions' factor, so a 30.12 reads 1020 here exactly as it does on the 737/777.</summary>
+    private const double HpaPerInHg = 33.8639;
+
+    /// <summary>TFDi's own rule: a reading above 500 is hectopascals.</summary>
+    public static bool IsHpa(double reading) => reading > 500;
+
+    /// <summary>The reading in both units, whichever unit it arrived in.</summary>
+    public static (int Hpa, double InHg) AltimeterBothUnits(double reading)
+        => IsHpa(reading)
+            ? ((int)Math.Round(reading), HpaToInHg(reading))
+            : ((int)Math.Round(reading * HpaPerInHg), reading);
+
+    /// <summary>
+    /// Standard pressure within the tolerance of the unit displayed: 0.005 inHg (the PMDG rule) or
+    /// 0.75 hPa, which admits 1013, 1013.2 and 1013.25 — TFDi's QNE wording is "29.92 or 1013.2 Hp".
+    /// </summary>
+    public static bool IsStandard(double reading)
+        => IsHpa(reading)
+            ? Math.Abs(reading - StandardHpa) < 0.75
+            : Math.Abs(reading - StandardInHg) < 0.005;
+
+    /// <summary>"standard", or "1013, 29.92" — hPa first, inches to two decimals, invariant culture.</summary>
+    public static string DescribeAltimeter(double reading)
+    {
+        if (IsStandard(reading)) return "standard";
+        var (hpa, inHg) = AltimeterBothUnits(reading);
+        return $"{hpa.ToString(System.Globalization.CultureInfo.InvariantCulture)}, {inHg.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}";
+    }
+
     /// <summary>
     /// Converts a typed value to the unit the display is CURRENTLY in, so "1013" and "29.92" both
     /// do the right thing whichever unit the PFD is set to. <paramref name="displayValue"/> is the
