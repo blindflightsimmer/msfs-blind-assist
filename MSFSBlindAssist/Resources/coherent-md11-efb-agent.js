@@ -769,6 +769,12 @@
   A._idx = 0;
   A._everScraped = false;
   A._dirty = true;
+  A._pollCount = 0;
+  A._obs = null;
+  A.OBSERVER_OPTS = { childList: true, subtree: true, characterData: true, attributes: true };
+  // Safety net for a change the observer cannot see (a property flipped with neither a DOM mutation
+  // nor a re-render). At the window's ~400-600 ms poll this bounds staleness to a few seconds.
+  A.FORCE_FULL_EVERY = 10;
 
 
   A.collect = function () {
@@ -859,18 +865,42 @@
     return els;
   };
 
+  // SELF-TRIGGER TRAP (why the observer is disconnected around collect(), not left running):
+  // collect() MUTATES THE DOM ITSELF. It clears every stale `data-md11-efb-idx`, stamps a fresh one
+  // on each element it emits, and sets/clears the `data-md11-efb-label` claim attributes. Those are
+  // real attribute mutations inside the observed subtree, so an observer armed with attributes:true
+  // queues them; its callback runs as a MICROTASK as soon as this synchronous scrape() returns —
+  // after the JSON has gone out, but before the next poll — which re-arms _dirty from the reader's
+  // OWN bookkeeping and means `unchanged:true` can never fire on the live page. (The harness only
+  // caught this once its test awaited a tick between the two scrapes; without the await no
+  // MutationRecord was ever delivered and the gate looked like it worked.) The cost is real: the
+  // window polls every ~400-600 ms and the OFP page streams ~100 KB per full scrape.
+  //
+  // JS is single-threaded and collect() never yields, so NOTHING else can mutate the DOM while it
+  // runs — disconnecting for exactly its duration drops only the reader's own stamping and still
+  // catches every page-driven mutation, which happens on the page's own async tasks between polls.
   A.scrape = function () {
     try {
       // Dirty gate: if nothing in the DOM changed since the last full scrape, say so and skip the
       // traversal entirely. The client keeps showing what it has. The FIRST scrape after injection
-      // is always full (_everScraped), so "unchanged" can never be the client's first answer.
-      if (A._everScraped && !A._dirty) {
+      // is always full (_everScraped), so "unchanged" can never be the client's first answer, and
+      // every FORCE_FULL_EVERY-th one is full regardless of the flag.
+      A._pollCount++;
+      var forceFull = !A._everScraped || (A._pollCount % A.FORCE_FULL_EVERY === 0);
+      if (!A._dirty && !forceFull) {
         return JSON.stringify({ ok: true, unchanged: true });
       }
+      // Cleared BEFORE the traversal, so a mutation landing mid-scrape dirties the NEXT poll
+      // instead of being swallowed.
       A._dirty = false;
       A._everScraped = true;
 
-      return JSON.stringify({ ok: true, page: A.currentPage(), elements: A.collect() });
+      var page = A.currentPage(), els;
+      if (A._obs) { try { A._obs.disconnect(); } catch (e1) {} }
+      try { els = A.collect(); }
+      finally { if (A._obs) { try { A._obs.observe(A.root(), A.OBSERVER_OPTS); } catch (e2) {} } }
+
+      return JSON.stringify({ ok: true, page: page, elements: els });
     } catch (e) {
       return JSON.stringify({ ok: false, error: String(e && e.message ? e.message : e) });
     }
@@ -1001,7 +1031,10 @@
 
   try {
     var obs = new MutationObserver(function () { A._dirty = true; });
-    obs.observe(A.root(), { childList: true, subtree: true, characterData: true, attributes: true });
+    obs.observe(A.root(), A.OBSERVER_OPTS);
+    // Held on A as well as window: scrape() disconnects and re-observes it around collect() (see
+    // the SELF-TRIGGER TRAP note), while the window handle is what a re-injection tears down.
+    A._obs = obs;
     window.__MSFSBA_MD11_EFB_OBS = obs;
   } catch (e) {
     // No observer -> never gate. Slower, but correct: a stale screen is far worse than a busy one.
