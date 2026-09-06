@@ -608,6 +608,40 @@
     function (el, els) { els.push(A.el(el, { kind: 'static', text: A.readoutRow(el) })); });
 
   // ---------------------------------------------------------------------------------
+  // B8: tile — a name above its action.
+  //   (a) Services: <div><p>Passenger 1L</p><button>Closed</button></div>  → "Passenger 1L: Closed"
+  //   (b) State:    <div><button><svg/><p>Cold and Dark</p></button><button>Set as default | <svg check/></button></div>
+  //       → "Cold and Dark" (load it), then "Cold and Dark: Set as default", or the static
+  //         "Cold and Dark is the default" when the second button is the green check mark.
+  // ---------------------------------------------------------------------------------
+
+  A.isTileA = function (el) {
+    if (el.tagName !== 'DIV' || el.children.length !== 2) return false;
+    var p = el.children[0], b = el.children[1];
+    return p.tagName === 'P' && b.tagName === 'BUTTON' && p.children.length === 0 && A.isName(A.txt(p));
+  };
+
+  A.block('tile', A.isTileA, function (el, els) {
+    var name = A.txt(el.children[0]), btn = el.children[1];
+    els.push(A.el(btn, { kind: 'button', clickable: true, disabled: !!btn.disabled, text: name + ': ' + A.txt(btn) }));
+  });
+
+  A.isTileB = function (el) {
+    if (el.tagName !== 'DIV' || el.children.length !== 2) return false;
+    var a = el.children[0], b = el.children[1];
+    return a.tagName === 'BUTTON' && b.tagName === 'BUTTON' && a.getElementsByTagName('p').length === 1;
+  };
+
+  A.block('state-tile', A.isTileB, function (el, els) {
+    var a = el.children[0], b = el.children[1], name = A.txt(a.getElementsByTagName('p')[0]);
+    els.push(A.el(a, { kind: 'button', clickable: true, disabled: !!a.disabled, text: name }));
+    var action = A.txt(b);
+    if (action) els.push(A.el(b, { kind: 'button', clickable: true, disabled: !!b.disabled, text: name + ': ' + action }));
+    else if (A.iconName(b) === 'check') els.push(A.el(b, { kind: 'static', text: name + ' is the default' }));
+    else els.push(A.el(b, { kind: 'button', clickable: true, disabled: !!b.disabled, text: name + ': ' + A.iconButtonName(b) }));
+  });
+
+  // ---------------------------------------------------------------------------------
   // scrape
   // ---------------------------------------------------------------------------------
 
