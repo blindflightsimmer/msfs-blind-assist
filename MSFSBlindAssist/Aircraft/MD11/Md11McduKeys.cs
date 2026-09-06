@@ -21,10 +21,11 @@ public static class Md11McduKeys
     /// Page and edit keys: the window's button label (with its Alt accelerator) → node-id suffix.
     ///
     /// The MD-11's page set genuinely differs from the Airbus/Boeing CDUs this app already
-    /// supports. Where a page has a counterpart the accelerator matches it (Init/Perf/Fpln/Menu/Clr
-    /// = Alt+I/P/F/M/C) so muscle memory transfers; the rest are mnemonic (Prog = Alt+G, because
-    /// Alt+P is already Perf). SEC FPLN has no plain accelerator and takes Alt+Shift+F — the same
-    /// chord, for the same reason, as the Fenix and FBW forms' Sec F-PLN.
+    /// supports. Where a page has a counterpart the accelerator matches the Fenix and FBW forms
+    /// (Init/Prog/Fpln/Perf/Menu/Clr = Alt+I/P/F/E/M/C) so muscle memory transfers; the rest are
+    /// mnemonic. SEC FPLN has no plain accelerator and takes Alt+Shift+F — the same chord, for the
+    /// same reason, as the Fenix and FBW forms' Sec F-PLN; Alt+S stays the scratchpad jump they
+    /// all share.
     ///
     /// There is no EXEC, no DEL and no PREV PAGE here because the real MD-11 has none: it slews
     /// with UP/DOWN and confirms via LSKs. Do not invent them — a key that isn't on the aircraft
@@ -32,8 +33,8 @@ public static class Md11McduKeys
     /// </summary>
     public static readonly (string Label, string Key)[] PageButtons =
     {
-        ("&Init", "INIT"), ("&Perf", "PERF"), ("&Fpln", "FPLN"), ("Sec Fpln", "SEC_FPLN"),
-        ("Pro&g", "PROG"), ("&Ref", "REF"), ("&Nav Rad", "NAV_RAD"), ("Fi&x", "FIX"),
+        ("&Init", "INIT"), ("P&erf", "PERF"), ("&Fpln", "FPLN"), ("Sec Fpln", "SEC_FPLN"),
+        ("&Prog", "PROG"), ("&Ref", "REF"), ("&Nav Rad", "NAV_RAD"), ("Fi&x", "FIX"),
         ("&Dir Intc", "DIR_INTC"), ("&To Appr", "TOAPPR"), ("Eng &Out", "ENG_OUT"), ("&Menu", "MENU"),
         ("&Clr", "CLR"), ("Next Page", "NEXTPAGE"), ("Up", "UP"), ("Down", "DOWN"),
     };

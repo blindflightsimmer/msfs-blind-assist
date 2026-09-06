@@ -92,6 +92,24 @@ public class Md11McduKeysTests
     }
 
     /// <summary>
+    /// Prog is Alt+P and Perf is Alt+E — the Fenix and FBW forms' letters, so a pilot's muscle
+    /// memory transfers between aircraft. (They shipped as Alt+G / Alt+P; the owner asked for
+    /// parity.) Sec Fpln deliberately keeps Alt+Shift+F and Alt+S stays the scratchpad jump.
+    /// </summary>
+    [Theory]
+    [InlineData("PROG", 'P')]
+    [InlineData("PERF", 'E')]
+    [InlineData("INIT", 'I')]
+    [InlineData("FPLN", 'F')]
+    [InlineData("MENU", 'M')]
+    [InlineData("CLR", 'C')]
+    public void PageAccelerators_MatchTheFenixAndFbwForms(string key, char expected)
+    {
+        var (label, _) = Md11McduKeys.PageButtons.Single(b => b.Key == key);
+        Assert.Equal(expected, Accelerator(label));
+    }
+
+    /// <summary>
     /// Every page key the MD-11 has must be reachable from the keyboard, not just by clicking. SEC
     /// FPLN is the deliberate exception: Alt+F is already Fpln, so it takes Alt+Shift+F in the
     /// window's KeyDown — the same chord, for the same reason, as the Fenix and FBW forms.

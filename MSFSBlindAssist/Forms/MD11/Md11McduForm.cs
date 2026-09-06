@@ -247,6 +247,15 @@ public class Md11McduForm : Form
             PressKey("CLR");
             e.Handled = true; e.SuppressKeyPress = true;
         }
+        // Plain Right Arrow pages forward, as on the FBW form — only while the screen has focus
+        // (the scratchpad box needs Left/Right for its caret); Alt+Right still works window-wide.
+        // Plain Left stays unbound on purpose: the MD-11 has no PREV PAGE key, and a ListBox
+        // ignores Left, so nothing is faked.
+        else if (e.KeyCode == Keys.Right && !e.Alt && !e.Control)
+        {
+            PressKey("NEXTPAGE");
+            e.Handled = true; e.SuppressKeyPress = true;
+        }
     }
 
     /// <summary>
