@@ -183,7 +183,7 @@ public static class Md11Fcp
     /// </summary>
     public static double BaroToDisplayUnit(double typed, double displayValue)
     {
-        var displayIsHpa = displayValue > 500;
+        var displayIsHpa = IsHpa(displayValue);
         var typedIsHpa = LooksLikeHpa(typed);
         if (displayIsHpa == typedIsHpa) return typed;
         return displayIsHpa ? InHgToHpa(typed) : HpaToInHg(typed);

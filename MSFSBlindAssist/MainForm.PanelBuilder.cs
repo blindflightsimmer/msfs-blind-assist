@@ -148,6 +148,10 @@ public partial class MainForm
         // Status Display rows have dependencies too — the MD-11's lamp rows read the DC-power
         // gate, which is not a row itself — and the list is one control: any dependency change
         // schedules ONE coalesced repaint, which re-reads every row from the cache.
+        // The MD-11's lamps also list their OWN key here, and that self-entry is load-bearing:
+        // the definition consumes every lamp update in ProcessSimVarUpdate, so OnSimVarUpdated
+        // never reaches the ordinary display-var repaint — without the self-entry a lamp row
+        // would lag by up to the 1 s tick.
         if (GetPanelDisplayVarsCached().TryGetValue(currentPanel, out var displayVars))
         {
             foreach (var key in displayVars)

@@ -1,5 +1,4 @@
-﻿using System.Globalization;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using MSFSBlindAssist.Accessibility;
 using MSFSBlindAssist.Aircraft;
 using MSFSBlindAssist.Aircraft.MD11;
@@ -393,6 +392,11 @@ public class Md11AutopilotWindow : Form
             $"Autothrottle: {Md11AutoflightState.Autothrottle(Val("MD11_ATS_STATE"))}",
         };
         DisplayList.UpdateInPlace(_status, rows);
+
+        // A list with no selection reads as just "list" when focus lands on it, and the first Space
+        // or Down does nothing useful — the same -1 the monitor manager had to fix. The list is not
+        // focused while this runs, so selecting row 0 speaks nothing.
+        if (_status.SelectedIndex < 0 && _status.Items.Count > 0) _status.SelectedIndex = 0;
 
         foreach (var (button, label, state) in _liveCaptions)
             ApplyCaption(button, label, state());

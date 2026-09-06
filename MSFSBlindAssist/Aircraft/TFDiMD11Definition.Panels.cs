@@ -263,8 +263,10 @@ public partial class TFDiMD11Definition
     /// missing — see <see cref="Md11PanelLayout.Place"/>'s safety net — and logged loudly so a
     /// regenerated map that adds a control is noticed instead of hidden.
     ///
-    /// Annunciators not named by the table are excluded: they announce on change instead (see
-    /// BuildControlVariable). A panel is for operating controls, not for scanning lamp rows.
+    /// Annunciators the table names are the panel's Status Display rows (Md11StatusRow decides
+    /// their words); one the table does not name only announces on change (see
+    /// BuildControlVariable). On this aircraft the lamps ARE the instrument panel, so the Status
+    /// Display is where a pilot scans them.
     /// </summary>
     private void BuildPanelsOnce()
     {
@@ -288,17 +290,10 @@ public partial class TFDiMD11Definition
     }
 
     /// <summary>
-    /// Read-out panels that exist only on this aircraft, and only because its glass cannot be
-    /// read. On any other airframe a pilot gets V-speeds off the PFD speed tape and minimums off
-    /// the PFD; here the DUs are rendered inside the WASM with no DOM behind them, so these
-    /// exported L:vars are the ONLY source. Surfacing them as read-only panels means they are at
-    /// least reachable by keyboard even where no hotkey exists (there is no V1/VR/V2 HotkeyAction
-    /// in the shared enum — adding one is a follow-up).
-    /// </summary>
-    /// <summary>
     /// The transponder panel's typed entry and read-back are not map controls, so the layout
     /// table cannot name them: the field goes right after the panel's four selectors (where
-    /// the digit keys used to start), the read-back row last, with the status rows.
+    /// the digit keys used to start), and the read-back is the FIRST row of the panel's Status
+    /// Display, ahead of its FAIL lamp.
     /// </summary>
     private static void AddSquawkEntry(Dictionary<string, List<string>> controls, Dictionary<string, List<string>> displays)
     {
@@ -332,6 +327,14 @@ public partial class TFDiMD11Definition
         panels.Insert(0, "Radios");
     }
 
+    /// <summary>
+    /// Read-out panels that exist only on this aircraft, and only because its glass cannot be
+    /// read. On any other airframe a pilot gets V-speeds off the PFD speed tape and minimums off
+    /// the PFD; here the DUs are rendered inside the WASM with no DOM behind them, so these
+    /// exported L:vars are the ONLY source. Surfacing them as read-only panels means they are at
+    /// least reachable by keyboard even where no hotkey exists (there is no V1/VR/V2 HotkeyAction
+    /// in the shared enum — adding one is a follow-up).
+    /// </summary>
     private static void AddReadoutPanels(
         Dictionary<string, List<string>> structure,
         Dictionary<string, List<string>> controls,
