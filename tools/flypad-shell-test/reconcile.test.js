@@ -212,3 +212,32 @@ test('state-suffix change reuses the node in place (NVDA focus preservation)', (
   assert.strictEqual(after, before, 'state-suffix change destroyed and rebuilt the node');
   assert.match(after.textContent, /\(active\)/, 'visible label did not update');
 });
+
+test('after-colon state tail reuses the node in place; a different base label does not', () => {
+  const s = loadShell();
+  s.render({ page: 'Ground', elements: [
+    { idx: 30, kind: 'button', controlType: '', text: 'GPU: Connect', clickable: true },
+  ] });
+  const before = s.root().querySelector('button');
+  assert.ok(before, 'baseline "GPU: Connect" button not rendered');
+
+  // Same control, only the text AFTER the colon changes ('GPU: Connect' -> 'GPU:
+  // Disconnect') — the reconcile key strips any after-colon state tail (baseLabel),
+  // so the node must be REUSED (patched in place), not destroyed + rebuilt:
+  // rebuilding moves the screen-reader focus off the control the pilot just pressed.
+  s.render({ page: 'Ground', elements: [
+    { idx: 30, kind: 'button', controlType: '', text: 'GPU: Disconnect', clickable: true },
+  ] });
+  const after = s.root().querySelector('button');
+  assert.strictEqual(after, before, 'after-colon state change destroyed and rebuilt the node');
+  assert.strictEqual(after.textContent, 'GPU: Disconnect', 'visible label did not update');
+
+  // A DIFFERENT base label ('ASU' vs 'GPU') must key differently and must NOT be
+  // matched onto the GPU node just because both happen to end in '...Connect'.
+  s.render({ page: 'Ground', elements: [
+    { idx: 30, kind: 'button', controlType: '', text: 'ASU: Connect', clickable: true },
+  ] });
+  const other = s.root().querySelector('button');
+  assert.notStrictEqual(other, before, '"ASU: Connect" was wrongly matched onto the "GPU" node');
+  assert.strictEqual(other.textContent, 'ASU: Connect', 'wrong label rendered for the different-base control');
+});
