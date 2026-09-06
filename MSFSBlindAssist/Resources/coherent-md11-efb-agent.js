@@ -35,8 +35,20 @@
     return (' ' + el.className + ' ').indexOf(' ' + c + ' ') >= 0;
   };
 
+  // Tailwind's `uppercase` class makes innerText shout ("SAVE", "GENERAL") while the DOM holds
+  // "Save"/"General". A screen reader spells an all-caps word, so read the DOM form there.
+  A.isUppercased = function (el) {
+    var n = el;
+    for (var i = 0; i < 3 && n && n.nodeType === 1; i++) {
+      if (A.hasClass(n, 'uppercase')) return true;
+      n = n.parentElement;
+    }
+    return false;
+  };
+
   A.txt = function (el) {
-    var t = el ? (el.innerText || el.textContent || '') : '';
+    if (!el) return '';
+    var t = A.isUppercased(el) ? (el.textContent || '') : (el.innerText || el.textContent || '');
     return t.replace(/\s+/g, ' ').trim();
   };
 
@@ -306,6 +318,55 @@
   };
 
   // ---------------------------------------------------------------------------------
+  // element factory + block dispatcher
+  // ---------------------------------------------------------------------------------
+
+  // While walking a subtree the EFB has made inert (its "cannot be used right now" overlay),
+  // every control emitted is dimmed. Set by the locked-page walk, never by a block.
+  A._inert = false;
+
+  A.stamp = function (node) { node.setAttribute(A.ATTR, String(++A._idx)); return A._idx; };
+
+  // One element record with every contract field present. `node` is stamped with the idx
+  // (null for a synthetic element with nothing to click).
+  A.el = function (node, f) {
+    var o = { idx: node ? A.stamp(node) : ++A._idx, text: '', value: '', controlType: '', kind: '',
+              clickable: false, level: 0, live: '', disabled: false, options: null };
+    for (var k in f) if (f.hasOwnProperty(k)) o[k] = f[k];
+    if (A._inert) o.disabled = true;
+    return o;
+  };
+
+  // The EFB's building blocks. A block is tried on every element BEFORE the generic rules;
+  // the first whose match() says yes emits for that element and owns its whole subtree.
+  // Register specific blocks before general ones — order is the priority.
+  A.BLOCKS = [];
+  A.block = function (name, match, emit) { A.BLOCKS.push({ name: name, match: match, emit: emit }); };
+  A.runBlocks = function (el, els) {
+    for (var i = 0; i < A.BLOCKS.length; i++) {
+      var b = A.BLOCKS[i];
+      if (b.match(el)) { b.emit(el, els); return true; }
+    }
+    return false;
+  };
+
+  // ---------------------------------------------------------------------------------
+  // B2: section strip — <ul role="tablist"> (Options: General…Behavior; Payload: Passenger &
+  // Cargo / ZFW). The EFB marks the open section by colour + underline only.
+  // ---------------------------------------------------------------------------------
+
+  A.block('tablist',
+    function (el) { return el.tagName === 'UL' && el.getAttribute('role') === 'tablist'; },
+    function (el, els) {
+      var bs = el.getElementsByTagName('button');
+      for (var i = 0; i < bs.length; i++) {
+        if (A.isHidden(bs[i])) continue;
+        els.push(A.el(bs[i], { kind: 'tab', clickable: true, disabled: !!bs[i].disabled,
+          text: A.txt(bs[i]) + (A.hasClass(bs[i], 'underline') ? ' (selected)' : '') }));
+      }
+    });
+
+  // ---------------------------------------------------------------------------------
   // scrape
   // ---------------------------------------------------------------------------------
 
@@ -317,6 +378,12 @@
   A.collect = function () {
     var els = [];
     A._idx = 0;
+
+    // Every scrape restamps from 1 in DOM order. A node that is no longer walked (hidden, or
+    // detached but still referenced) would keep an old number that collides with a live one,
+    // and find(idx) takes the first match in document order — so drop every old stamp first.
+    var stale = A.root().querySelectorAll('[' + A.ATTR + ']');
+    for (var s = 0; s < stale.length; s++) stale[s].removeAttribute(A.ATTR);
 
     // Re-marked every scrape rather than cached: React rebuilds these nodes on every page change,
     // so a stale claim would silence a caption that now belongs to nothing.
@@ -353,6 +420,7 @@
       if (el === bar) return;                       // already emitted above, as tabs
       if (el.tagName === 'SVG' || el.tagName === 'svg') return;   // decorative icons only
       if (A.isHidden(el)) return;
+      if (A.runBlocks(el, els)) return;        // a building block owns this element and its subtree
 
       if (A.isControl(el)) {
         el.setAttribute(A.ATTR, String(++A._idx));
