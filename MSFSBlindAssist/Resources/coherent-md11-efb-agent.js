@@ -925,16 +925,24 @@
     el.dispatchEvent(ev);
   };
 
-  // The full press. React listens for the pointer/mouse sequence, not a bare .click(); .click()
-  // is still fired last for plain onClick handlers. Live-verified 2026-09-05: ONE call = ONE
-  // step on the EFB's Autobrake stepper (no double-fire).
+  // The full press: the pointer/mouse sequence React's own synthetic events are built on, then
+  // el.click() — a REAL click event with activation behaviour, bubbling, which React's onClick
+  // handles exactly ONCE.
+  //
+  // Until 2026-09-06 a synthetic bubbling 'click' MouseEvent was dispatched here as well, so every
+  // press ran the page's onClick TWICE. It went unnoticed because this EFB's handlers close over
+  // captured state — a door tile toggles to the state it captured at render, so running it twice
+  // lands on the same place — but a handler that read live state or counted presses would have
+  // stepped twice per press. The "ONE call = ONE step on the Autobrake stepper" measurement taken
+  // live on 2026-09-05 was made WITH the double dispatch, so it does not carry over: the next live
+  // check re-measures the stepper.
   A.click = function (el) {
     A.fire(el, 'pointerdown', window.PointerEvent || window.MouseEvent);
     A.fire(el, 'mousedown', window.MouseEvent);
     A.fire(el, 'pointerup', window.PointerEvent || window.MouseEvent);
     A.fire(el, 'mouseup', window.MouseEvent);
-    A.fire(el, 'click', window.MouseEvent);
     if (typeof el.click === 'function') el.click();
+    else A.fire(el, 'click', window.MouseEvent);
   };
 
   // A stepper press is applied by React on the next tick, so the walk presses, waits, re-reads
