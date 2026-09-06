@@ -362,6 +362,29 @@
   // every control emitted is dimmed. Set by the locked-page walk, never by a block.
   A._inert = false;
 
+  // The EFB locks a page in flight by wrapping its content in a `pointer-events-none` subtree
+  // beneath that overlay. The bare class also sits on the zero-child backdrop, which locks
+  // nothing — so an inert WRAPPER is the class on a node that actually wraps something.
+  A.INERT_CLASS = 'pointer-events-none';
+  A.isInertRoot = function (el) {
+    return !!el && el.nodeType === 1 && el.children.length > 0 && A.hasClass(el, A.INERT_CLASS);
+  };
+
+  // ...and the same question asked of an element anywhere inside such a wrapper. This is what
+  // clickElement/setValue refuse on: `pointer-events: none` blocks REAL hit-testing only, so a
+  // dispatched event or el.click() still reaches the handler — and the EFB's door, GPU and state
+  // handlers carry no ground check of their own. The walk dims what it reads; without this the
+  // reader would still happily open a door in flight (and the shell's native-list fallback,
+  // which has no dimmed gate at all, is reached by exactly that path).
+  A.isInert = function (el) {
+    var root = A.root();
+    for (var n = el; n && n.nodeType === 1; n = n.parentElement) {
+      if (A.isInertRoot(n)) return true;
+      if (n === root) break;
+    }
+    return false;
+  };
+
   A.stamp = function (node) { node.setAttribute(A.ATTR, String(++A._idx)); return A._idx; };
 
   // One element record with every contract field present. `node` is stamped with the idx
@@ -853,7 +876,7 @@
       if (el === bar) return;                       // already emitted above, as tabs
       if (el.tagName === 'SVG' || el.tagName === 'svg') return;   // decorative icons only
       if (A.isHidden(el)) return;
-      var inertHere = !A._inert && el.children.length > 0 && A.hasClass(el, 'pointer-events-none');
+      var inertHere = !A._inert && A.isInertRoot(el);
       if (inertHere) A._inert = true;
       try { walkBody(el); }
       finally { if (inertHere) A._inert = false; }
@@ -975,12 +998,14 @@
   A.clickElement = function (idx) {
     var el = A.find(idx);
     if (!el) return false;
+    if (A.isInert(el)) return false;      // the EFB has this page locked; never press through it
     try { A.click(el); A._dirty = true; return true; } catch (e) { return false; }
   };
 
   A.setValue = function (idx, text, done) {
     var el = A.find(idx);
     if (!el) return false;
+    if (A.isInert(el)) return false;      // ditto: a locked page is read, never written
     try {
       // A dropdown built from a choice group: pick = press that choice's own button.
       if (A.isChoiceGroup(el)) {
