@@ -1,7 +1,14 @@
 'use strict';
 // Derives the on-ground Services/State fixtures from the in-flight (locked) captures:
-// GroundPage renders identical children; only the overlay and the pointer-events-none wrapper
-// differ. Re-run after re-capturing the locked pages: node derive-ground.js
+// GroundPage renders identical children; only the overlay and the inert wrapper differ.
+// Re-run after re-capturing the locked pages: node derive-ground.js
+//
+// The wrapper swap is NOT a faithful render of the ground page. Live, GroundPage drops the
+// wrapper entirely on the ground — it returns a bare Fragment, so there is no
+// `pointer-events-auto` div at all; these fixtures keep one purely so the derived HTML stays
+// structurally parallel to the capture it came from. Nothing in the reader keys on
+// `pointer-events-auto` (only on `pointer-events-none`, and only where it wraps children), so
+// the extra div changes no reading. Do not start keying a rule on it.
 const fs = require('fs');
 const path = require('path');
 const F = path.join(__dirname, 'fixtures');

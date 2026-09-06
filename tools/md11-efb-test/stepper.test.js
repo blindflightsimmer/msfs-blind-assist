@@ -69,3 +69,29 @@ test('an unknown value is refused before any press', () => {
   assert.equal(A.setValue(String(sel.idx), 'RW99X'), false);
   assert.equal(presses, 0);
 });
+
+test('a stepper the EFB has not filled in yet reads (empty) and keeps its arrows', () => {
+  const ls = lines(scrape('perf-stepper-empty', { autoVis: true, nav: 'Perf' })).slice(7);
+  assert.deepStrictEqual(ls, ['static|Runway: (empty)', 'button|Runway previous', 'button|Runway next']);
+});
+
+// The Select mounts with an EMPTY options array before its list exists. Walking past that fiber to
+// keep looking reaches an unrelated ANCESTOR's `options` prop and offers a dropdown of somebody
+// else's choices — so the FIRST fiber carrying an options array wins, whatever it holds.
+test('an empty option list falls back to the arrows, never an ancestor component\'s list', () => {
+  const { A, document } = load('perf-stepper-empty', { autoVis: true, nav: 'Perf' });
+  const inp = document.querySelector('input[disabled]');
+  inp['__reactFiber$jsdom'] = {
+    memoizedProps: {},
+    return: {
+      memoizedProps: {},
+      return: {
+        memoizedProps: { options: [] },                                       // this Select's own
+        return: { memoizedProps: { options: [{ label: 'A' }, { label: 'B' }] } }  // an ancestor's
+      }
+    }
+  };
+  assert.equal(A.fiberOptions(inp), null);
+  const els = JSON.parse(A.scrape()).elements;
+  assert.ok(!els.some(e => e.controlType === 'select'), 'no dropdown is offered: ' + JSON.stringify(els.map(e => e.text)));
+});

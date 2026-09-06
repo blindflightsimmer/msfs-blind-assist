@@ -33,3 +33,18 @@ test('a disabled input met outside a row still reads as a read-out', () => {
   assert.ok(els.some(e => e.kind === 'static' && e.text === 'Note: 42'), JSON.stringify(els));
   assert.ok(!els.some(e => e.controlType === 'text'));
 });
+
+test('only a text field is a read-out: a disabled checkbox or range stays its own control', () => {
+  const els = scrape('readout-types', { autoVis: true });
+  assert.ok(els.some(e => e.kind === 'static' && e.text === 'Landing Weight: 507900'), JSON.stringify(els.map(e => e.kind + '|' + e.text)));
+
+  const cb = els.find(e => e.controlType === 'checkbox');
+  assert.ok(cb, 'the disabled checkbox is still a checkbox');
+  assert.equal(cb.value, 'true');
+  const rg = els.find(e => e.controlType === 'range');
+  assert.ok(rg, 'the disabled range is still a range');
+  assert.equal(rg.value, '80');
+
+  for (const t of ['Deflected Ailerons: true', 'Screen Brightness: 80', 'Deflected Ailerons: (empty)'])
+    assert.ok(!els.some(e => e.kind === 'static' && e.text === t), t + ' read as a read-out');
+});

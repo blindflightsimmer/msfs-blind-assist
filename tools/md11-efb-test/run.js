@@ -90,8 +90,12 @@ function load(fixtureName, opts) {
   // Stepper option lists live in React's fiber tree on the live EFB
   // (input[__reactFiber$…].return.return.memoizedProps.options — 2 hops, probed 2026-09-05).
   // A fixture seeds the same shape from data-options="A|B|C" on the disabled input.
+  // data-options="" seeds an EMPTY options array — the shape the live Select renders before its
+  // list exists (no runway options until an airport is entered). Splitting "" would seed a
+  // one-option list labelled "", which is a different, non-existent state.
   for (const inp of doc.querySelectorAll('input[data-options]')) {
-    const labels = inp.getAttribute('data-options').split('|');
+    const spec = inp.getAttribute('data-options');
+    const labels = spec === '' ? [] : spec.split('|');
     inp['__reactFiber$jsdom'] = { memoizedProps: {}, return: { memoizedProps: {}, return: { memoizedProps: { options: labels.map(l => ({ label: l, value: l })) } } } };
   }
 

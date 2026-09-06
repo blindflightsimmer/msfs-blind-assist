@@ -144,8 +144,7 @@
 
     if (el.tagName === 'INPUT') {
       // A disabled field the row rules did not reach is still a read-out, never an edit box.
-      var ty0 = (el.type || 'text').toLowerCase();
-      if (el.disabled && !A.isStepperInput(el) && ty0 !== 'checkbox' && ty0 !== 'radio' && ty0 !== 'range') {
+      if (el.disabled && !A.isStepperInput(el) && A.isReadoutType(el)) {
         o.kind = 'static';
         o.text = A.readoutText(A.labelFor(el) || 'Value', el);
         return o;
@@ -520,7 +519,13 @@
       var f = input[fk];
       for (var hop = 0; f && hop < 8; hop++) {
         var mp = f.memoizedProps;
-        if (mp && mp.options && typeof mp.options.length === 'number' && mp.options.length > 0) {
+        // The FIRST fiber carrying an `options` array is this Select's own — stop there whatever it
+        // holds. The EFB renders the component with an EMPTY list before the list exists (no runway
+        // options until an airport is entered), and walking PAST an empty one to keep looking finds
+        // an unrelated ANCESTOR's `options` prop and offers a dropdown of somebody else's choices.
+        // Empty means "no list yet": fall back to the chevrons.
+        if (mp && mp.options && typeof mp.options.length === 'number') {
+          if (mp.options.length === 0) return null;
           var out = [];
           for (var o = 0; o < mp.options.length; o++) {
             var lab = mp.options[o] ? mp.options[o].label : null;
@@ -542,7 +547,12 @@
       return;
     }
     var cb = A.chevronButtons(st);
-    els.push(A.el(inp, { kind: 'static', text: (label ? label + ': ' : '') + cur }));
+    // An empty field is the EFB's "nothing picked yet" (the runway before an airport is entered).
+    // The bare "Runway: " it used to read is a sentence that stops dead; borrow readoutText's
+    // (empty) marker so the pilot hears that the field is there and holds nothing. readoutText
+    // ITSELF is not reused here: it runs the value through spaceUnit, which would split a runway
+    // designator like "06L" into the spoken "06 L".
+    els.push(A.el(inp, { kind: 'static', text: (label ? label + ': ' : '') + (cur || '(empty)') }));
     els.push(A.el(cb.up, { kind: 'button', clickable: true, disabled: !!cb.up.disabled, text: A.iconButtonName(cb.up) }));
     els.push(A.el(cb.down, { kind: 'button', clickable: true, disabled: !!cb.down.disabled, text: A.iconButtonName(cb.down) }));
   });
@@ -593,13 +603,21 @@
     return label + ': ' + A.spaceUnit(value);
   };
 
+  // A checkbox, radio or range is a STATE the shell renders as its own kind of control, so it is
+  // never a read-out however it is laid out: folding one into a "Label: value" line would hide it
+  // behind a static sentence. The same rule the generic input path applies.
+  A.isReadoutType = function (inp) {
+    var t = (inp.type || 'text').toLowerCase();
+    return t !== 'checkbox' && t !== 'radio' && t !== 'range';
+  };
+
   // The one disabled, non-stepper input inside `el`, with nothing else interactive beside it.
   A.readoutInput = function (el) {
     var inputs = el.getElementsByTagName('input');
     if (inputs.length !== 1) return null;
     if (el.getElementsByTagName('button').length > 0 || el.getElementsByTagName('select').length > 0) return null;
     var inp = inputs[0];
-    if (!inp.disabled || A.isStepperInput(inp)) return null;
+    if (!inp.disabled || A.isStepperInput(inp) || !A.isReadoutType(inp)) return null;
     return inp;
   };
 
@@ -616,7 +634,7 @@
     var inp = null;
     if (b.tagName === 'INPUT') inp = b;
     else if (b.tagName === 'DIV') inp = A.readoutInput(b);
-    if (!inp || !inp.disabled || A.isStepperInput(inp)) return null;
+    if (!inp || !inp.disabled || A.isStepperInput(inp) || !A.isReadoutType(inp)) return null;
     var label = A.txt(a);
     if (!A.isName(label)) return null;
     return A.readoutText(label, inp);
