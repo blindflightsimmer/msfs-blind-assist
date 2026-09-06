@@ -429,6 +429,74 @@
   });
 
   // ---------------------------------------------------------------------------------
+  // B4: stepper — the EFB's Select component (src/components/Select.tsx): a DISABLED input
+  // showing the current choice between a ChevronUp and a ChevronDown button. The full option
+  // list is not in the DOM; it sits in React's fiber tree on the input
+  // (input[__reactFiber$…].return.return.memoizedProps.options — 2 hops live, walked up to 8,
+  // read defensively). With the list: ONE dropdown. Without it: today's reading — the value,
+  // then the two arrow buttons named after the field.
+  // ---------------------------------------------------------------------------------
+
+  A.chevronButtons = function (container) {
+    var bs = container.getElementsByTagName('button'), up = null, down = null;
+    for (var i = 0; i < bs.length; i++) {
+      var ic = A.iconName(bs[i]);
+      if (ic === 'chevron-up') up = bs[i];
+      else if (ic === 'chevron-down') down = bs[i];
+    }
+    return (up && down) ? { up: up, down: down } : null;
+  };
+
+  A.isStepper = function (el) {
+    if (el.tagName !== 'DIV' || el.children.length !== 3) return false;
+    var inp = el.children[0];
+    return inp.tagName === 'INPUT' && !!inp.disabled
+      && el.children[1].tagName === 'BUTTON' && el.children[2].tagName === 'BUTTON'
+      && !!A.chevronButtons(el);
+  };
+
+  A.isStepperInput = function (el) {
+    return !!el && el.tagName === 'INPUT' && !!el.disabled && !!el.parentElement && A.isStepper(el.parentElement);
+  };
+
+  A.inputValue = function (inp) { return String(inp.value == null ? '' : inp.value).replace(/\s+/g, ' ').trim(); };
+
+  A.fiberOptions = function (input) {
+    try {
+      var keys = Object.keys(input), fk = '';
+      for (var i = 0; i < keys.length; i++) if (keys[i].indexOf('__reactFiber$') === 0) { fk = keys[i]; break; }
+      if (!fk) return null;
+      var f = input[fk];
+      for (var hop = 0; f && hop < 8; hop++) {
+        var mp = f.memoizedProps;
+        if (mp && mp.options && typeof mp.options.length === 'number' && mp.options.length > 0) {
+          var out = [];
+          for (var o = 0; o < mp.options.length; o++) {
+            var lab = mp.options[o] ? mp.options[o].label : null;
+            if (lab === null || lab === undefined) return null;
+            out.push(String(lab));
+          }
+          return out;
+        }
+        f = f.return;
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  A.block('stepper', A.isStepper, function (st, els) {
+    var inp = st.children[0], opts = A.fiberOptions(inp), label = A.labelFor(inp), cur = A.inputValue(inp);
+    if (opts) {
+      els.push(A.el(inp, { controlType: 'select', text: label, value: cur, options: opts }));
+      return;
+    }
+    var cb = A.chevronButtons(st);
+    els.push(A.el(inp, { kind: 'static', text: (label ? label + ': ' : '') + cur }));
+    els.push(A.el(cb.up, { kind: 'button', clickable: true, disabled: !!cb.up.disabled, text: A.iconButtonName(cb.up) }));
+    els.push(A.el(cb.down, { kind: 'button', clickable: true, disabled: !!cb.down.disabled, text: A.iconButtonName(cb.down) }));
+  });
+
+  // ---------------------------------------------------------------------------------
   // scrape
   // ---------------------------------------------------------------------------------
 
@@ -569,6 +637,41 @@
     if (typeof el.click === 'function') el.click();
   };
 
+  // A stepper press is applied by React on the next tick, so the walk presses, waits, re-reads
+  // the field and presses again — never inline. Ends (done(ok)) at the target, on an unknown
+  // value, on a press that moved nothing, or after 64 presses.
+  A.STEP_DELAY_MS = 60;
+
+  A.stepTo = function (inp, want, done) {
+    var opts = A.fiberOptions(inp);
+    if (!opts) return false;
+    var target = opts.indexOf(want), cur = opts.indexOf(A.inputValue(inp));
+    if (target < 0 || cur < 0) return false;
+    var presses = 0;
+    var finish = function (ok) { A._dirty = true; if (typeof done === 'function') done(ok); };
+    (function step() {
+      var now = opts.indexOf(A.inputValue(inp));
+      if (now === target) { finish(true); return; }
+      if (now < 0 || presses >= 64 || (presses > 0 && now === cur)) { finish(false); return; }
+      cur = now;
+      var cb = A.chevronButtons(inp.parentElement);
+      var btn = cb ? (target > now ? cb.down : cb.up) : null;
+      // NOT gated on btn.disabled: that flag is a REACT PROP, so it lags a press by the same one
+      // tick `now` does — checking it here would compare THIS press's boundary against LAST
+      // press's disabled state (live-verified via jsdom dispatchEvent: a disabled button still
+      // delivers pointerdown/mousedown to its listeners, same as any real Chromium build — the
+      // browser only withholds a REAL user click's activation, never a scripted dispatchEvent).
+      // The stall check above is the real boundary guard: target/cur are both valid indices, so a
+      // legitimate walk never needs to press past an actual boundary, and a genuinely inert button
+      // is caught next tick when the value fails to move.
+      if (!btn) { finish(false); return; }
+      presses++;
+      A.click(btn);
+      setTimeout(step, A.STEP_DELAY_MS);
+    })();
+    return true;
+  };
+
   A.clickElement = function (idx) {
     var el = A.find(idx);
     if (!el) return false;
@@ -589,6 +692,9 @@
         }
         return false;
       }
+
+      // A dropdown built from a stepper: walk the arrows until the field shows the pick.
+      if (A.isStepperInput(el)) return A.stepTo(el, String(text).trim(), done);
 
       if (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio')) {
         var want = (String(text).toLowerCase() === 'true');
