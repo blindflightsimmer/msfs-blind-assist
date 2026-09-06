@@ -698,6 +698,71 @@
   });
 
   // ---------------------------------------------------------------------------------
+  // D1: the Dispatch flight header (FlightPlanViewer). The EFB shows callsign, aircraft, origin,
+  // destination, times and alternate with NO captions at all — position is the only cue — so
+  // this page-specific pass names them. Every match is gated on the Dispatch tab being active and
+  // on the exact row shape; an unrecognised layout falls through to the generic reading.
+  // ---------------------------------------------------------------------------------
+
+  A._page = '';
+  A.isDispatch = function () { return A._page === 'Dispatch'; };
+
+  A.onlyChild = function (el, tag) {
+    return (el.children.length === 1 && el.children[0].tagName === tag) ? el.children[0] : null;
+  };
+
+  // <div><h2>BVI2GP</h2><div>TFDi MD-11F GE (TFDI-MD11)</div></div>
+  A.dispatchRowA = function (el) {
+    if (!A.isDispatch() || el.tagName !== 'DIV' || el.children.length !== 2) return null;
+    var h = el.children[0], d = el.children[1];
+    if (h.tagName !== 'H2' || d.tagName !== 'DIV' || d.children.length > 0) return null;
+    var flight = A.txt(h), ac = A.txt(d);
+    if (!flight || !ac) return null;
+    return ['Flight ' + flight, 'Aircraft ' + ac];
+  };
+
+  // <div><div><h1>KMEM</h1></div><div>…<p>03:50 (air: 03:22)</p><p>34000 ft (CI 20)</p>…</div><div><h1>KLAX</h1></div></div>
+  A.dispatchRowB = function (el) {
+    if (!A.isDispatch() || el.tagName !== 'DIV' || el.children.length !== 3) return null;
+    var from = A.onlyChild(el.children[0], 'H1'), to = A.onlyChild(el.children[2], 'H1');
+    if (!from || !to) return null;
+    var ps = el.children[1].getElementsByTagName('p');
+    if (ps.length !== 2) return null;
+    return ['From ' + A.txt(from), 'Block time ' + A.txt(ps[0]).replace('(air: ', '(air '), 'Cruise ' + A.txt(ps[1]), 'To ' + A.txt(to)];
+  };
+
+  // <div><div><h3>23:35 UTC</h3></div><div><h3>3:25 UTC</h3><h3>[KONT]</h3></div></div>
+  A.dispatchRowC = function (el) {
+    if (!A.isDispatch() || el.tagName !== 'DIV' || el.children.length !== 2) return null;
+    var dep = A.onlyChild(el.children[0], 'H3'), r = el.children[1];
+    if (!dep || r.children.length !== 2 || r.children[0].tagName !== 'H3' || r.children[1].tagName !== 'H3') return null;
+    var alt = A.txt(r.children[1]).replace(/^\[|\]$/g, '');
+    return ['Departure ' + A.txt(dep), 'Arrival ' + A.txt(r.children[0]), 'Alternate ' + alt];
+  };
+
+  // <div class="pb-3 text-center …"><p>CHLDR5 ANSWA …</p></div>
+  A.dispatchRoute = function (el) {
+    if (!A.isDispatch() || el.tagName !== 'DIV' || !A.hasClass(el, 'pb-3')) return null;
+    var p = A.onlyChild(el, 'P');
+    if (!p) return null;
+    var t = A.txt(p);
+    return t ? ['Route ' + t] : null;
+  };
+
+  A.dispatchBlock = function (name, fn) {
+    A.block(name,
+      function (el) { return !!fn(el); },
+      function (el, els) {
+        var ls = fn(el);
+        for (var i = 0; i < ls.length; i++) els.push(A.el(i === 0 ? el : null, { kind: 'static', text: ls[i] }));
+      });
+  };
+  A.dispatchBlock('dispatch-flight', A.dispatchRowA);
+  A.dispatchBlock('dispatch-legs', A.dispatchRowB);
+  A.dispatchBlock('dispatch-times', A.dispatchRowC);
+  A.dispatchBlock('dispatch-route', A.dispatchRoute);
+
+  // ---------------------------------------------------------------------------------
   // scrape
   // ---------------------------------------------------------------------------------
 
@@ -715,6 +780,8 @@
     // and find(idx) takes the first match in document order — so drop every old stamp first.
     var stale = A.root().querySelectorAll('[' + A.ATTR + ']');
     for (var s = 0; s < stale.length; s++) stale[s].removeAttribute(A.ATTR);
+
+    A._page = A.currentPage();
 
     // Re-marked every scrape rather than cached: React rebuilds these nodes on every page change,
     // so a stale claim would silence a caption that now belongs to nothing.
