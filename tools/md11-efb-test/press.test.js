@@ -21,7 +21,7 @@ const SEQUENCE = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
 
 test('one clickElement fires exactly one click and one mousedown on the target', () => {
   const { A, document } = load('services-ground');
-  const gpu = JSON.parse(A.scrape()).elements.find(e => e.text === 'GPU: Connect');
+  const gpu = JSON.parse(A.scrape()).elements.find(e => e.text === 'GPU: Disconnect');
   assert.ok(gpu && gpu.clickable, 'the GPU tile is read as a clickable button');
 
   const btn = document.querySelector('[data-md11-efb-idx="' + gpu.idx + '"]');

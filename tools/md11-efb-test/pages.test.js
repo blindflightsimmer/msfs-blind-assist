@@ -23,19 +23,27 @@ test('Perf in flight (landing), top to bottom', () => {
   assert.equal(els.find(e => e.text === 'Calculate').disabled, true, 'Calculate is dimmed until the EFB enables it');
 });
 
+// Live capture, MD-11F on the ground at UCFM, 2026-09-06. The fixture already carries the real nav
+// bar (like every other live capture), so it is loaded plain -- no autoVis, no synthetic nav.
 test('Perf on the ground (takeoff), top to bottom', () => {
-  assert.deepStrictEqual(lines(scrape('perf-takeoff', { autoVis: true, nav: 'Perf' })), [...TABS('Perf'),
-    'heading|Airport', '/text|ICAO code=KMEM', '/select|Runway=RW18C', 'static|Slope 0.0%', '/text|Runway Length (ft)=9000',
-    '/text|Wind', 'static|Headwind 0 KT', '/text|Temperature (°C)', '/text|Pressure (inHg)', 'button|Get weather information',
-    'heading|Aircraft', '/text|Takeoff Weight (lb)', '/select|Thrust Setting=TO', '/select|Anti-Ice=NONE', '/select|Flaps=Optimum',
-    '/text|Specific Flaps', '/select|Packs=On', 'button|Get Takeoff Weight', 'button|Calculate',
+  assert.deepStrictEqual(lines(scrape('perf-takeoff')), [...TABS('Perf'),
+    'heading|Airport', '/text|ICAO code=UCFM', '/select|Runway=RW07', 'static|Slope -0.3%', '/text|Runway Length (ft)=13793',
+    '/text|Wind', 'static|Headwind 0 KT', '/text|Temperature (°C)', '/text|Pressure (hPA)', 'button|Get weather information',
+    'heading|Aircraft', '/text|Takeoff Weight (lb)', '/select|Thrust Setting=FLEX', '/select|Anti-Ice=NONE', '/select|Flaps=Optimum',
+    'static|Specific Flaps: (empty)', '/select|Packs=Off', 'button|Get Takeoff Weight', 'button|Calculate',
     'static|V1: ---', 'static|VR: ---', 'static|V2: ---', 'static|Flex Temperature: --- °C', 'static|Flaps: ---']);
 });
 
-test('Payload on the ground (entry form), top to bottom', () => {
-  assert.deepStrictEqual(lines(scrape('payload-form', { autoVis: true, nav: 'Payload' })), [...TABS('Payload'),
-    'tab|Passenger & Cargo (selected)', 'tab|ZFW', '/text|Passengers=0', '/text|Weight per passenger (LBS)=190',
-    '/text|Cargo (LBS)=0', '/text|Fuel (LBS)=33069', 'button|Set Payload']);
+// Live capture, MD-11F (freighter) at UCFM, 2026-09-06: the Passenger & Cargo tab carries no
+// passenger rows at all on this airframe -- only Cargo and Fuel Quantity.
+test('Payload on the ground (Passenger & Cargo tab), top to bottom', () => {
+  assert.deepStrictEqual(lines(scrape('payload-form')), [...TABS('Payload'),
+    'tab|Passenger & Cargo (selected)', 'tab|ZFW', '/text|Cargo (LBS)=0', '/text|Fuel Quantity (LBS)=33069', 'button|Set Payload']);
+});
+
+test('Payload ZFW tab, top to bottom', () => {
+  assert.deepStrictEqual(lines(scrape('payload-zfw')), [...TABS('Payload'),
+    'tab|Passenger & Cargo', 'tab|ZFW (selected)', '/text|ZFW (LBS)=248567', '/text|Fuel Quantity (LBS)=33069', 'button|Set Payload']);
 });
 
 test('Payload in flight (locked summary), top to bottom', () => {
@@ -55,7 +63,8 @@ test('Services in flight, top to bottom', () => {
 
 test('every fixture scrapes without an error and never emits an empty-text control', () => {
   const live = ['dispatch', 'dispatch-ofp', 'payload-locked', 'perf-landing', 'charts-signedout', 'services-locked', 'state-locked',
-    'options-general', 'options-systems', 'options-caws', 'options-perf', 'options-comms', 'options-behavior', 'services-ground', 'state-ground'];
+    'options-general', 'options-systems', 'options-caws', 'options-perf', 'options-comms', 'options-behavior', 'services-ground', 'state-ground',
+    'payload-form', 'payload-zfw', 'perf-takeoff'];
   for (const fx of live) {
     const els = scrape(fx);
     assert.ok(els.length > 7, fx);
