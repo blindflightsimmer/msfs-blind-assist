@@ -160,6 +160,8 @@
       // An unlabelled input is useless to a screen reader, so fall back through every label
       // source the EFB might have used before giving up.
       o.text = A.labelFor(el);
+      var unit = A.unitFor(el);
+      if (unit) o.text = (o.text ? o.text + ' ' : '') + '(' + unit + ')';
       return o;
     }
 
@@ -299,6 +301,22 @@
 
   A.labelFor = function (el) { return A.labelInfo(el).text; };
 
+  // B5: a unit box — the short, text-only <div> the EFB puts right after an input ("°C", "inHg",
+  // "lb", "ft"). Folded into the field's name and claimed, so it is never read as a loose line.
+  A.unitEl = function (input) {
+    var n = input.nextElementSibling;
+    if (!n || n.tagName !== 'DIV' || n.children.length > 0) return null;
+    var t = A.txt(n);
+    if (!t || t.length > 6 || t.indexOf(' ') >= 0) return null;
+    return n;
+  };
+
+  A.unitFor = function (input) { var u = A.unitEl(input); return u ? A.txt(u) : ''; };
+
+  // "0KT" / "----ft" / "7587ft" → "0 KT" / "---- ft" / "7587 ft". Only a number-or-dashes token
+  // ending in 1-4 letters: "0.1%", "N/A" and "RW06L" are left alone.
+  A.spaceUnit = function (s) { return String(s).replace(/^([0-9.,-]+)([A-Za-z°]{1,4})$/, '$1 $2'); };
+
   // Mark every element a control uses as its caption, so the walk can skip emitting it again.
   // Done as a PRE-PASS because the caption is reached BEFORE its input in DOM order — by the time
   // the input claims it, the static line has already been pushed.
@@ -309,6 +327,8 @@
       if (info.src) {
         try { info.src.setAttribute(A.CLAIM, '1'); } catch (e) {}
       }
+      var ue = A.unitEl(ctrls[i]);
+      if (ue) { try { ue.setAttribute(A.CLAIM, '1'); } catch (e2) {} }
     }
 
     // A choice group's caption is the span just before it. Claim it so it is read once — as the
@@ -495,6 +515,28 @@
     els.push(A.el(cb.up, { kind: 'button', clickable: true, disabled: !!cb.up.disabled, text: A.iconButtonName(cb.up) }));
     els.push(A.el(cb.down, { kind: 'button', clickable: true, disabled: !!cb.down.disabled, text: A.iconButtonName(cb.down) }));
   });
+
+  // ---------------------------------------------------------------------------------
+  // B7: span row — a <div> whose children are only plain spans ("Slope" "0.1%",
+  // "Headwind" "0KT") is one fact; read it as one line.
+  // ---------------------------------------------------------------------------------
+
+  A.spanRow = function (el) {
+    if (el.tagName !== 'DIV' || el.children.length < 2) return null;
+    var parts = [];
+    for (var i = 0; i < el.children.length; i++) {
+      var c = el.children[i];
+      if (A.isHidden(c)) continue;
+      if (c.tagName !== 'SPAN' || c.children.length > 0) return null;
+      var t = A.txt(c);
+      if (t) parts.push(A.spaceUnit(t));
+    }
+    return parts.length >= 2 ? parts.join(' ') : null;
+  };
+
+  A.block('span-row',
+    function (el) { return !!A.spanRow(el); },
+    function (el, els) { els.push(A.el(el, { kind: 'static', text: A.spanRow(el) })); });
 
   // ---------------------------------------------------------------------------------
   // scrape
