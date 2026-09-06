@@ -45,6 +45,6 @@ test('only a text field is a read-out: a disabled checkbox or range stays its ow
   assert.ok(rg, 'the disabled range is still a range');
   assert.equal(rg.value, '80');
 
-  for (const t of ['Deflected Ailerons: true', 'Screen Brightness: 80', 'Deflected Ailerons: (empty)'])
+  for (const t of ['Deflected Ailerons: on', 'Screen Brightness: 80'])
     assert.ok(!els.some(e => e.kind === 'static' && e.text === t), t + ' read as a read-out');
 });

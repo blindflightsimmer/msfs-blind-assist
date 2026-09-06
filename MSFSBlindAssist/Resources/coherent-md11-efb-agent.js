@@ -1017,6 +1017,7 @@
     var el = A.find(idx);
     if (!el) return false;
     if (A.isInert(el)) return false;      // the EFB has this page locked; never press through it
+    if (el.disabled) return false;        // el.click() is a no-op on a disabled control per spec; refuse, don't claim success
     try { A.click(el); A._dirty = true; return true; } catch (e) { return false; }
   };
 
