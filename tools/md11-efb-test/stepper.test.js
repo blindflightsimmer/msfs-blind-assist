@@ -25,8 +25,9 @@ function wire(input, opts, counts) {
   // 2026-09-05: the DOM read inline after a press still showed the old value). Emulate that.
   let i = opts.indexOf(input.value);
   const [up, down] = Array.from(input.parentElement.getElementsByTagName('button'));
-  down.addEventListener('mousedown', () => { counts.down++; queueMicrotask(() => { i = Math.min(i + 1, opts.length - 1); input.value = opts[i]; }); });
-  up.addEventListener('mousedown', () => { counts.up++; queueMicrotask(() => { i = Math.max(i - 1, 0); input.value = opts[i]; }); });
+  // React re-renders both arrows' disabled state from the new index on every change too.
+  down.addEventListener('mousedown', () => { counts.down++; queueMicrotask(() => { i = Math.min(i + 1, opts.length - 1); input.value = opts[i]; up.disabled = (i === 0); down.disabled = (i === opts.length - 1); }); });
+  up.addEventListener('mousedown', () => { counts.up++; queueMicrotask(() => { i = Math.max(i - 1, 0); input.value = opts[i]; up.disabled = (i === 0); down.disabled = (i === opts.length - 1); }); });
 }
 
 test('picking a later value presses the down arrow until the field shows it, then back up', async () => {

@@ -656,15 +656,7 @@
       cur = now;
       var cb = A.chevronButtons(inp.parentElement);
       var btn = cb ? (target > now ? cb.down : cb.up) : null;
-      // NOT gated on btn.disabled: that flag is a REACT PROP, so it lags a press by the same one
-      // tick `now` does — checking it here would compare THIS press's boundary against LAST
-      // press's disabled state (live-verified via jsdom dispatchEvent: a disabled button still
-      // delivers pointerdown/mousedown to its listeners, same as any real Chromium build — the
-      // browser only withholds a REAL user click's activation, never a scripted dispatchEvent).
-      // The stall check above is the real boundary guard: target/cur are both valid indices, so a
-      // legitimate walk never needs to press past an actual boundary, and a genuinely inert button
-      // is caught next tick when the value fails to move.
-      if (!btn) { finish(false); return; }
+      if (!btn || btn.disabled) { finish(false); return; }
       presses++;
       A.click(btn);
       setTimeout(step, A.STEP_DELAY_MS);
