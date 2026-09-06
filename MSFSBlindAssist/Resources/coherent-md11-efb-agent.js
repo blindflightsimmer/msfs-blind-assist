@@ -642,6 +642,36 @@
   });
 
   // ---------------------------------------------------------------------------------
+  // B9: pre-formatted text — the OFP (<pre> blocks under #ofp). One element per block with its
+  // line breaks kept; the shell renders controlType 'pre' as a monospace block read line by line.
+  // ---------------------------------------------------------------------------------
+
+  A.block('pre',
+    function (el) { return el.tagName === 'PRE'; },
+    function (el, els) {
+      var t = (el.textContent || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/^\s+|\s+$/g, '');
+      if (t) els.push(A.el(el, { kind: 'static', controlType: 'pre', text: t }));
+    });
+
+  // ---------------------------------------------------------------------------------
+  // B10: toast — the Router's pop-up (bottom-right; green success / red error): the message as
+  // the card's own text, then an icon-only X. The shell speaks kind 'alert' immediately, once
+  // per appearance; the X reads "Close".
+  // ---------------------------------------------------------------------------------
+
+  A.isToast = function (el) {
+    if (el.tagName !== 'DIV' || !A.hasClass(el, 'absolute') || !A.hasClass(el, 'bottom-0') || !A.hasClass(el, 'right-0') || !A.hasClass(el, 'z-10')) return false;
+    if (el.children.length !== 1 || el.children[0].tagName !== 'DIV') return false;
+    return el.children[0].getElementsByTagName('button').length === 1;
+  };
+
+  A.block('toast', A.isToast, function (el, els) {
+    var card = el.children[0], msg = A.ownText(card), btn = card.getElementsByTagName('button')[0];
+    if (msg) els.push(A.el(card, { kind: 'alert', live: 'assertive', text: msg }));
+    els.push(A.el(btn, { kind: 'button', clickable: true, text: 'Close' }));
+  });
+
+  // ---------------------------------------------------------------------------------
   // scrape
   // ---------------------------------------------------------------------------------
 
