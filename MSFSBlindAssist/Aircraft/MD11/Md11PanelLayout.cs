@@ -5,21 +5,27 @@ namespace MSFSBlindAssist.Aircraft.MD11;
 public sealed record Md11LayoutPanel(string Name, IReadOnlyList<string> Keys);
 public sealed record Md11LayoutSection(string Name, IReadOnlyList<Md11LayoutPanel> Panels);
 
-/// <summary>Result of placing a control map onto the layout: the two dictionaries MainForm consumes, plus what the table missed.</summary>
+/// <summary>
+/// Result of placing a control map onto the layout: the three dictionaries MainForm consumes —
+/// control rows, display (lamp) rows, and the section→panel tree — plus what the table missed.
+/// </summary>
 public sealed record Md11Placement(
     Dictionary<string, List<string>> Structure,
     Dictionary<string, List<string>> Controls,
+    Dictionary<string, List<string>> Displays,
     List<string> Unplaced,
     List<string> MissingKeys);
 
 /// <summary>
 /// The MD-11 panel tree (spec §3.8): sections in the order a preparation flows, panels named as
 /// TFDi's Systems Guide names them, controls in the physical panel order the guide numbers, a
-/// guard cover immediately before the control it covers, status rows (standalone lamps) last.
+/// guard cover immediately before the control it covers, standalone lamps as the panel's Status
+/// Display rows (never tab stops).
 ///
 /// The table is the ONLY source of panel order. A control it does not name is still appended
 /// (never dropped) to a "{Area} (other)" panel — the test suite pins that the shipped map needs
 /// no such panel, so a regenerated map that adds a control fails loudly rather than hiding it.
+/// The MCDU keys are not rows at all: the MCDU window presses them (IsMcduControl).
 /// </summary>
 public static class Md11PanelLayout
 {
@@ -344,6 +350,19 @@ public static class Md11PanelLayout
     public static readonly HashSet<string> SupersededByEntryField =
         new(Md11Squawk.DigitButtons, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Controls the MCDU window presses on the pilot's behalf: every key and the brightness knob
+    /// of all three units. Registered (the window needs them), never a panel row — a panel of 74
+    /// keys per unit was a second, worse keyboard for a screen a blind pilot reads in the window.
+    /// </summary>
+    public static bool IsMcduControl(string nodeId)
+        => nodeId.StartsWith("MD11_LMCDU_", StringComparison.OrdinalIgnoreCase)
+        || nodeId.StartsWith("MD11_CMCDU_", StringComparison.OrdinalIgnoreCase)
+        || nodeId.StartsWith("MD11_RMCDU_", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A control the app's own UI supersedes — the squawk keypad, the MCDU window's keys — never a row, exempt from the safety net.</summary>
+    public static bool IsSuperseded(string nodeId) => SupersededByEntryField.Contains(nodeId) || IsMcduControl(nodeId);
+
     private static readonly string[] WeatherRadar =
     {
         "MD11_PED_WXR_OFF_BT", "MD11_PED_WXR_WX_BT", "MD11_PED_WXR_WXT_BT", "MD11_PED_WXR_MAP_BT", "MD11_PED_WXR_TEST_BT",
@@ -412,25 +431,6 @@ public static class Md11PanelLayout
     // One toggle, not two: both nodes fired event 94465, so the generator keeps a single row.
     private static readonly string[] Efb = { "MD11_EFB_TOGGLE" };
 
-    // ---- MCDU keys ------------------------------------------------------------------------
-    private static readonly string[] McduKeyOrder =
-    {
-        "LSK_1L", "LSK_2L", "LSK_3L", "LSK_4L", "LSK_5L", "LSK_6L", "LSK_1R", "LSK_2R", "LSK_3R", "LSK_4R", "LSK_5R", "LSK_6R",
-        "INIT", "REF", "FPLN", "DIR_INTC", "NAV_RAD", "PERF", "PROG", "MENU", "SEC_FPLN", "TOAPPR", "ENG_OUT", "FIX",
-        "NEXTPAGE", "UP", "DOWN",
-        "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "DOT", "MINUS", "PLUS", "SLASH", "SP",
-        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
-        "U", "V", "W", "X", "Y", "Z", "CLR",
-    };
-
-    private static string[] Mcdu(string side)
-    {
-        var keys = McduKeyOrder.Select(k => $"MD11_{side}_{k}_BT").ToList();
-        keys.Add($"MD11_{side}_BRT_KB");
-        keys.AddRange(new[] { $"MD11_{side}_DSPY_LT", $"MD11_{side}_FAIL_LT", $"MD11_{side}_MSG_LT", $"MD11_{side}_OFST_LT" });
-        return keys.ToArray();
-    }
-
     // ---- Circuit breakers (grid order: row letter, then column) ---------------------------
     private static readonly Regex Grid = new(@"_([A-Z])(\d+)$", RegexOptions.Compiled);
 
@@ -490,10 +490,6 @@ public static class Md11PanelLayout
             new Md11LayoutPanel("Doors", Doors), new Md11LayoutPanel("Cabin", Cabin),
             new Md11LayoutPanel("Aircraft Options", AircraftOptions), new Md11LayoutPanel("EFB", Efb),
         }),
-        new Md11LayoutSection("MCDU Keys", new[]
-        {
-            new Md11LayoutPanel("MCDU Left", Mcdu("LMCDU")), new Md11LayoutPanel("MCDU Center", Mcdu("CMCDU")), new Md11LayoutPanel("MCDU Right", Mcdu("RMCDU")),
-        }),
         new Md11LayoutSection("Circuit Breakers", new[]
         {
             new Md11LayoutPanel("Circuit Breakers Upper", Breakers(map, "MD11_BKR_BWU_")),
@@ -513,7 +509,7 @@ public static class Md11PanelLayout
         "Pedestal" or "Throttle Quadrant" or "Flaps" or "Dial-A-Flap" or "Speedbrake" or "Flight Deck Door" => "Pedestal",
         var a when a.StartsWith("Audio Panel") => "Pedestal",
         "Doors and Exterior" or "Cabin" or "Aircraft Options" or "EFB" or "Lighting" => "Ground and Exterior",
-        var a when a.StartsWith("MCDU") => "MCDU Keys",
+        var a when a.StartsWith("MCDU") => "Pedestal",
         "Circuit Breakers" => "Circuit Breakers",
         _ => "Other",
     };
@@ -525,6 +521,7 @@ public static class Md11PanelLayout
 
         var structure = new Dictionary<string, List<string>>();
         var controls = new Dictionary<string, List<string>>();
+        var displays = new Dictionary<string, List<string>>();
         var placed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var missing = new List<string>();
 
@@ -534,16 +531,21 @@ public static class Md11PanelLayout
             foreach (var panel in section.Panels)
             {
                 var keys = new List<string>();
+                var lamps = new List<string>();
                 foreach (var key in panel.Keys)
                 {
                     if (!byId.TryGetValue(key, out var c)) { missing.Add(key); continue; }
                     if (c.Kind == Md11Kinds.Option) continue;
                     if (!placed.Add(c.NodeId)) continue;
-                    keys.Add(c.NodeId);
+                    // A lamp is a Status Display row, never a tab stop (the Airbus pattern);
+                    // everything operable is a control row. The table's order survives in both.
+                    if (c.Kind == Md11Kinds.Annunciator) lamps.Add(c.NodeId);
+                    else keys.Add(c.NodeId);
                 }
-                if (keys.Count == 0) continue;
+                if (keys.Count == 0 && lamps.Count == 0) continue;
                 names.Add(panel.Name);
-                controls[panel.Name] = keys;
+                controls[panel.Name] = keys;   // possibly empty: MainForm needs the entry to build the panel at all
+                if (lamps.Count > 0) displays[panel.Name] = lamps;
             }
             if (names.Count > 0) structure[section.Name] = names;
         }
@@ -553,7 +555,7 @@ public static class Md11PanelLayout
         foreach (var c in map.Controls)
         {
             if (c.Kind is Md11Kinds.Annunciator or Md11Kinds.Option || placed.Contains(c.NodeId)) continue;
-            if (SupersededByEntryField.Contains(c.NodeId)) continue;
+            if (IsSuperseded(c.NodeId)) continue;
             unplaced.Add(c.NodeId);
             var sectionName = SectionForArea(c.Area);
             var panelName = $"{c.Area} (other)";
@@ -563,6 +565,6 @@ public static class Md11PanelLayout
             keys.Add(c.NodeId);
         }
 
-        return new Md11Placement(structure, controls, unplaced, missing);
+        return new Md11Placement(structure, controls, displays, unplaced, missing);
     }
 }

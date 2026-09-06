@@ -20,13 +20,14 @@ public class Md11PanelLayoutTests
         Assert.Empty(P.MissingKeys);   // a typo in the table would land here
         var all = P.Controls.Values.SelectMany(k => k).ToList();
         Assert.Equal(all.Count, all.Distinct(StringComparer.OrdinalIgnoreCase).Count());
-        // Every operable control is a row exactly once — except one that a panel field supersedes
-        // (the transponder keypad, pressed by the typed squawk entry): those are registered, never
+        // Every operable control is a row exactly once — except one the app's own UI supersedes:
+        // the transponder keypad (pressed by the typed squawk entry) and the three MCDUs' keys
+        // and brightness knobs (pressed from the MCDU window). Those are registered, never
         // listed, and must not surface through the safety net either.
         var operable = Map.Controls.Where(c => c.Kind != Md11Kinds.Annunciator && c.Kind != Md11Kinds.Option).Select(c => c.NodeId);
         foreach (var key in operable)
         {
-            if (Md11PanelLayout.SupersededByEntryField.Contains(key)) Assert.DoesNotContain(key, all);
+            if (Md11PanelLayout.IsSuperseded(key)) Assert.DoesNotContain(key, all);
             else Assert.Contains(key, all);
         }
         Assert.DoesNotContain(P.Structure.Values.SelectMany(n => n), n => n.EndsWith("(other)"));
@@ -36,7 +37,7 @@ public class Md11PanelLayoutTests
     public void Sections_AreInPreparationOrder()
     {
         Assert.Equal(new[] { "Overhead", "Aft Overhead", "Glareshield", "Instrument Panel", "Pedestal",
-                             "Ground and Exterior", "MCDU Keys", "Circuit Breakers" },
+                             "Ground and Exterior", "Circuit Breakers" },
                      P.Structure.Keys.ToArray());
     }
 
@@ -62,28 +63,40 @@ public class Md11PanelLayoutTests
         }
     }
 
+    /// <summary>
+    /// A lamp is a Status Display row (the Airbus pattern: one list per panel, Ctrl+3), never a
+    /// control row and never a tab stop. Everything operable is a control row. Both keep the
+    /// table's order, and a panel with lamps still has a control entry — MainForm early-returns
+    /// for a panel with no GetPanelControls entry, so the entry may be empty but must exist.
+    /// </summary>
     [Fact]
-    public void StatusRows_ComeLastInEveryPanel()
+    public void Lamps_AreDisplayRows_NeverControlRows()
     {
         var byId = Map.Controls.ToDictionary(c => c.NodeId);
         foreach (var (panel, keys) in P.Controls)
-        {
-            bool seenLamp = false;
             foreach (var key in keys)
-            {
-                bool isLamp = byId[key].Kind == Md11Kinds.Annunciator;
-                Assert.False(seenLamp && !isLamp, $"{panel}: {key} follows a status row");
-                seenLamp |= isLamp;
-            }
+                Assert.False(byId[key].Kind == Md11Kinds.Annunciator, $"{panel}: lamp {key} is a control row");
+        foreach (var (panel, lamps) in P.Displays)
+        {
+            Assert.NotEmpty(lamps);
+            Assert.All(lamps, key => Assert.Equal(Md11Kinds.Annunciator, byId[key].Kind));
+            Assert.Contains(panel, P.Controls.Keys);
         }
+        // The Electrical panel's fifteen lights, in the table's order.
+        Assert.Equal(15, P.Displays["Electrical"].Count);
+        Assert.Equal("MD11_OVHD_ELEC_EMER_PWR_OFF_LT", P.Displays["Electrical"][0]);
+        Assert.Equal("MD11_OVHD_ELEC_DC_GND_SVC_OFF_LT", P.Displays["Electrical"][^1]);
     }
 
     [Fact]
     public void NoTwoRowsInOnePanel_ShareASpokenName()
     {
+        // Control rows and display rows together: a screen reader cannot tell two rows with
+        // one name apart, whichever list they sit in.
         var vars = new TFDiMD11Definition().GetVariables();
-        foreach (var (panel, keys) in P.Controls)
+        foreach (var panel in P.Controls.Keys)
         {
+            var keys = P.Controls[panel].Concat(P.Displays.TryGetValue(panel, out var d) ? d : new List<string>());
             var names = keys.Where(vars.ContainsKey).Select(k => vars[k].DisplayName).ToList();
             var dupes = names.GroupBy(n => n, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
             Assert.True(dupes.Count == 0, $"{panel}: duplicate spoken names {string.Join(", ", dupes)}");
@@ -160,6 +173,8 @@ public class Md11PanelLayoutTests
                 new Md11Control { NodeId = "MD11_MADE_UP_SW", Kind = Md11Kinds.Switch, Area = "Pedestal" },
                 // Options are placed by nobody, fallback included.
                 new Md11Control { NodeId = "MD11_OPT_MADE_UP", Kind = Md11Kinds.Option, Area = "Aircraft Options" },
+                // A lamp the table names lands in Displays, not Controls.
+                new Md11Control { NodeId = "MD11_OVHD_ELEC_AC1_OFF_LT", Kind = Md11Kinds.Annunciator, Area = "Overhead" },
             },
         };
 
@@ -169,6 +184,7 @@ public class Md11PanelLayoutTests
         Assert.Equal(new[] { "MD11_MADE_UP_SW" }, p.Controls["Pedestal (other)"].ToArray());
         Assert.Contains("Pedestal (other)", p.Structure["Pedestal"]);
         Assert.Equal(new[] { "MD11_OVHD_ELEC_BATT_BT" }, p.Controls["Electrical"].ToArray());
+        Assert.Equal(new[] { "MD11_OVHD_ELEC_AC1_OFF_LT" }, p.Displays["Electrical"].ToArray());
         Assert.DoesNotContain("MD11_OPT_MADE_UP", p.Controls.Values.SelectMany(v => v));
         Assert.DoesNotContain("MD11_OPT_MADE_UP", p.Unplaced);
         // Every other key the table names is missing from this two-control map, and all of them
@@ -182,6 +198,7 @@ public class Md11PanelLayoutTests
         Assert.Equal("Instrument Panel", Md11PanelLayout.SectionForArea("F/O Side Panel"));
         Assert.Equal("Glareshield", Md11PanelLayout.SectionForArea("Captain EFIS Control Panel"));
         Assert.Equal("Other", Md11PanelLayout.SectionForArea("Somewhere TFDi Added Later"));
+        Assert.Equal("Pedestal", Md11PanelLayout.SectionForArea("MCDU (Left)"));
     }
 
     [Fact]
@@ -196,11 +213,23 @@ public class Md11PanelLayoutTests
         Assert.Equal("Mirror_l_window_shade_pull", fo[fo.IndexOf("MD11_RSIDE_WINDOW") + 1]);
     }
 
+    /// <summary>
+    /// The MCDU window presses every key of all three units itself, so a panel of 74 keys per
+    /// unit was a second, worse keyboard for a screen the pilot reads in that window. The keys
+    /// and the brightness knobs are superseded: registered, never a row, and not caught by the
+    /// safety net either.
+    /// </summary>
     [Fact]
-    public void McduKeys_StartWithTheLineSelectKeys()
+    public void McduControls_AreSupersededByTheMcduWindow_NotRows()
     {
-        Assert.Equal("MD11_LMCDU_LSK_1L_BT", P.Controls["MCDU Left"][0]);
-        Assert.Equal("MD11_CMCDU_LSK_1L_BT", P.Controls["MCDU Center"][0]);
-        Assert.Contains("MD11_RMCDU_Z_BT", P.Controls["MCDU Right"]);
+        var mcdu = Map.Controls.Where(c => Md11PanelLayout.IsMcduControl(c.NodeId)).ToList();
+        Assert.True(mcdu.Count >= 3 * 74, $"expected the three units' key sets, found {mcdu.Count}");
+        var rows = P.Controls.Values.SelectMany(k => k).Concat(P.Displays.Values.SelectMany(k => k))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain(mcdu, c => rows.Contains(c.NodeId));
+        Assert.DoesNotContain(P.Structure.Keys, s => s.Contains("MCDU", StringComparison.OrdinalIgnoreCase));
+        Assert.True(Md11PanelLayout.IsMcduControl("MD11_LMCDU_LSK_1L_BT"));
+        Assert.True(Md11PanelLayout.IsMcduControl("MD11_RMCDU_BRT_KB"));
+        Assert.False(Md11PanelLayout.IsMcduControl("MD11_PED_SD_ENG_BT"));
     }
 }
