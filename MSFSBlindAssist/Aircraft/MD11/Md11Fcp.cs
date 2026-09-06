@@ -31,7 +31,7 @@ public static class Md11Fcp
     /// -9999 on vertical speed. Documented as READ-side only — whether writing one dashes the
     /// window is NOT documented and was not probed, so nothing here writes them.
     /// </summary>
-    public static bool IsDashed(double readback) => readback <= -999;
+    public static bool IsDashed(double readback) => readback == -9999 || (readback >= -1000 && readback <= -999);
 
     // ---- read side (the FCP windows) ----
     public const string ReadSpeed = "MD11_AFS_SPD";
