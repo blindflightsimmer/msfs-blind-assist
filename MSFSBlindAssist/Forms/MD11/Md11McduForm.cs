@@ -293,6 +293,17 @@ public class Md11McduForm : Form
 
     private void Form_KeyDown(object? sender, KeyEventArgs e)
     {
+        // Escape closes the window, as on the FCP window and the A380 MCDU / iFly CDU windows:
+        // Close() runs the hide-on-close handler, which also hands focus back to the window the
+        // pilot came from. The unit combo keeps Escape while its list is dropped.
+        if (e.KeyCode == Keys.Escape)
+        {
+            if (ActiveControl is ComboBox { DroppedDown: true }) return;
+            e.Handled = true; e.SuppressKeyPress = true;
+            Close();
+            return;
+        }
+
         // Line-select keys — two layouts, switchable in FMC Settings. Read the setting on every
         // press so a change takes effect live, matching every other CDU form in this app:
         //   Default:   Ctrl+1..6 = L1..L6, Alt+1..6 = R1..R6
