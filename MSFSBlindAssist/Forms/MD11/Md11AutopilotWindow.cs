@@ -102,6 +102,18 @@ public class Md11AutopilotWindow : Form
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         KeyPreview = true;
+        // Escape closes the window, as on every other autoflight window in this app (the FBW FCU
+        // base, Fenix, HS787, A380). Close() runs the hide-on-close handler below, which also
+        // hands focus back to the window the pilot came from. A combo with its list dropped
+        // keeps Escape for itself, so a pilot backing out of a selection does not lose the window.
+        KeyDown += (s, e) =>
+        {
+            if (e.KeyCode != Keys.Escape) return;
+            if (ActiveControl is ComboBox { DroppedDown: true }) return;
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            Close();
+        };
         AccessibleName = "MD-11 Flight Control Panel";
         AccessibleDescription = "Autoflight modes, selected values, and the flight control panel knobs.";
 
@@ -201,7 +213,7 @@ public class Md11AutopilotWindow : Form
             Location = new Point(10, y),
             Size = new Size(100, 30),
         };
-        close.Click += (s, e) => Hide();
+        close.Click += (s, e) => Close();   // same path as Escape: hide and restore focus
         Controls.Add(close);
 
         // Auto/5/10/15/20/25 — the aircraft's own value map for the limiter knob.
