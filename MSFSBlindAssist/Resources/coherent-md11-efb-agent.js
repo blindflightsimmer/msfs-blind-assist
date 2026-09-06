@@ -976,6 +976,11 @@
 
       A.fire(el, 'input', window.Event);
       A.fire(el, 'change', window.Event);
+      // Commit like the EFB's keyboard would: its Input runs formatting in onBlur (React: focusout).
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+        A.fire(el, 'blur', window.FocusEvent || window.Event);
+        A.fire(el, 'focusout', window.FocusEvent || window.Event);
+      }
       A._dirty = true;
       return true;
     } catch (e) { return false; }

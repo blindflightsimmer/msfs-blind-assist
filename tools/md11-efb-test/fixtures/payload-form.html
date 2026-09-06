@@ -1,0 +1,20 @@
+<!-- Source-built from efb.js PayloadPage (on the ground, before "Set Payload"): the section strip,
+     the Passenger & Cargo form, the set button. Field labels come from the JSX; the fuel value is
+     the one seen live. CONFIRM ON THE GROUND before merge. -->
+<div class="flex h-full w-full flex-col items-center pt-4 text-xs">
+  <ul class="mb-4 flex list-none flex-row flex-wrap border-b-0 bg-zinc-900 pl-0" role="tablist">
+    <li role="presentation"><button class="text-white underline my-2 block border-x-0 border-b-2 border-t-0 border-transparent bg-zinc-900 px-7 text-sm font-medium uppercase" role="tab">Passenger &amp; Cargo</button></li>
+    <li role="presentation"><button class="text-neutral-500 my-2 block border-x-0 border-b-2 border-t-0 border-transparent bg-zinc-900 px-7 text-sm font-medium uppercase">ZFW</button></li>
+  </ul>
+  <div class="w-3/4 flex-col items-center">
+    <div role="tabpanel">
+      <div class="w-full">
+        <div class="relative flex w-full items-center justify-between rounded-t-md bg-zinc-600 p-2 px-4"><label>Passengers</label><input type="number" placeholder="" class="w-1/2 rounded-lg border border-white bg-zinc-700 px-3 py-2 text-right text-white" value="0"></div>
+        <div class="flex w-full items-center justify-between bg-zinc-700 p-2 px-4"><label>Weight per passenger (LBS)</label><input type="number" placeholder="" class="w-1/2 rounded-lg border border-white bg-zinc-700 px-3 py-2 text-right text-white" value="190"></div>
+        <div class="flex w-full items-center justify-between bg-zinc-600 p-2 px-4"><label>Cargo (LBS)</label><input type="number" placeholder="" class="w-1/2 rounded-lg border border-white bg-zinc-700 px-3 py-2 text-right text-white" value="0"></div>
+        <div class="relative flex w-full items-center justify-between rounded-b-md bg-zinc-700 p-2 px-4"><label>Fuel (LBS)</label><input type="number" placeholder="" class="w-1/2 rounded-lg border border-white bg-zinc-700 px-3 py-2 text-right text-white" value="33069"></div>
+      </div>
+    </div>
+    <div class="mt-4 flex h-full w-3/4 flex-col items-center"><button class="middle none center rounded-lg bg-green-700 px-6 py-3 font-sans text-xs font-bold uppercase text-white" data-ripple-light="true">Set Payload</button></div>
+  </div>
+</div>
