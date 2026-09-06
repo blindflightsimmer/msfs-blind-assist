@@ -132,6 +132,9 @@ public partial class MainForm
     /// </summary>
     private readonly Dictionary<string, List<string>> stateDependents = new(StringComparer.Ordinal);
 
+    /// <summary>Sentinel dependent standing for the current panel's Status Display list as a whole.</summary>
+    private const string DisplayDependent = "_DISPLAY_";
+
     private void RebuildStateDependents()
     {
         stateDependents.Clear();
@@ -141,6 +144,17 @@ public partial class MainForm
             if (!vars.TryGetValue(key, out var def) || def.StateVariables == null) continue;
             AddStateDependent(key, key);
             foreach (var dep in def.StateVariables) AddStateDependent(dep, key);
+        }
+        // Status Display rows have dependencies too — the MD-11's lamp rows read the DC-power
+        // gate, which is not a row itself — and the list is one control: any dependency change
+        // schedules ONE coalesced repaint, which re-reads every row from the cache.
+        if (GetPanelDisplayVarsCached().TryGetValue(currentPanel, out var displayVars))
+        {
+            foreach (var key in displayVars)
+            {
+                if (!vars.TryGetValue(key, out var def) || def.StateVariables == null) continue;
+                foreach (var dep in def.StateVariables) AddStateDependent(dep, DisplayDependent);
+            }
         }
     }
 
@@ -164,6 +178,13 @@ public partial class MainForm
     /// </summary>
     private void RefreshDescribedState(string key)
     {
+        if (key == DisplayDependent)
+        {
+            // The list repaint re-reads every row from the cache (UpdateDisplayText), so a
+            // dependency change needs nothing more than the repaint it already coalesces.
+            ScheduleDisplayRepaint();
+            return;
+        }
         if (!currentControls.TryGetValue(key, out var control)) return;
         if (!currentAircraft.GetVariables().TryGetValue(key, out var def)) return;
         if (!currentAircraft.TryDescribeControlState(key, out var state)) return;
