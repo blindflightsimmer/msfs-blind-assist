@@ -32,12 +32,14 @@ public partial class TFDiMD11Definition
         {
             new("&Track / Heading", () => Mode(sim, Md11Fcp.ModeHeadingIsTrack) ? "Track" : "Heading",
                 () => PressControl("MD11_CGS_HDGTRK_BT")),
-            new("&NAV", () => "Press", () => PressControl("MD11_CGS_NAV_BT")),
+            // Engaged or not, from the FCP's own dashed heading window (Md11AutoflightState).
+            new("&NAV", () => Md11AutoflightState.Engaged(Md11AutoflightState.NavEngaged(Val(sim, Md11Fcp.ReadHeading))),
+                () => PressControl("MD11_CGS_NAV_BT")),
             // The knob itself pushes and pulls, and both are real actions on the aircraft with
             // their own events — so they belong wherever the pilot is working this window, not
-            // only in the full panel. Same for speed and altitude below.
-            new("P&ush knob", () => "Press", () => PressControlEvents(Md11Fcp.HeadingKnob, "PUSH_DOWN", "PUSH_UP")),
-            new("Pu&ll knob", () => "Press", () => PressControlEvents(Md11Fcp.HeadingKnob, "PULL_DOWN", "PULL_UP")),
+            // only in the full panel. One-shot actions carry no state. Same for speed and altitude.
+            new("P&ush knob", () => "", () => PressControlEvents(Md11Fcp.HeadingKnob, "PUSH_DOWN", "PUSH_UP")),
+            new("Pu&ll knob", () => "", () => PressControlEvents(Md11Fcp.HeadingKnob, "PULL_DOWN", "PULL_UP")),
         };
 
         var dialog = new ValueInputForm(
@@ -76,9 +78,11 @@ public partial class TFDiMD11Definition
         {
             new("&IAS / Mach", () => Mode(sim, Md11Fcp.ModeSpeedIsMach) ? "Mach" : "IAS",
                 () => PressControl("MD11_CGS_IASMACH_BT")),
-            new("&FMS Speed", () => "Press", () => PressControl("MD11_CGS_FMSSPD_BT")),
-            new("P&ush knob", () => "Press", () => PressControlEvents(Md11Fcp.SpeedKnob, "PUSH_DOWN", "PUSH_UP")),
-            new("Pu&ll knob", () => "Press", () => PressControlEvents(Md11Fcp.SpeedKnob, "PULL_DOWN", "PULL_UP")),
+            // Engaged or not, from the FCP's own dashed speed window (Md11AutoflightState).
+            new("&FMS Speed", () => Md11AutoflightState.Engaged(Md11AutoflightState.FmsSpeedEngaged(Val(sim, Md11Fcp.ReadSpeed))),
+                () => PressControl("MD11_CGS_FMSSPD_BT")),
+            new("P&ush knob", () => "", () => PressControlEvents(Md11Fcp.SpeedKnob, "PUSH_DOWN", "PUSH_UP")),
+            new("Pu&ll knob", () => "", () => PressControlEvents(Md11Fcp.SpeedKnob, "PULL_DOWN", "PULL_UP")),
         };
 
         var dialog = new ValueInputForm(
@@ -130,9 +134,10 @@ public partial class TFDiMD11Definition
         {
             new("Feet / &Metres", () => Mode(sim, Md11Fcp.ModeAltitudeIsMetres) ? "Metres" : "Feet",
                 () => PressControl("MD11_CGS_FTM_BT")),
-            new("&PROF", () => "Press", () => PressControl("MD11_CGS_PROF_BT")),
-            new("P&ush knob", () => "Press", () => PressControlEvents(Md11Fcp.AltitudeKnob, "PUSH_DOWN", "PUSH_UP")),
-            new("Pu&ll knob", () => "Press", () => PressControlEvents(Md11Fcp.AltitudeKnob, "PULL_DOWN", "PULL_UP")),
+            // PROF's engagement lives only on the FMA, which is not exported — no state to show.
+            new("&PROF", () => "", () => PressControl("MD11_CGS_PROF_BT")),
+            new("P&ush knob", () => "", () => PressControlEvents(Md11Fcp.AltitudeKnob, "PUSH_DOWN", "PUSH_UP")),
+            new("Pu&ll knob", () => "", () => PressControlEvents(Md11Fcp.AltitudeKnob, "PULL_DOWN", "PULL_UP")),
         };
 
         var dialog = new ValueInputForm(
@@ -173,8 +178,8 @@ public partial class TFDiMD11Definition
             // The MD-11 has no engage-V/S button — turning the V/S / FPA wheel is what engages the
             // pitch mode. Exposed here so the pilot can engage and fine-tune it by hand; submitting
             // a typed value engages it too (see SetVerticalSpeedEngaged). One click per press.
-            new("Wheel &up", () => "Turn", () => FireControlEvent(Md11Fcp.VerticalSpeedKnob, "WHEEL_UP")),
-            new("Wheel &down", () => "Turn", () => FireControlEvent(Md11Fcp.VerticalSpeedKnob, "WHEEL_DOWN")),
+            new("Wheel &up", () => "", () => FireControlEvent(Md11Fcp.VerticalSpeedKnob, "WHEEL_UP")),
+            new("Wheel &down", () => "", () => FireControlEvent(Md11Fcp.VerticalSpeedKnob, "WHEEL_DOWN")),
         };
 
         var dialog = new ValueInputForm(
@@ -234,7 +239,7 @@ public partial class TFDiMD11Definition
         {
             // STD is a toggle with no readable state (the "STD" flag is on the WASM PFD), so this
             // shows the action, not a live value. Pushing the baro knob is the real mechanism.
-            new("&Standard (toggle)", () => "Push", () => PressControl(Md11Fcp.BaroKnob)),
+            new("&Standard (toggle)", () => "", () => PressControl(Md11Fcp.BaroKnob)),
         };
 
         var dialog = new ValueInputForm(
@@ -269,65 +274,36 @@ public partial class TFDiMD11Definition
     // ---------------------------------------------------------------------------------
 
     /// <summary>
-    /// What the FCP's heading window is showing, with its mode.
+    /// The FCP windows on Shift+H / S / A / V, through <see cref="Md11AutoflightState"/> so the
+    /// window, the dialogs and these read-outs never disagree.
     ///
-    /// The mode is NOT decoration: the same window shows a HEADING or a TRACK, and 123 means a
-    /// different thing in each. A blind pilot cannot glance at the window to see which, so the
-    /// word is the only cue that exists.
-    ///
-    /// What this deliberately does NOT say is which lateral mode is ENGAGED (NAV, heading hold…).
-    /// The MD-11 exports no FMA — see docs/md11.md §2c — and MD11_CGS_NAV_BT only reports that the
-    /// button was pressed, which is not the same as the mode arming. Announcing a pressed button as
-    /// an engaged mode would be a confident lie, so the read-out stops at what is knowable.
+    /// The mode is NOT decoration: the same window shows a HEADING or a TRACK, a speed or a Mach,
+    /// and a blind pilot cannot glance at the window to see which. And a DASHED window is itself
+    /// information — TFDi document it as the FCP's own engagement cue (heading dashed = NAV is
+    /// flying, speed dashed = FMS speed), so the read-out says so. What it still cannot say is
+    /// PROF or APPR/LAND: those live only on the FMA (docs/md11.md §2c).
     /// </summary>
     private string DescribeHeading(SimConnectManager sim)
     {
-        var v = Val(sim, Md11Fcp.ReadHeading);
-        var word = Mode(sim, Md11Fcp.ModeHeadingIsTrack) ? "track" : "heading";
-        return Md11Fcp.IsDashed(v)
-            ? $"Selected {word} dashed"
-            : $"Selected {word} {v.ToString("000", CultureInfo.InvariantCulture)}";
+        bool track = Mode(sim, Md11Fcp.ModeHeadingIsTrack);
+        return Md11AutoflightState.Selected(Md11AutoflightState.HeadingNoun(track),
+            Md11AutoflightState.HeadingValue(Val(sim, Md11Fcp.ReadHeading)));
     }
 
     private string DescribeSpeed(SimConnectManager sim)
-    {
-        var v = Val(sim, Md11Fcp.ReadSpeed);
-        if (Md11Fcp.IsDashed(v)) return "Selected speed dashed";
-
-        // Mach is a real number stored as float32 (0.81999999 for 0.82) — round it, never compare.
-        return Mode(sim, Md11Fcp.ModeSpeedIsMach)
-            ? $"Selected Mach {v.ToString("0.00", CultureInfo.InvariantCulture)}"
-            : $"Selected speed {v.ToString("0", CultureInfo.InvariantCulture)} knots";
-    }
+        => Md11AutoflightState.Selected(Md11AutoflightState.Speed,
+            Md11AutoflightState.SpeedValue(Val(sim, Md11Fcp.ReadSpeed), Mode(sim, Md11Fcp.ModeSpeedIsMach)));
 
     private string DescribeAltitude(SimConnectManager sim)
-    {
-        var v = Val(sim, Md11Fcp.ReadAltitude);
-        if (Md11Fcp.IsDashed(v)) return "Selected altitude dashed";
-
-        var unit = Mode(sim, Md11Fcp.ModeAltitudeIsMetres) ? "metres" : "feet";
-        return $"Selected altitude {v.ToString("0", CultureInfo.InvariantCulture)} {unit}";
-    }
+        => Md11AutoflightState.Selected(Md11AutoflightState.Altitude,
+            Md11AutoflightState.AltitudeValue(Val(sim, Md11Fcp.ReadAltitude), Mode(sim, Md11Fcp.ModeAltitudeIsMetres)));
 
     private string DescribeVertical(SimConnectManager sim)
     {
-        var v = Val(sim, Md11Fcp.ReadVerticalSpeed);
-        var fpa = Mode(sim, Md11Fcp.ModeVerticalIsFpa);
-        if (Md11Fcp.IsDashed(v)) return fpa ? "Selected FPA dashed" : "Selected vertical speed dashed";
-
-        return fpa
-            ? $"Selected FPA {v.ToString("0.0", CultureInfo.InvariantCulture)} degrees"
-            : $"Selected vertical speed {v.ToString("0", CultureInfo.InvariantCulture)} feet per minute";
+        bool fpa = Mode(sim, Md11Fcp.ModeVerticalIsFpa);
+        return Md11AutoflightState.Selected(Md11AutoflightState.VerticalNoun(fpa),
+            Md11AutoflightState.VerticalValue(Val(sim, Md11Fcp.ReadVerticalSpeed), fpa));
     }
-
-    /// <summary>Autopilot engagement — the one autoflight STATE the aircraft does export.</summary>
-    private static string DescribeAutopilot(SimConnectManager sim) => Val(sim, "MD11_AP_STATE") switch
-    {
-        >= 2.5 => "Autopilot 1 and 2",
-        >= 1.5 => "Autopilot 2",
-        >= 0.5 => "Autopilot 1",
-        _ => "Autopilot off",
-    };
 
     // ---------------------------------------------------------------------------------
     // Shared
