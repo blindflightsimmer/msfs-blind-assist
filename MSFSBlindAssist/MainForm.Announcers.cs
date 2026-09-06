@@ -1228,7 +1228,8 @@ public partial class MainForm
                     if (isContinuousReadout)
                     {
                         double displayValue = value * varDef.Scale + varDef.Offset;
-                        newText = $"{displayValue.ToString(varDef.Format, System.Globalization.CultureInfo.InvariantCulture)} {varDef.Units}";
+                        newText = Utils.ReadoutFormat.WithUnit(
+                            displayValue.ToString(varDef.Format, System.Globalization.CultureInfo.InvariantCulture), varDef.Units);
                     }
                     else if (varDef.ValueDescriptions != null && varDef.ValueDescriptions.TryGetValue(value, out string? desc))
                     {

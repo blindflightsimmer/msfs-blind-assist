@@ -416,7 +416,9 @@ public partial class MainForm
                 if (currentSimVarValues.ContainsKey(varKey))
                 {
                     double cur = currentSimVarValues[varKey] * varDef.Scale + varDef.Offset;
-                    initial = $"{cur.ToString(varDef.Format, System.Globalization.CultureInfo.InvariantCulture)} {varDef.Units}";
+                    // The placeholder unit "number" is never spoken — see Utils.ReadoutFormat.
+                    initial = Utils.ReadoutFormat.WithUnit(
+                        cur.ToString(varDef.Format, System.Globalization.CultureInfo.InvariantCulture), varDef.Units);
                 }
                 readoutBox.Text = initial;
 
