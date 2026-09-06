@@ -20,15 +20,32 @@ namespace MSFSBlindAssist.Aircraft.MD11;
 /// nothing about their sign. Guessing costs a control that walks confidently the wrong way to
 /// its end stop, silently, on an aircraft nobody can see. So the walker treats polarity as
 /// UNKNOWN, assumes the conventional mapping (WHEEL_UP / left-click = increase), and watches
-/// what the state var actually does after the first step. If the value moved away from the
-/// target, it flips the sign and remembers that for the rest of the session, keyed on the node
-/// id. Costs at most one wasted step, once per control — and removes an unverifiable guess from
-/// ~200 controls.
+/// which way the state var actually moved after the first step. A step the wrong way flips the
+/// sign, and the flip is persisted through <see cref="LoadPolarity"/> / <see cref="SavePolarity"/>
+/// (the definition wires them to settings), so each control pays for its calibration once, ever.
+///
+/// HOW A STEP IS READ BACK (2026-09-06). A var with its own data definition is read through
+/// <see cref="SimConnectManager.ReadFreshAsync"/>, which completes on the delivery itself, so a
+/// step is confirmed the moment the aircraft reports it: fire, then poll every <see cref="PollMs"/>
+/// until the position index has CHANGED and the value is settled — exactly on a point detent, or
+/// two consecutive reads agree (an ANIM_LAG var travels for up to a second) — or
+/// <see cref="StepCapMs"/> elapses, which is the only way to conclude "no movement". The previous
+/// protocol slept a fixed interval and read the cache; it cost 300 ms per read, read stale values,
+/// called real movement "no movement", and mis-learned polarity (the autobrake flipped its learned
+/// sign twice in one session). That protocol survives, unchanged, for batch-covered vars (the flap
+/// lever, the Dial-A-Flap wheel, the speedbrake), which only answer with the next 1 Hz batch. A
+/// walk also waits out <see cref="ClickSettleMs"/> after the last click recorded on its node before
+/// its first read, because a walk cancelled by fast arrowing can have a click still landing.
+///
+/// A FIRST "no movement" (fresh protocol) is ambiguous — an inhibited control, or a wrong polarity
+/// guess at the end stop in the asked direction — so the walker clicks the OTHER event once:
+/// toward the target means the polarity was wrong (flip, continue); away means the asked direction
+/// is blocked (continue); nothing either way means inhibited (give up). A second no-movement in the
+/// same walk gives up.
 ///
 /// The walk is bounded and always terminates: <see cref="MaxSteps"/> caps the step count, and a
-/// step that produces no movement at all (a control that is inhibited, unpowered, or simply
-/// won't budge) breaks out rather than hammering CEVENT — which TFDi explicitly asks us not to
-/// overuse.
+/// control that will not move breaks out rather than hammering CEVENT — which TFDi explicitly asks
+/// us not to overuse.
 /// </summary>
 public static class Md11SelectorWalker
 {
@@ -39,30 +56,79 @@ public static class Md11SelectorWalker
     /// </summary>
     private const int MaxSteps = 24;
 
-    /// <summary>How long to wait after a step before believing the read-back.</summary>
+    /// <summary>Legacy protocol and analog walk: how long to wait after a step before the first cache poll.</summary>
     private const int SettleMs = 90;
 
-    /// <summary>
-    /// Learned step polarity per node id: true = the conventional mapping (WHEEL_UP / left-click
-    /// increases the state value), false = inverted. Session-scoped; a control is calibrated on
-    /// its first walk and stays calibrated. Concurrent because a walk runs off the UI thread.
-    /// </summary>
-    private static readonly ConcurrentDictionary<string, bool> Polarity = new();
+    /// <summary>Fresh protocol: the interval between reads after a step.</summary>
+    internal const int PollMs = 80;
+
+    /// <summary>Fresh protocol: no position change by then means no movement (ANIM_LAG is at most 1000 ms).</summary>
+    internal const int StepCapMs = 1200;
+
+    /// <summary>Fresh protocol: a click this recent on the same node may still be landing.</summary>
+    internal const int ClickSettleMs = 1000;
+
+    /// <summary>One awaited delivery; a batch-covered var answers within one 1 Hz period.</summary>
+    internal const int FreshReadTimeoutMs = 1200;
+
+    /// <summary>Legacy protocol: poll interval and cap for the cache-poll settle wait (exceeds the largest ANIM_LAG).</summary>
+    private const int SettlePollMs = 150;
+    private const int SettleCapMs = 1650;
+
+    /// <summary>Two reads this close are the same value — the animation has stopped.</summary>
+    private const double SettledTolerance = 0.05;
+
+    /// <summary>A value this close to a point detent is not travelling.</summary>
+    private const double OnDetentTolerance = 0.01;
 
     /// <summary>Values are floats from the sim; compare with a tolerance, never with ==.</summary>
     private const double Epsilon = 0.5;
+
+    /// <summary>
+    /// Learned step polarity per node id: true = the conventional mapping (WHEEL_UP / left-click
+    /// increases the state value), false = inverted. Seeded from <see cref="LoadPolarity"/> on
+    /// first use; concurrent because a walk runs off the UI thread.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, bool> Polarity = new();
+
+    /// <summary>When each node last had a step fired at it (monotonic ms) — see <see cref="ClickSettleMs"/>.</summary>
+    private static readonly ConcurrentDictionary<string, long> LastClick = new();
+
+    /// <summary>Persisted polarity lookup: true = conventional, false = inverted, null = never learned. Wired by the definition.</summary>
+    internal static Func<string, bool?>? LoadPolarity { get; set; }
+
+    /// <summary>Persists a learned polarity (true = conventional). Wired by the definition.</summary>
+    internal static Action<string, bool>? SavePolarity { get; set; }
+
+    private static bool ResolvePolarity(string nodeId)
+        => Polarity.GetOrAdd(nodeId, id => LoadPolarity?.Invoke(id) ?? true);
+
+    private static void SetPolarity(string nodeId, bool conventional)
+    {
+        Polarity[nodeId] = conventional;
+        try { SavePolarity?.Invoke(nodeId, conventional); }
+        catch (Exception ex) { Log.Debug("MD11", $"{nodeId}: could not persist step polarity: {ex.Message}"); }
+    }
 
     /// <summary>
     /// Walks <paramref name="control"/> to <paramref name="targetValue"/>.
     /// </summary>
     /// <param name="varKey">The MSFSBA variable key the control's state is cached under (the node id).</param>
     /// <returns>True if the control landed on the target; false on budget exhaustion or a stuck control.</returns>
-    public static async Task<bool> WalkAsync(
+    public static Task<bool> WalkAsync(
         Md11Control control,
         double targetValue,
         string varKey,
         SimConnectManager sim,
         Md11EventBus bus,
+        CancellationToken ct = default)
+        => WalkCoreAsync(control, targetValue, Md11WalkIo.ForSim(sim, bus, varKey), ct);
+
+    /// <summary>The step protocol proper, over an IO seam — see the class remarks.</summary>
+    internal static async Task<bool> WalkCoreAsync(
+        Md11Control control,
+        double targetValue,
+        Md11WalkIo io,
         CancellationToken ct = default)
     {
         var (incEvent, decEvent) = StepEvents(control);
@@ -75,20 +141,23 @@ public static class Md11SelectorWalker
         var ordered = OrderedValues(control);
         if (ordered.Count == 0) return false;
 
+        var node = control.NodeId;
         var targetIdx = PositionIndex(control, ordered, targetValue);
+        var noMovement = 0;
+
+        await SettleAfterRecentClickAsync(node, io, ct).ConfigureAwait(false);
 
         for (var step = 0; step < MaxSteps; step++)
         {
             // Superseded by a newer selection (the user arrowed on in the combo) — stop now rather
-            // than keep force-requesting the state var, which is what floods SimConnect when several
-            // walks on one control run at once. Throws so SafeWalk swallows it silently: a cancelled
-            // walk is not a failure to announce.
+            // than keep force-requesting the state var. Throws so SafeWalk swallows it silently: a
+            // cancelled walk is not a failure to announce.
             ct.ThrowIfCancellationRequested();
 
-            var current = await ReadAsync(varKey, sim, ct).ConfigureAwait(false);
+            var current = await ReadSettledAsync(control, ordered, io, ct).ConfigureAwait(false);
             if (current == null)
             {
-                Log.Debug("MD11", $"{control.NodeId}: state var {control.StateVar} unreadable — aborting walk.");
+                Log.Debug("MD11", $"{node}: state var {control.StateVar} unreadable — aborting walk.");
                 return false;
             }
 
@@ -96,48 +165,183 @@ public static class Md11SelectorWalker
             if (currentIdx == targetIdx) return true;
 
             var wantUp = targetIdx > currentIdx;
-            var conventional = Polarity.GetOrAdd(control.NodeId, true);
+            var conventional = ResolvePolarity(node);
             // conventional: inc event raises the value. Inverted: inc event lowers it.
             var eventId = (wantUp == conventional) ? incEvent.Value : decEvent.Value;
 
-            bus.Fire(eventId);
-            await Task.Delay(SettleMs, ct).ConfigureAwait(false);
-
-            var after = await ReadAsync(varKey, sim, ct).ConfigureAwait(false);
+            var after = await StepAndReadAsync(control, ordered, io, eventId, currentIdx, ct).ConfigureAwait(false);
             if (after == null) return false;
-
             var afterIdx = PositionIndex(control, ordered, after.Value);
 
             if (afterIdx == currentIdx)
             {
-                // No movement. Either the control is inhibited, or it is already at an end stop
-                // in the direction we asked for. Both mean stepping again is pointless.
-                Log.Debug("MD11",
-                    $"{control.NodeId}: step produced no movement at value {current.Value} " +
-                    $"(target {targetValue}) — control may be inhibited or at an end stop.");
-                return false;
+                noMovement++;
+                if (!io.FreshReads || noMovement > 1)
+                {
+                    Log.Debug("MD11",
+                        $"{node}: step produced no movement at value {current.Value} " +
+                        $"(target {targetValue}) — control may be inhibited or at an end stop.");
+                    return false;
+                }
+
+                // Ambiguous: inhibited, or the guess is wrong and the control sits at the end stop in
+                // the asked direction. One click the other way tells them apart without giving up on
+                // a control that merely needed the other event.
+                var otherId = eventId == incEvent.Value ? decEvent.Value : incEvent.Value;
+                var probe = await StepAndReadAsync(control, ordered, io, otherId, currentIdx, ct).ConfigureAwait(false);
+                if (probe == null) return false;
+                var probeIdx = PositionIndex(control, ordered, probe.Value);
+                if (probeIdx == currentIdx)
+                {
+                    Log.Debug("MD11",
+                        $"{node}: no movement in either direction at value {current.Value} " +
+                        $"(target {targetValue}) — control inhibited or unpowered.");
+                    return false;
+                }
+
+                var probeUp = probeIdx > currentIdx;
+                if (probeUp == wantUp)
+                {
+                    SetPolarity(node, !conventional);
+                    Log.Info("MD11",
+                        $"{node}: step polarity calibrated to {(!conventional ? "INVERTED" : "conventional")} " +
+                        $"(the other event moved {current.Value} -> {probe.Value} toward {targetValue} from an end stop).");
+                }
+                else
+                {
+                    Log.Debug("MD11", $"{node}: the asked direction is blocked at {current.Value}; the other event moved to {probe.Value}.");
+                }
+                continue;
             }
 
-            var movedTowardTarget = Math.Abs(afterIdx - targetIdx) < Math.Abs(currentIdx - targetIdx);
-            if (!movedTowardTarget)
+            // Polarity is a DIRECTION: judge the step by which way it went, never by distance — a
+            // click that lands twice can overshoot to a spot no nearer the target than where it
+            // started, and a distance test would flip the sign on a step that went the right way.
+            var movedUp = afterIdx > currentIdx;
+            if (movedUp != wantUp)
             {
-                // First real evidence of this control's sign, and it contradicts the assumption.
-                // Flip it once and keep going; the next iteration steps the other way.
                 var flipped = !conventional;
-                Polarity[control.NodeId] = flipped;
+                SetPolarity(node, flipped);
                 Log.Info("MD11",
-                    $"{control.NodeId}: step polarity calibrated to {(flipped ? "INVERTED" : "conventional")} " +
+                    $"{node}: step polarity calibrated to {(flipped ? "INVERTED" : "conventional")} " +
                     $"(value went {current.Value} -> {after.Value} while walking toward {targetValue}).");
             }
         }
 
-        Log.Debug("MD11", $"{control.NodeId}: walk to {targetValue} exhausted {MaxSteps} steps.");
+        Log.Debug("MD11", $"{node}: walk to {targetValue} exhausted {MaxSteps} steps.");
         return false;
     }
 
     /// <summary>
+    /// A walk cancelled mid-flight by a newer selection may have a click still landing (ANIM_LAG
+    /// up to a second). Reading through that is how a polarity gets mis-learned, so wait out the
+    /// remainder of the settle window before the first read. Fresh protocol only.
+    /// </summary>
+    private static async Task SettleAfterRecentClickAsync(string nodeId, Md11WalkIo io, CancellationToken ct)
+    {
+        if (!io.FreshReads || !LastClick.TryGetValue(nodeId, out var last)) return;
+        var remaining = ClickSettleMs - (io.Now() - last);
+        if (remaining > 0) await io.Delay((int)remaining, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The current position: one fresh delivery, plus a settle poll only when the value is not
+    /// resting on a point detent (a var caught mid-travel). Legacy protocol for batch-covered vars.
+    /// </summary>
+    private static async Task<double?> ReadSettledAsync(Md11Control control, List<double> ordered, Md11WalkIo io, CancellationToken ct)
+    {
+        if (!io.FreshReads) return await LegacyReadAsync(io, ct).ConfigureAwait(false);
+
+        var v = await io.ReadFresh(ct).ConfigureAwait(false) ?? io.ReadCached();
+        if (v == null) return null;
+        if (OnDetent(control, ordered, v.Value)) return v;
+
+        var prev = v.Value;
+        for (var waited = 0; waited < SettleCapMs; waited += PollMs)
+        {
+            await io.Delay(PollMs, ct).ConfigureAwait(false);
+            var next = await io.ReadFresh(ct).ConfigureAwait(false) ?? prev;
+            if (Math.Abs(next - prev) < SettledTolerance) return next;
+            prev = next;
+        }
+        return prev;
+    }
+
+    /// <summary>
+    /// Fires one step and reads the control back. Fresh protocol: poll until the position index
+    /// has changed from <paramref name="beforeIdx"/> and the value is settled, or the cap elapses
+    /// (then the last read, which the caller reads as "no movement"). Legacy protocol: the old
+    /// settle wait and cache poll.
+    /// </summary>
+    private static async Task<double?> StepAndReadAsync(Md11Control control, List<double> ordered, Md11WalkIo io,
+        int eventId, int beforeIdx, CancellationToken ct)
+    {
+        io.Fire(eventId);
+        LastClick[control.NodeId] = io.Now();
+
+        if (!io.FreshReads)
+        {
+            await io.Delay(SettleMs, ct).ConfigureAwait(false);
+            return await LegacyReadAsync(io, ct).ConfigureAwait(false);
+        }
+
+        var deadline = io.Now() + StepCapMs;
+        double? prev = null, last = null;
+        while (true)
+        {
+            await io.Delay(PollMs, ct).ConfigureAwait(false);
+            var v = await io.ReadFresh(ct).ConfigureAwait(false);
+            if (v != null)
+            {
+                last = v;
+                if (PositionIndex(control, ordered, v.Value) != beforeIdx
+                    && (OnDetent(control, ordered, v.Value)
+                        || (prev != null && Math.Abs(v.Value - prev.Value) < SettledTolerance)))
+                    return v;
+                prev = v;
+            }
+            if (io.Now() >= deadline) return last ?? io.ReadCached();
+        }
+    }
+
+    /// <summary>
+    /// True when <paramref name="value"/> rests exactly on a POINT detent. A range detent (the flap
+    /// lever's Dial-A-Flap band) has no single resting value and never vouches for "settled".
+    /// </summary>
+    internal static bool OnDetent(Md11Control control, List<double> ordered, double value)
+    {
+        if (control.Detents is { Count: > 0 })
+            return control.Detents.Any(d => d.Range is not { Count: 2 } && Math.Abs(d.Value - value) < OnDetentTolerance);
+        return ordered.Any(v => Math.Abs(v - value) < OnDetentTolerance);
+    }
+
+    /// <summary>
+    /// The legacy read: request, sleep, read the cache, until two consecutive reads agree or the
+    /// cap elapses. Still the right protocol for a batch-covered var, whose delivery comes at most
+    /// once a second whatever we do; the analog walk uses it too.
+    /// </summary>
+    private static async Task<double?> LegacyReadAsync(Md11WalkIo io, CancellationToken ct)
+    {
+        double? prev = null;
+        for (var waited = 0; waited < SettleCapMs; waited += SettlePollMs)
+        {
+            ct.ThrowIfCancellationRequested();
+            io.RequestRead();
+            await io.Delay(SettlePollMs, ct).ConfigureAwait(false);
+            var v = io.ReadCached();
+            if (v != null && prev != null && Math.Abs(v.Value - prev.Value) < SettledTolerance)
+                return v;   // two reads agree → the value has settled
+            prev = v;
+        }
+        return prev;
+    }
+
+    private static Task<double?> ReadAsync(string varKey, SimConnectManager sim, CancellationToken ct = default)
+        => LegacyReadAsync(Md11WalkIo.ForSim(sim, null, varKey), ct);
+
+    /// <summary>
     /// The (increase, decrease) CEVENT pair, under the CONVENTIONAL assumption that WHEEL_UP and
-    /// a left-click step "up". <see cref="WalkAsync"/> verifies that against the aircraft and
+    /// a left-click step "up". <see cref="WalkCoreAsync"/> verifies that against the aircraft and
     /// inverts if wrong — nothing here is trusted as fact.
     /// </summary>
     private static (int? inc, int? dec) StepEvents(Md11Control c)
@@ -260,7 +464,7 @@ public static class Md11SelectorWalker
             // Probe: one click in the direction we believe is "toward target", then measure what
             // actually happened. This single observation carries BOTH unknowns — how big a click
             // is, and which way it goes.
-            var conventional = Polarity.GetOrAdd(control.NodeId, true);
+            var conventional = ResolvePolarity(control.NodeId);
             var wantUp = targetRaw > current.Value;
             bus.Fire((wantUp == conventional) ? incEvent.Value : decEvent.Value);
             await Task.Delay(SettleMs).ConfigureAwait(false);
@@ -280,7 +484,7 @@ public static class Md11SelectorWalker
             var movingUp = delta > 0;
             if (movingUp != wantUp)
             {
-                Polarity[control.NodeId] = !conventional;
+                SetPolarity(control.NodeId, !conventional);
                 Log.Info("MD11", $"{control.NodeId}: analog step polarity calibrated to {(!conventional ? "INVERTED" : "conventional")}.");
                 continue;
             }
@@ -313,42 +517,10 @@ public static class Md11SelectorWalker
         return ok;
     }
 
-    /// <summary>
-    /// Reads the state var AFTER it settles, not the instant a step fires.
-    ///
-    /// This is the crux of why walks got "stuck". MD-11 state vars are ANIMATED — the cockpit XML
-    /// gives them ANIM_LAG up to 1000 ms — so for up to a second after a step the value is still
-    /// travelling toward its new position. A single fast read catches it mid-flight (often still
-    /// reading the OLD value), the walk concludes "no movement" and bails one click in; on a
-    /// direction change it can even mis-learn polarity and jam the control against an end stop.
-    /// So poll until two consecutive reads agree (the animation has stopped) or a cap elapses.
-    /// </summary>
-    private static async Task<double?> ReadAsync(string varKey, SimConnectManager sim, CancellationToken ct = default)
-    {
-        double? prev = null;
-        for (var waited = 0; waited < SettleCapMs; waited += SettlePollMs)
-        {
-            ct.ThrowIfCancellationRequested();
-            sim.RequestVariable(varKey, forceUpdate: true);
-            await Task.Delay(SettlePollMs, ct).ConfigureAwait(false);
-            var v = sim.GetCachedVariableValue(varKey);
-            if (v != null && prev != null && Math.Abs(v.Value - prev.Value) < 0.05)
-                return v;   // two reads agree → the value has settled
-            prev = v;
-        }
-        return prev;
-    }
-
-    /// <summary>Poll interval and total cap for <see cref="ReadAsync"/>'s settle wait. The cap
-    /// comfortably exceeds the aircraft's largest ANIM_LAG (1000 ms) so a fully-lagged var still
-    /// settles before we give up; a snappy var returns after the first two agreeing reads.</summary>
-    private const int SettlePollMs = 150;
-    private const int SettleCapMs = 1650;
-
     /// <summary>Test seam: clears learned polarity so a test can assert calibration from scratch.</summary>
     internal static void ResetPolarity() => Polarity.Clear();
 
-    /// <summary>Test seam.</summary>
+    /// <summary>Test seam: the learned polarity for a node, null until a walk has touched it.</summary>
     internal static bool? PolarityFor(string nodeId) => Polarity.TryGetValue(nodeId, out var v) ? v : null;
 
     /// <summary>Approximate equality against a detent value.</summary>
