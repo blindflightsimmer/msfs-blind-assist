@@ -720,16 +720,16 @@
 
     // Walk the content. Interactive elements are emitted whole and their subtree skipped —
     // otherwise a button's inner <span> emits again as loose text right after its own button.
-    (function walk(el) {
-      if (!el || el.nodeType !== 1) return;
-      if (el === bar) return;                       // already emitted above, as tabs
-      if (el.tagName === 'SVG' || el.tagName === 'svg') return;   // decorative icons only
-      if (A.isHidden(el)) return;
-      if (A.runBlocks(el, els)) return;        // a building block owns this element and its subtree
+    // A subtree the EFB made inert (GroundPage: "This page cannot be used right now" over a
+    // pointer-events-none wrapper) is still READ, but every control in it is dimmed — the shell
+    // says ", dimmed" and answers a press with "Unavailable" instead of silently doing nothing.
+    function walkBody(el) {
+      if (A.runBlocks(el, els)) return;              // a building block owns this element and its subtree
 
       if (A.isControl(el)) {
         el.setAttribute(A.ATTR, String(++A._idx));
         var c = A.controlFor(el, A._idx);
+        if (A._inert) c.disabled = true;
         if (c.text || c.value || c.controlType) els.push(c);
         return;                                     // do NOT descend into a control
       }
@@ -737,29 +737,31 @@
       var lvl = A.headingLevel(el);
       if (lvl > 0) {
         var ht = A.txt(el);
-        if (ht) {
-          el.setAttribute(A.ATTR, String(++A._idx));
-          els.push({
-            idx: A._idx, text: ht, value: '', controlType: '', kind: 'heading',
-            clickable: false, level: lvl, live: '', disabled: false, options: null
-          });
-        }
+        if (ht) els.push(A.el(el, { kind: 'heading', text: ht, level: lvl }));
         return;
       }
 
       // Claimed = a control already speaks this element as its label; emitting it again would
       // read every field's caption twice. Still recurse: only THIS node's own text is suppressed.
       var own = el.hasAttribute(A.CLAIM) ? '' : A.ownText(el);
-      if (own) {
-        el.setAttribute(A.ATTR, String(++A._idx));
-        els.push({
-          idx: A._idx, text: own, value: '', controlType: '', kind: 'static',
-          clickable: false, level: 0, live: '', disabled: false, options: null
-        });
-      }
+      if (own) els.push(A.el(el, { kind: 'static', text: own }));
 
       for (var k = 0; k < el.children.length; k++) walk(el.children[k]);
-    })(A.root());
+    }
+
+    function walk(el) {
+      if (!el || el.nodeType !== 1) return;
+      if (el === bar) return;                       // already emitted above, as tabs
+      if (el.tagName === 'SVG' || el.tagName === 'svg') return;   // decorative icons only
+      if (A.isHidden(el)) return;
+      var inertHere = !A._inert && el.children.length > 0 && A.hasClass(el, 'pointer-events-none');
+      if (inertHere) A._inert = true;
+      try { walkBody(el); }
+      finally { if (inertHere) A._inert = false; }
+    }
+
+    A._inert = false;
+    walk(A.root());
 
     return els;
   };
