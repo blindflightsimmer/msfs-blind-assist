@@ -842,18 +842,26 @@ public class FbwEfbForm : Form
   // across same-page polls (values are patched in place) while a sub-tab/page switch
   // cleanly swaps controls. The live data-idx for click/set is patched in place.
   // Strip the DYNAMIC state suffixes the agent appends -- (active) / (called) /
-  // (selected) / (current page) / (expanded) / (collapsed) and the colon
-  // placed/not-placed markers -- from the
+  // (selected) / (current page) / (expanded) / (collapsed), the colon
+  // placed/not-placed markers, and ANY after-colon state tail -- from the
   // reconcile key, so a control whose state changes (a door tile activated, a rate
   // option selected) maps to the SAME node and is patched IN PLACE rather than
   // destroyed + rebuilt. Rebuilding moved the screen-reader focus off the control
   // the user just activated. The visible label still updates via patchEl; only the
   // key is stabilised.
+  // The MD-11 reader puts a tile's state AFTER a colon -- 'Passenger 1L: Closed'
+  // -> 'Passenger 1L: Open', 'GPU: Connect' -> 'GPU: Disconnect' -- and reads its
+  // read-outs the same way ('Load: 35%' -> 'Load: 40%'), so without the last rule
+  // every flip is a NEW key: the node the pilot just pressed is destroyed under
+  // their focus and its new label is never spoken. The rule demands a colon
+  // FOLLOWED BY WHITESPACE, so clock and duration values ('23:35 UTC',
+  // 'Block time 03:50 (air 03:22)') keep their whole text in the key.
   function baseLabel(t) {
     return (t || '')
       .replace(/\s*\(now [^)]*\)\s*$/i, '')     // a stepper's current choice: 'Runway next (now 09L)'
       .replace(/\s*\((active|called|selected|current page|expanded|collapsed)\)\s*$/i, '')
-      .replace(/:\s*(placed|not placed)\s*$/i, '');
+      .replace(/:\s*(placed|not placed)\s*$/i, '')
+      .replace(/:\s+[^:]*$/, '');               // MD-11 'Name: state' tiles and 'Label: value' read-outs
   }
   function keyOf(it) { return rk(it) + '|' + baseLabel(it.text || ''); }
 
