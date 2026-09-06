@@ -109,6 +109,13 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     private Md11EventBus? _bus;
     private SimConnectManager? _sim;
 
+    /// <summary>
+    /// Serializes the walker's polarity persistence: two controls can learn their polarity at the
+    /// same moment on two pool threads, and an unguarded read-compute-swap lets the second swap
+    /// discard the first's entry — learned for the session, lost on disk.
+    /// </summary>
+    private static readonly object PolarityPersistLock = new();
+
     public TFDiMD11Definition()
     {
         _map = Md11ControlMap.Load();
@@ -147,11 +154,14 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
             Md11PolarityStore.Load(Settings.SettingsManager.Current.Md11InvertedStepControls, id);
         Md11SelectorWalker.SavePolarity = (id, conventional) =>
         {
-            var settings = Settings.SettingsManager.Current;
-            var updated = Md11PolarityStore.With(settings.Md11InvertedStepControls, id, conventional);
-            if (ReferenceEquals(updated, settings.Md11InvertedStepControls)) return;
-            settings.Md11InvertedStepControls = updated;
-            Settings.SettingsManager.Save();
+            lock (PolarityPersistLock)
+            {
+                var settings = Settings.SettingsManager.Current;
+                var updated = Md11PolarityStore.With(settings.Md11InvertedStepControls, id, conventional);
+                if (ReferenceEquals(updated, settings.Md11InvertedStepControls)) return;
+                settings.Md11InvertedStepControls = updated;
+                Settings.SettingsManager.Save();
+            }
         };
     }
 

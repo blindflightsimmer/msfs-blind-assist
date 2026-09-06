@@ -510,7 +510,7 @@ public class MobiFlightWasmModule : IDisposable
 
         private void SubscribeToCustomChannels()
         {
-            // Subscribe to our custom response and LVar channels
+            // Subscribe to our custom response channel
             simConnect.RequestClientData(CLIENT_DATA_AREA_ID.FBWBA_RESPONSE, DATA_REQUEST_ID.FBWBA_RESPONSE_REQUEST,
                 DATA_DEFINITION_ID.FBWBA_RESPONSE_STRING, SIMCONNECT_CLIENT_DATA_PERIOD.ON_SET,
                 SIMCONNECT_CLIENT_DATA_REQUEST_FLAG.CHANGED, 0, 0, 0);

@@ -23,6 +23,9 @@ public class Md11SelectorWalkerCoreTests
         public int LagReads;                    // reads after a click that still show the old value
         public int DetentsPerClick = 1;         // 2 = the click lands twice
         public bool Fresh = true;               // false = the legacy cache-poll protocol
+        public bool BlockUp;                    // clicks in the increasing direction are ignored (a one-way inhibit)
+        public int ReadFreshCalls;
+        public int RequestReadCalls;
         public readonly List<int> Clicks = new();
         public readonly List<long> ClickTimes = new();
         public long Clock;                      // virtual milliseconds
@@ -38,6 +41,7 @@ public class Md11SelectorWalkerCoreTests
             ClickTimes.Add(Clock);
             if (Inhibited) return;
             var up = (id == Left) == LeftIncreases;
+            if (up && BlockUp) return;
             Position = Math.Clamp(Position + (up ? 1 : -1) * DetentsPerClick, 0, Max);
             _pendingReads = LagReads;
         }
@@ -52,9 +56,9 @@ public class Md11SelectorWalkerCoreTests
 
         public Md11WalkIo Io() => new()
         {
-            ReadFresh = _ => Task.FromResult(Read()),
+            ReadFresh = _ => { ReadFreshCalls++; return Task.FromResult(Read()); },
             ReadCached = () => _visible,
-            RequestRead = () => Read(),
+            RequestRead = () => { RequestReadCalls++; Read(); },
             Fire = Fire,
             Delay = (ms, _) => { Clock += ms; return Task.CompletedTask; },
             Now = () => Clock,
@@ -87,6 +91,8 @@ public class Md11SelectorWalkerCoreTests
         Assert.Equal(new[] { Left, Left }, sw.Clicks);
         Assert.Equal(2, sw.Position);
         Assert.True(Md11SelectorWalker.PolarityFor(id) ?? true);   // never flipped
+        Assert.Equal(0, sw.RequestReadCalls);        // the fresh protocol never polls the cache
+        Assert.True(sw.ReadFreshCalls > 0);
     }
 
     [Fact]
@@ -149,6 +155,26 @@ public class Md11SelectorWalkerCoreTests
         Assert.True(Md11SelectorWalker.PolarityFor(id) ?? true);   // still conventional
     }
 
+    /// <summary>
+    /// A first no-movement probes the other event; when THAT moves away from the target the asked
+    /// direction is simply blocked — the polarity must not flip — and the very next stall ends the
+    /// walk (the second no-movement of the same walk), so a stuck control costs two caps, never the
+    /// whole step budget.
+    /// </summary>
+    [Fact]
+    public async Task AControlBlockedInTheAskedDirection_ProbesAway_ThenGivesUpOnTheSecondStall_WithoutFlipping()
+    {
+        var id = NewId();
+        var sw = new FakeSwitch(1) { BlockUp = true };
+
+        Assert.False(await Walk(Switch(id), 2, sw));
+
+        // Left (up) stalls; the probe Right moves 1 -> 0, away; Left stalls again -> give up.
+        Assert.Equal(new[] { Left, Right, Left }, sw.Clicks);
+        Assert.Equal(0, sw.Position);
+        Assert.True(Md11SelectorWalker.PolarityFor(id) ?? true);
+    }
+
     [Fact]
     public async Task LaggingReadBack_IsNotMistakenForNoMovement()
     {
@@ -204,6 +230,8 @@ public class Md11SelectorWalkerCoreTests
 
         Assert.Equal(new[] { Left }, sw.Clicks);       // one no-movement ends the walk, as before
         Assert.True(Md11SelectorWalker.PolarityFor(id) ?? true);
+        Assert.Equal(0, sw.ReadFreshCalls);          // the legacy protocol never takes a fresh read
+        Assert.True(sw.RequestReadCalls > 0);
     }
 
     [Fact]

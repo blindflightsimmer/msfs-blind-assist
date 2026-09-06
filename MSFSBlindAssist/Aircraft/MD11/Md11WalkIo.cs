@@ -27,9 +27,11 @@ internal sealed class Md11WalkIo
     public required Func<long> Now { get; init; }
 
     /// <summary>
-    /// True when the var has its own data definition, so a fresh read answers within a frame or
-    /// two. Batch-covered vars (the flap lever, the Dial-A-Flap wheel, the speedbrake) answer only
-    /// with the next 1 Hz batch and keep the legacy cache-poll protocol.
+    /// True when a fresh read of the var reflects the aircraft within about a frame — a plain
+    /// individual-def var, or one streaming on its own SIM_FRAME subscription whose cache is the
+    /// fresh value (the MD-11 flap lever and speedbrake). A var that answers only with the next
+    /// 1 Hz delivery keeps the legacy cache-poll protocol. Decided by
+    /// <see cref="SimConnectManager.SupportsFreshReads"/>.
     /// </summary>
     public required bool FreshReads { get; init; }
 
@@ -42,6 +44,6 @@ internal sealed class Md11WalkIo
         Fire = id => bus?.Fire(id),
         Delay = (ms, ct) => Task.Delay(ms, ct),
         Now = () => Environment.TickCount64,
-        FreshReads = sim.HasIndividualDefinition(varKey),
+        FreshReads = sim.SupportsFreshReads(varKey),
     };
 }

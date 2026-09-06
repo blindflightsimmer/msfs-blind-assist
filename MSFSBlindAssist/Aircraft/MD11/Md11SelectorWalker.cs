@@ -32,10 +32,13 @@ namespace MSFSBlindAssist.Aircraft.MD11;
 /// <see cref="StepCapMs"/> elapses, which is the only way to conclude "no movement". The previous
 /// protocol slept a fixed interval and read the cache; it cost 300 ms per read, read stale values,
 /// called real movement "no movement", and mis-learned polarity (the autobrake flipped its learned
-/// sign twice in one session). That protocol survives, unchanged, for batch-covered vars (the flap
-/// lever, the Dial-A-Flap wheel, the speedbrake), which only answer with the next 1 Hz batch. A
-/// walk also waits out <see cref="ClickSettleMs"/> after the last click recorded on its node before
-/// its first read, because a walk cancelled by fast arrowing can have a click still landing.
+/// sign twice in one session). That protocol survives, unchanged, for a var that answers only with
+/// the next 1 Hz delivery — batch-covered, or on its own PERIOD.SECOND subscription
+/// (<see cref="SimConnectManager.SupportsFreshReads"/> decides) — and for the analog walk. The flap
+/// lever and speedbrake stream on their own SIM_FRAME subscription, so their fresh read is the
+/// cache, at most a frame old. A walk also waits out <see cref="ClickSettleMs"/> after the last
+/// click recorded on its node before its first read, because a walk cancelled by fast arrowing can
+/// have a click still landing.
 ///
 /// A FIRST "no movement" (fresh protocol) is ambiguous — an inhibited control, or a wrong polarity
 /// guess at the end stop in the asked direction — so the walker clicks the OTHER event once:

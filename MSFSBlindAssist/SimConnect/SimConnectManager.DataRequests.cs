@@ -88,28 +88,38 @@ public partial class SimConnectManager
     private readonly FreshReadWaiters _freshReads = new();
 
     /// <summary>
-    /// True when <paramref name="varKey"/> has its own data definition, so a force-read answers on
-    /// the next dispatch rather than with the next 1 Hz continuous batch. The MD-11 walker picks
-    /// its read protocol on this.
+    /// True when a <see cref="ReadFreshAsync"/> of <paramref name="varKey"/> reflects the aircraft
+    /// within about a frame — see <see cref="FreshReadPolicy.SupportsFreshReads"/>. The MD-11
+    /// walker picks its read protocol on this.
     /// </summary>
-    public bool HasIndividualDefinition(string varKey) => variableDataDefinitions.ContainsKey(varKey);
+    public bool SupportsFreshReads(string varKey)
+        => FreshReadPolicy.SupportsFreshReads(variableDataDefinitions.ContainsKey(varKey), DefinitionOf(varKey));
 
     /// <summary>
     /// Force-reads <paramref name="varKey"/> and completes on the NEXT delivery of it: the
     /// PERIOD.ONCE response of an individual-def var (a frame or two), or the next continuous batch
-    /// of a batch-covered one (up to one period, the force flag makes an unchanged value re-fire).
-    /// Returns null when nothing is delivered within <paramref name="timeoutMs"/>, when not
-    /// connected, or when the key cannot be delivered at all; throws
-    /// <see cref="OperationCanceledException"/> on <paramref name="ct"/>. The MD-11 walker reads
-    /// through this instead of sleeping and polling the cache — the delivery is the only fresh
-    /// signal there is.
+    /// of a batch-covered one (up to one period; the force flag makes an unchanged value re-fire).
+    /// A var on its own SIM_FRAME + CHANGED subscription gets its CACHE back at once instead — that
+    /// cache is at most a frame old, no PERIOD.ONCE is ever issued for it, and an unchanged value
+    /// would never deliver (<see cref="FreshReadPolicy.CacheIsFresh"/>). Returns null when nothing
+    /// is delivered within <paramref name="timeoutMs"/>, when not connected, or when the key cannot
+    /// be delivered at all; throws <see cref="OperationCanceledException"/> on <paramref name="ct"/>.
+    /// The MD-11 walker reads through this instead of sleeping and polling the cache — the delivery
+    /// is the only fresh signal there is.
     /// </summary>
     public Task<double?> ReadFreshAsync(string varKey, int timeoutMs, CancellationToken ct = default)
     {
         if (!IsConnected || simConnect == null) return Task.FromResult<double?>(null);
         bool deliverable = variableDataDefinitions.ContainsKey(varKey) || continuousVariableIndexMap.ContainsKey(varKey);
         if (!deliverable) return Task.FromResult<double?>(null);
+        if (FreshReadPolicy.CacheIsFresh(DefinitionOf(varKey))) return Task.FromResult(GetCachedVariableValue(varKey));
         return _freshReads.WaitAsync(varKey, () => RequestVariable(varKey, forceUpdate: true), timeoutMs, ct);
+    }
+
+    private SimVarDefinition? DefinitionOf(string varKey)
+    {
+        var defs = CurrentAircraft?.GetVariables();
+        return defs != null && defs.TryGetValue(varKey, out var def) ? def : null;
     }
 
     /// <summary>
