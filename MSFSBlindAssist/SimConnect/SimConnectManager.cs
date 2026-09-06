@@ -175,7 +175,10 @@ public partial class SimConnectManager
     //     "Timeout - Using Fallback" state) while the DEFAULT MobiFlight.Command
     //     channel works fine — the calc path needs no registration.
     //   - HasModuleResponded (any inbound response): on a real install the module's
-    //     RESPONSE side was completely silent (no registration Finished, no MF.Pong)
+    //     RESPONSE side looked completely silent (no registration Finished, no MF.Pong).
+    //     Root cause found 2026-09-06: the module DOES answer, but MobiFlightWasmModule
+    //     never RegisterStruct's ResponseData, so every reply is dropped by a caught cast
+    //     failure ("Unable to cast … 'System.UInt32' to type 'ResponseData'") —
     //     while the one-way COMMAND side executed everything — response-based
     //     evidence can never open the gate there.
     // So: module object initialized → fire the calc path. The no-WASM-install case
