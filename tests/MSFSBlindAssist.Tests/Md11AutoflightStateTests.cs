@@ -60,6 +60,7 @@ public class Md11AutoflightStateTests
     [InlineData(-9999, false, "dashed, not engaged")]
     [InlineData(-9999, true, "dashed, not engaged")]
     [InlineData(-1500, false, "-1500 feet per minute")]
+    [InlineData(-1000, false, "-1000 feet per minute")]   // the round number that the old <= -999 rule called dashed
     [InlineData(-500, false, "-500 feet per minute")]   // a real descent is never "dashed"
     [InlineData(-3, true, "-3.0 degrees")]
     public void VerticalValue_NeverClaimsProf(double vs, bool fpa, string expected)
