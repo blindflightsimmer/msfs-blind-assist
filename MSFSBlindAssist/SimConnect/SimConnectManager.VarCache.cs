@@ -61,6 +61,7 @@ public partial class SimConnectManager
             // value-replacing ((key, oldValue) => currentValue), not a merge of oldValue into the new
             // value, so there is no concurrent-update logic being lost — see task-4.1-report.md.
             lastVariableValues[varKey] = currentValue;
+            _freshReads.Complete(varKey, currentValue);   // a fresh read is satisfied by ANY delivery, changed or not
 
             // Suppress SimVarUpdated for unchanged ANNOUNCED CONTINUOUS variables. Previously we
             // fired unconditionally so that displays would refresh; the unintended consequence was
@@ -423,6 +424,7 @@ public partial class SimConnectManager
 
                         // Update cache
                         lastVariableValues[varKey] = value;
+                        _freshReads.Complete(varKey, value);
 
                         // Only fire event if value changed or was force-requested (first delivery fires
                         // via hasChanged defaulting to true when lastVariableValues has no prior entry)

@@ -1203,6 +1203,7 @@ public partial class SimConnectManager
             batchVarArrays[i] = Array.Empty<(string key, int index, SimVarDefinition def)>();
         eventIds.Clear();
         lock (forceUpdateVariables) { forceUpdateVariables.Clear(); }
+        _freshReads.FailAll();
         ecamStringData.Clear();
         ecamAnnouncementData.Clear();
         previousECAMMessages.Clear();

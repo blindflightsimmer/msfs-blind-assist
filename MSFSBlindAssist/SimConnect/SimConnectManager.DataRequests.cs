@@ -82,6 +82,36 @@ public partial class SimConnectManager
         }
     }
 
+    // Awaitable fresh reads (see FreshReadWaiters). Completed from the two delivery paths in
+    // SimConnectManager.VarCache.cs — the individual-def response and the continuous batch — and
+    // failed on disconnect / aircraft switch beside forceUpdateVariables.Clear().
+    private readonly FreshReadWaiters _freshReads = new();
+
+    /// <summary>
+    /// True when <paramref name="varKey"/> has its own data definition, so a force-read answers on
+    /// the next dispatch rather than with the next 1 Hz continuous batch. The MD-11 walker picks
+    /// its read protocol on this.
+    /// </summary>
+    public bool HasIndividualDefinition(string varKey) => variableDataDefinitions.ContainsKey(varKey);
+
+    /// <summary>
+    /// Force-reads <paramref name="varKey"/> and completes on the NEXT delivery of it: the
+    /// PERIOD.ONCE response of an individual-def var (a frame or two), or the next continuous batch
+    /// of a batch-covered one (up to one period, the force flag makes an unchanged value re-fire).
+    /// Returns null when nothing is delivered within <paramref name="timeoutMs"/>, when not
+    /// connected, or when the key cannot be delivered at all; throws
+    /// <see cref="OperationCanceledException"/> on <paramref name="ct"/>. The MD-11 walker reads
+    /// through this instead of sleeping and polling the cache — the delivery is the only fresh
+    /// signal there is.
+    /// </summary>
+    public Task<double?> ReadFreshAsync(string varKey, int timeoutMs, CancellationToken ct = default)
+    {
+        if (!IsConnected || simConnect == null) return Task.FromResult<double?>(null);
+        bool deliverable = variableDataDefinitions.ContainsKey(varKey) || continuousVariableIndexMap.ContainsKey(varKey);
+        if (!deliverable) return Task.FromResult<double?>(null);
+        return _freshReads.WaitAsync(varKey, () => RequestVariable(varKey, forceUpdate: true), timeoutMs, ct);
+    }
+
     /// <summary>
     /// Request a single variable by key
     /// </summary>
