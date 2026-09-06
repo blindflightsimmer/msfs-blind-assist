@@ -67,6 +67,11 @@
     return document.getElementById('MSFS_REACT_MOUNT') || document.body;
   };
 
+  // tools/coherent.ps1's `capture` command (and its agent finder) look for findRoot()/isVisible()
+  // on whichever agent is installed — aliases, so the documented fixture-capture tool works here.
+  A.findRoot = function () { return A.root(); };
+  A.isVisible = function (el) { return !!el && !A.isHidden(el); };
+
   // ---------------------------------------------------------------------------------
   // the nav bar
   // ---------------------------------------------------------------------------------
