@@ -310,6 +310,15 @@
         try { info.src.setAttribute(A.CLAIM, '1'); } catch (e) {}
       }
     }
+
+    // A choice group's caption is the span just before it. Claim it so it is read once — as the
+    // dropdown's name — and not again as a loose line ahead of the dropdown.
+    var groups = A.root().querySelectorAll('div[role="group"]');
+    for (var g = 0; g < groups.length; g++) {
+      if (!A.isChoiceGroup(groups[g])) continue;
+      var gl = A.groupLabelEl(groups[g]);
+      if (gl) { try { gl.setAttribute(A.CLAIM, '1'); } catch (e) {} }
+    }
   };
 
   A.clearClaims = function () {
@@ -365,6 +374,59 @@
           text: A.txt(bs[i]) + (A.hasClass(bs[i], 'underline') ? ' (selected)' : '') }));
       }
     });
+
+  // ---------------------------------------------------------------------------------
+  // B3: choice group — <div role="group"> of buttons (ToggleComponent, the 3-way groups,
+  // Perf's Flaps/Packs). The EFB shows the chosen one by colour alone (bg-green-700 in the
+  // Options/Perf 2-way groups, bg-green-600 in the 3-way groups). Read as ONE dropdown named by
+  // the caption span the EFB puts just before the group.
+  // ---------------------------------------------------------------------------------
+
+  A.SELECTED_CLASSES = ['bg-green-700', 'bg-green-600'];
+
+  A.isHighlighted = function (btn) {
+    for (var i = 0; i < A.SELECTED_CLASSES.length; i++) if (A.hasClass(btn, A.SELECTED_CLASSES[i])) return true;
+    return false;
+  };
+
+  // The element children of `el` when they are all buttons; null otherwise.
+  A.buttonChildren = function (el) {
+    var out = [];
+    for (var i = 0; i < el.children.length; i++) {
+      if (el.children[i].tagName !== 'BUTTON') return null;
+      out.push(el.children[i]);
+    }
+    return out.length ? out : null;
+  };
+
+  A.isChoiceGroup = function (el) {
+    return el.tagName === 'DIV' && el.getAttribute('role') === 'group' && !!A.buttonChildren(el);
+  };
+
+  A.groupLabelEl = function (g) {
+    var p = g.previousElementSibling;
+    return (p && A.isName(A.txt(p))) ? p : null;
+  };
+
+  A.groupLabel = function (g) { var l = A.groupLabelEl(g); return l ? A.txt(l) : ''; };
+
+  A.block('choice-group', A.isChoiceGroup, function (g, els) {
+    var bs = A.buttonChildren(g), label = A.groupLabel(g);
+    // B3d: the EFB greyed the setting out and put the reason where the choices would be
+    // ("N/A on Pax Model") — read the reason, offer nothing to change.
+    if (bs.length === 1 && bs[0].disabled) {
+      els.push(A.el(g, { kind: 'static', text: (label ? label + ': ' : '') + A.txt(bs[0]) }));
+      return;
+    }
+    var opts = [], val = '', dis = false;
+    for (var i = 0; i < bs.length; i++) {
+      var t = A.txt(bs[i]);
+      opts.push(t);
+      if (A.isHighlighted(bs[i])) val = t;
+      if (bs[i].disabled) dis = true;
+    }
+    els.push(A.el(g, { controlType: 'select', text: label, value: val, options: opts, disabled: dis }));
+  });
 
   // ---------------------------------------------------------------------------------
   // scrape
@@ -495,29 +557,39 @@
     el.dispatchEvent(ev);
   };
 
-  // React listens for the full pointer/mouse sequence, not a bare .click(). The WT787 CDU keys
-  // taught this repo the same lesson: dispatch the whole sequence or the component never reacts —
-  // and a click that silently does nothing is indistinguishable from a working one to a blind
-  // pilot. .click() is also fired last, which covers plain onClick handlers.
+  // The full press. React listens for the pointer/mouse sequence, not a bare .click(); .click()
+  // is still fired last for plain onClick handlers. Live-verified 2026-09-05: ONE call = ONE
+  // step on the EFB's Autobrake stepper (no double-fire).
+  A.click = function (el) {
+    A.fire(el, 'pointerdown', window.PointerEvent || window.MouseEvent);
+    A.fire(el, 'mousedown', window.MouseEvent);
+    A.fire(el, 'pointerup', window.PointerEvent || window.MouseEvent);
+    A.fire(el, 'mouseup', window.MouseEvent);
+    A.fire(el, 'click', window.MouseEvent);
+    if (typeof el.click === 'function') el.click();
+  };
+
   A.clickElement = function (idx) {
     var el = A.find(idx);
     if (!el) return false;
-    try {
-      A.fire(el, 'pointerdown', window.PointerEvent || window.MouseEvent);
-      A.fire(el, 'mousedown', window.MouseEvent);
-      A.fire(el, 'pointerup', window.PointerEvent || window.MouseEvent);
-      A.fire(el, 'mouseup', window.MouseEvent);
-      A.fire(el, 'click', window.MouseEvent);
-      if (typeof el.click === 'function') el.click();
-      A._dirty = true;
-      return true;
-    } catch (e) { return false; }
+    try { A.click(el); A._dirty = true; return true; } catch (e) { return false; }
   };
 
-  A.setValue = function (idx, text) {
+  A.setValue = function (idx, text, done) {
     var el = A.find(idx);
     if (!el) return false;
     try {
+      // A dropdown built from a choice group: pick = press that choice's own button.
+      if (A.isChoiceGroup(el)) {
+        var want = String(text).trim(), bs = A.buttonChildren(el);
+        for (var b = 0; b < bs.length; b++) {
+          if (A.txt(bs[b]) !== want) continue;
+          if (bs[b].disabled) return false;
+          A.click(bs[b]); A._dirty = true; return true;
+        }
+        return false;
+      }
+
       if (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio')) {
         var want = (String(text).toLowerCase() === 'true');
         if (el.checked !== want) A.clickElement(idx);   // let React's own handler flip it
