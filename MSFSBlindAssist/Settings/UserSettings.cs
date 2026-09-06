@@ -329,6 +329,12 @@ public class UserSettings
         [JsonIgnore]
         public HashSet<string> Md11DisabledMonitorVariablesSet { get; private set; } = new HashSet<string>();
 
+        // The MD-11 walker's learned step polarity (docs/md11.md §3): node ids whose step events run
+        // INVERTED relative to the walker's conventional guess (left click / wheel up = increase).
+        // Absent = conventional. Written the moment a wrong-way step teaches the walker, read on the
+        // first walk of each control, so a control pays for its calibration once, ever.
+        public List<string> Md11InvertedStepControls { get; set; } = new List<string>();
+
         // Announce each 1,000-foot crossing while airborne ("5,000 feet", …). Default on.
         public bool AltitudeCalloutsEnabled { get; set; } = true;
 

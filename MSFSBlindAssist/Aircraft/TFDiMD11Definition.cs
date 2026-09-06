@@ -138,6 +138,21 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
             }
         }
         _flaps = new Md11FlapSystem(_map);
+
+        // The walker's learned step polarity survives the session: settings carry the node ids that
+        // stepped the wrong way once. Static hooks, re-assigned by every definition instance — they
+        // capture nothing, so an aircraft switch leaks nothing. Swap the list, never mutate it:
+        // SettingsManager.Save serializes the live settings object on another thread.
+        Md11SelectorWalker.LoadPolarity = id =>
+            Md11PolarityStore.Load(Settings.SettingsManager.Current.Md11InvertedStepControls, id);
+        Md11SelectorWalker.SavePolarity = (id, conventional) =>
+        {
+            var settings = Settings.SettingsManager.Current;
+            var updated = Md11PolarityStore.With(settings.Md11InvertedStepControls, id, conventional);
+            if (ReferenceEquals(updated, settings.Md11InvertedStepControls)) return;
+            settings.Md11InvertedStepControls = updated;
+            Settings.SettingsManager.Save();
+        };
     }
 
     private string KeyFor(string stateVar) => _keyByStateVar.TryGetValue(stateVar, out var k) ? k : stateVar;

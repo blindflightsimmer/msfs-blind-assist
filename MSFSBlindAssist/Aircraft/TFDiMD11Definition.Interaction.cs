@@ -452,6 +452,7 @@ public partial class TFDiMD11Definition
         await EnsureGuardOpenAsync(control, sim).ConfigureAwait(false);
         if (cts.IsCancellationRequested) return;
 
+        bool cancelled;
         try
         {
             await SafeWalk(
@@ -460,9 +461,15 @@ public partial class TFDiMD11Definition
         }
         finally
         {
-            if (_walkCts.TryGetValue(node, out var mine) && ReferenceEquals(mine, cts))
-                _walkCts.TryRemove(node, out _);
+            cancelled = cts.IsCancellationRequested;
+            bool mine = _walkCts.TryGetValue(node, out var current) && ReferenceEquals(current, cts);
+            if (mine) _walkCts.TryRemove(node, out _);
             cts.Dispose();
+            // Gate down (see ProcessSimVarUpdate): one force-read so the panel combo re-syncs to
+            // where the control actually is. WinForms ignores a same-index set, so a landed walk
+            // stays silent; a failed one snaps the combo to the real position once, beside the
+            // "did not move" message. A superseded walk leaves the re-sync to the walk that owns it.
+            if (mine && !cancelled) sim.RequestVariable(varKey, forceUpdate: true);
         }
     }
 
@@ -486,7 +493,7 @@ public partial class TFDiMD11Definition
             if (!ok)
             {
                 Log.Debug("MD11", $"{control.NodeId}: failed to reach {target} (walk and direct write).");
-                announcer.Announce($"{control.DisplayLabel} did not move. It may be guarded, unpowered, or inhibited.");
+                OnUiThread(() => announcer.Announce($"{control.DisplayLabel} did not move. It may be guarded, unpowered, or inhibited."));
             }
         }
         catch (OperationCanceledException)
@@ -630,6 +637,14 @@ public partial class TFDiMD11Definition
                     AnnounceFlaps(announcer);
                 return true;
         }
+
+        // A control whose walk is in flight owns its state var until the walk lands. Every forced
+        // read the walker makes would otherwise reach MainForm's control refresh, which re-sets the
+        // focused combo to the intermediate position and NVDA reads it out — "Takeoff", "Off",
+        // "Minimum" after the pilot picked "Minimum". DebouncedWalk force-reads once more with the
+        // gate down when it finishes, so the combo re-syncs exactly once, silently on success.
+        // Sits below the flap and speedbrake cases on purpose: those own their own read-outs.
+        if (_walkCts.ContainsKey(varName)) return true;
 
         // COM radios: baseline-first and airband-gated ("COM 1 active 135.500"). Consumed here so
         // the generic path never narrates the raw kHz; Ctrl+M mutes through MainForm's wrap.
