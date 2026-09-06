@@ -143,6 +143,14 @@
     };
 
     if (el.tagName === 'INPUT') {
+      // A disabled field the row rules did not reach is still a read-out, never an edit box.
+      var ty0 = (el.type || 'text').toLowerCase();
+      if (el.disabled && !A.isStepperInput(el) && ty0 !== 'checkbox' && ty0 !== 'radio' && ty0 !== 'range') {
+        o.kind = 'static';
+        o.text = A.readoutText(A.labelFor(el) || 'Value', el);
+        return o;
+      }
+
       var ty = (el.type || 'text').toLowerCase();
       if (ty === 'checkbox' || ty === 'radio') {
         o.controlType = 'checkbox';
@@ -537,6 +545,67 @@
   A.block('span-row',
     function (el) { return !!A.spanRow(el); },
     function (el, els) { els.push(A.el(el, { kind: 'static', text: A.spanRow(el) })); });
+
+  // ---------------------------------------------------------------------------------
+  // B6: read-out row — a label and a value the EFB lays out as two elements:
+  //   (a) <h3>Block Fuel</h3><p>77347 lbs</p>   /   <p>Estimated Landing Distance</p><p>----ft</p>
+  //   (b) <span>V1</span><input disabled value=155>   /   <label>Load</label><input disabled value=35%>
+  //       (the locked input may sit one wrapper deep beside a unit box: Flex Temperature °C)
+  // Read as ONE line "Label: value unit". A disabled input is a read-out, never an edit field.
+  // ---------------------------------------------------------------------------------
+
+  A.isTextEl = function (el) {
+    return el.tagName === 'H3' || el.tagName === 'P' || el.tagName === 'SPAN' || el.tagName === 'LABEL';
+  };
+
+  // (a) two text-only children: a name (starts with a letter; never a <label>, which names a
+  // control) and a short value. Long second texts are prose, not values, and stay separate.
+  A.pairRow = function (el) {
+    if (el.tagName !== 'DIV' || el.children.length !== 2) return null;
+    var a = el.children[0], b = el.children[1];
+    if (!A.isTextEl(a) || !A.isTextEl(b) || a.tagName === 'LABEL') return null;
+    if (a.children.length > 0 || b.children.length > 0) return null;
+    var label = A.txt(a), value = A.txt(b);
+    if (!/^[A-Za-z]/.test(label) || !value || value.length > 24) return null;
+    return label + ': ' + A.spaceUnit(value);
+  };
+
+  // The one disabled, non-stepper input inside `el`, with nothing else interactive beside it.
+  A.readoutInput = function (el) {
+    var inputs = el.getElementsByTagName('input');
+    if (inputs.length !== 1) return null;
+    if (el.getElementsByTagName('button').length > 0 || el.getElementsByTagName('select').length > 0) return null;
+    var inp = inputs[0];
+    if (!inp.disabled || A.isStepperInput(inp)) return null;
+    return inp;
+  };
+
+  A.readoutText = function (label, inp) {
+    var value = A.spaceUnit(A.inputValue(inp)), unit = A.unitFor(inp);
+    return label + ': ' + (value || '(empty)') + (unit ? ' ' + unit : '');
+  };
+
+  // (b) a text label then the locked field (directly, or in a wrapper beside its unit box).
+  A.readoutRow = function (el) {
+    if (el.tagName !== 'DIV' || el.children.length !== 2) return null;
+    var a = el.children[0], b = el.children[1];
+    if (!A.isTextEl(a) || a.children.length > 0) return null;
+    var inp = null;
+    if (b.tagName === 'INPUT') inp = b;
+    else if (b.tagName === 'DIV') inp = A.readoutInput(b);
+    if (!inp || !inp.disabled || A.isStepperInput(inp)) return null;
+    var label = A.txt(a);
+    if (!A.isName(label)) return null;
+    return A.readoutText(label, inp);
+  };
+
+  A.block('pair-row',
+    function (el) { return !!A.pairRow(el); },
+    function (el, els) { els.push(A.el(el, { kind: 'static', text: A.pairRow(el) })); });
+
+  A.block('readout-row',
+    function (el) { return !!A.readoutRow(el); },
+    function (el, els) { els.push(A.el(el, { kind: 'static', text: A.readoutRow(el) })); });
 
   // ---------------------------------------------------------------------------------
   // scrape
