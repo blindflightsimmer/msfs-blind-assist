@@ -672,6 +672,32 @@
   });
 
   // ---------------------------------------------------------------------------------
+  // B12: Charts chart-type strip — a row of buttons (STAR/APP/TAXI/SID/REF) where the active one
+  // carries a coloured bg-*-500 class and the others bg-navigraph-background. Read as tabs.
+  // ---------------------------------------------------------------------------------
+
+  A.isChartStrip = function (el) {
+    if (el.tagName !== 'DIV' || el.getAttribute('role') === 'group') return false;
+    var bs = A.buttonChildren(el);
+    if (!bs || bs.length < 2) return false;
+    var active = 0;
+    for (var i = 0; i < bs.length; i++) {
+      if (A.hasClass(bs[i], 'bg-navigraph-background')) continue;
+      if (/(^|\s)bg-[a-z]+-500(\s|$)/.test(String(bs[i].className || ''))) { active++; continue; }
+      return false;
+    }
+    return active === 1;
+  };
+
+  A.block('chart-strip', A.isChartStrip, function (el, els) {
+    var bs = A.buttonChildren(el);
+    for (var i = 0; i < bs.length; i++) {
+      var on = !A.hasClass(bs[i], 'bg-navigraph-background');
+      els.push(A.el(bs[i], { kind: 'tab', clickable: true, disabled: !!bs[i].disabled, text: A.txt(bs[i]) + (on ? ' (selected)' : '') }));
+    }
+  });
+
+  // ---------------------------------------------------------------------------------
   // scrape
   // ---------------------------------------------------------------------------------
 
