@@ -814,15 +814,19 @@ public partial class TFDiMD11Definition
                 AnnounceFlapsOnDemand(simConnect, announcer);
                 return true;
 
-            // S and F speed are Airbus names, but the CONCEPTS are exact: the MD-11's VSR is
-            // the slat retraction speed and VFR is the flap retraction speed. Claiming these two
-            // keys means the retraction speeds are one keypress away on the aircraft where they
-            // cannot be read off a speed tape.
-            case HotkeyAction.ReadSpeedS:
+            // The characteristic-speed keys follow the NUMBER, not the Airbus letter: the MD-11
+            // has two retraction speeds, so they sit on Shift+1 (VSR, slats) and Shift+2 (VFR,
+            // flaps). They shipped on Shift+2/Shift+3 to match the Airbus S and F keys, and the
+            // owner ruled that out (2026-09-06): a pilot who only flies the MD-11 has no reason to
+            // know the Airbus letters, and read-outs start at 1. ReadSpeedGD is the Shift+1 action;
+            // the MD-11 exports no clean-configuration speed, so nothing is displaced. Shift+3 and
+            // above are deliberately unbound here. These speeds have no other source on this
+            // aircraft — there is no speed tape to read them off.
+            case HotkeyAction.ReadSpeedGD:
                 AnnounceSpeed(simConnect, announcer, "MD11_VSR", "Slat retraction speed");
                 return true;
 
-            case HotkeyAction.ReadSpeedF:
+            case HotkeyAction.ReadSpeedS:
                 AnnounceSpeed(simConnect, announcer, "MD11_VFR", "Flap retraction speed");
                 return true;
 

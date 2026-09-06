@@ -130,8 +130,8 @@ Flight control panel - what is SELECTED, with the mode it is in:
   PROF cannot be read on this aircraft - see the note above.
 
 Characteristic Speeds:
-  Shift+2    Read slat retraction speed (VSR)
-  Shift+3    Read flap retraction speed (VFR)
+  Shift+1    Read slat retraction speed (VSR)
+  Shift+2    Read flap retraction speed (VFR)
 
   V1, VR and V2 do not have a key yet - read them in the Read-outs section, V-Speeds panel.
 
