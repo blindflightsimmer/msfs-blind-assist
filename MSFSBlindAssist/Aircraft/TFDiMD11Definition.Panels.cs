@@ -226,6 +226,20 @@ public partial class TFDiMD11Definition
 
     private Dictionary<string, List<string>>? _panelStructure;
     private Dictionary<string, List<string>>? _panelControls;
+    private Dictionary<string, List<string>>? _panelDisplays;
+
+    /// <summary>
+    /// Each panel's Status Display rows (MainForm's read-only list, Ctrl+3): the panel's lamps in
+    /// table order, the read-out panels' exported numbers, the COM read-backs, the squawk code.
+    /// One list per panel instead of one tab stop per light — the Airbus pattern, and on this
+    /// aircraft those lights ARE the instrument panel, so the list is where a pilot scans them.
+    /// Row text comes from <see cref="Md11StatusRow"/> through TryGetDisplayOverride.
+    /// </summary>
+    public override Dictionary<string, List<string>> GetPanelDisplayVariables()
+    {
+        BuildPanelsOnce();
+        return _panelDisplays!;
+    }
 
     public override Dictionary<string, List<string>> GetPanelStructure()
     {
@@ -243,7 +257,7 @@ public partial class TFDiMD11Definition
     /// Derives sections and panels from <see cref="Md11PanelLayout"/> — the curated table is the
     /// ONLY source of panel order (spec §3.8): sections in the order a preparation flows, panels
     /// named as TFDi's Systems Guide names them, controls in physical panel order, a guard cover
-    /// immediately before the control it covers, status rows (standalone lamps) last.
+    /// immediately before the control it covers, standalone lamps as the panel's Status Display rows.
     ///
     /// A control the table does not name is still appended (never dropped) rather than silently
     /// missing — see <see cref="Md11PanelLayout.Place"/>'s safety net — and logged loudly so a
@@ -262,13 +276,15 @@ public partial class TFDiMD11Definition
         if (placement.Unplaced.Count > 0)
             Log.Warn("MD11", $"{placement.Unplaced.Count} controls are not in the layout table and were appended: {string.Join(", ", placement.Unplaced.Take(10))}");
 
-        AddReadoutPanels(placement.Structure, placement.Controls);
-        AddSquawkEntry(placement.Controls);
-        AddRadiosPanel(placement.Structure, placement.Controls);
+        var displays = placement.Displays;
+        AddReadoutPanels(placement.Structure, placement.Controls, displays);
+        AddSquawkEntry(placement.Controls, displays);
+        AddRadiosPanel(placement.Structure, placement.Controls, displays);
         AddSpeedbrakeArm(placement.Controls);
 
         _panelStructure = placement.Structure;
         _panelControls = placement.Controls;
+        _panelDisplays = displays;
     }
 
     /// <summary>
@@ -284,12 +300,13 @@ public partial class TFDiMD11Definition
     /// table cannot name them: the field goes right after the panel's four selectors (where
     /// the digit keys used to start), the read-back row last, with the status rows.
     /// </summary>
-    private static void AddSquawkEntry(Dictionary<string, List<string>> controls)
+    private static void AddSquawkEntry(Dictionary<string, List<string>> controls, Dictionary<string, List<string>> displays)
     {
         if (!controls.TryGetValue("Transponder", out var keys)) return;
         int at = keys.IndexOf("MD11_PED_XPNDR_ABV_BLW_SW");
         keys.Insert(at < 0 ? 0 : at + 1, Md11Squawk.SetKey);
-        keys.Add(Md11Squawk.CodeKey);
+        if (!displays.TryGetValue("Transponder", out var rows)) displays["Transponder"] = rows = new List<string>();
+        rows.Insert(0, Md11Squawk.CodeKey);
     }
 
     /// <summary>The Ground spoilers row sits right after the lever it belongs to.</summary>
@@ -305,9 +322,11 @@ public partial class TFDiMD11Definition
     /// the radio control panels rather than among the read-outs; it opens the section because
     /// tuning is what the pilot goes there for.
     /// </summary>
-    private static void AddRadiosPanel(Dictionary<string, List<string>> structure, Dictionary<string, List<string>> controls)
+    private static void AddRadiosPanel(Dictionary<string, List<string>> structure,
+        Dictionary<string, List<string>> controls, Dictionary<string, List<string>> displays)
     {
         controls["Radios"] = new List<string>(Md11Radios.PanelKeys);
+        displays["Radios"] = new List<string>(Md11Radios.Keys);
         if (!structure.TryGetValue("Pedestal", out var panels)) structure["Pedestal"] = panels = new List<string>();
         panels.Remove("Radios");
         panels.Insert(0, "Radios");
@@ -315,29 +334,29 @@ public partial class TFDiMD11Definition
 
     private static void AddReadoutPanels(
         Dictionary<string, List<string>> structure,
-        Dictionary<string, List<string>> controls)
+        Dictionary<string, List<string>> controls,
+        Dictionary<string, List<string>> displays)
     {
-        controls["V-Speeds"] = new List<string> { "MD11_V1", "MD11_VR", "MD11_V2", "MD11_VSR", "MD11_VFR" };
-        controls["Minimums and Altimeters"] = new List<string>
+        displays["V-Speeds"] = new List<string> { "MD11_V1", "MD11_VR", "MD11_V2", "MD11_VSR", "MD11_VFR" };
+        displays["Minimums and Altimeters"] = new List<string>
         {
             "MD11_CAP_MINIMUMS", "MD11_FO_MINIMUMS",
             "MD11_CAP_ALTIMETER", "MD11_FO_ALTIMETER", "MD11_STBY_ALTIMETER",
         };
-        controls["Autoflight Status"] = new List<string>
+        displays["Autoflight Status"] = new List<string>
         {
             "MD11_AP_STATE", "MD11_ATS_STATE",
             "MD11_AFS_SPD", "MD11_AFS_HDG", "MD11_AFS_ALT", "MD11_AFS_VS",
         };
-        controls["APU Status"] = new List<string> { "MD11_APU_STATE", "MD11_APU_N1", "MD11_APU_N2" };
-        controls["Fuel Quantity"] = new List<string>
+        displays["APU Status"] = new List<string> { "MD11_APU_STATE", "MD11_APU_N1", "MD11_APU_N2" };
+        displays["Fuel Quantity"] = new List<string>
         {
             "MD11_OVHD_TANK_1_VAL", "MD11_OVHD_TANK_2_VAL", "MD11_OVHD_TANK_3_VAL",
             "MD11_OVHD_TANK_AUX_VAL", "MD11_OVHD_TANK_TAIL_VAL",
         };
 
-        structure["Read-outs"] = new List<string>
-        {
-            "V-Speeds", "Minimums and Altimeters", "Autoflight Status", "APU Status", "Fuel Quantity",
-        };
+        var names = new List<string> { "V-Speeds", "Minimums and Altimeters", "Autoflight Status", "APU Status", "Fuel Quantity" };
+        foreach (var name in names) controls[name] = new List<string>();   // display-only: MainForm needs the (empty) entry
+        structure["Read-outs"] = names;
     }
 }

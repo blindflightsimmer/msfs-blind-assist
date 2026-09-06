@@ -32,14 +32,15 @@ public static class Md11Radios
     };
 
     /// <summary>
-    /// The Radios panel, radio by radio: active (read-only), standby (read-only), the typed
-    /// standby entry (MainForm's "_SET" text box + Set button) and the transfer button.
+    /// The Radios panel's CONTROL rows, radio by radio: the typed standby entry (MainForm's
+    /// "_SET" text box + Set button) and the transfer button. The active/standby read-backs
+    /// (<see cref="Keys"/>) are the panel's Status Display rows, not tab stops.
     /// </summary>
     public static readonly string[] PanelKeys =
     {
-        "COM_ACTIVE_FREQUENCY:1", "COM_STANDBY_FREQUENCY:1", StandbySetKey(1), SwapKey(1),
-        "COM_ACTIVE_FREQUENCY:2", "COM_STANDBY_FREQUENCY:2", StandbySetKey(2), SwapKey(2),
-        "COM_ACTIVE_FREQUENCY:3", "COM_STANDBY_FREQUENCY:3", StandbySetKey(3), SwapKey(3),
+        StandbySetKey(1), SwapKey(1),
+        StandbySetKey(2), SwapKey(2),
+        StandbySetKey(3), SwapKey(3),
     };
 
     public static string StandbySetKey(int idx) => $"COM_STANDBY_FREQUENCY_SET:{idx}";

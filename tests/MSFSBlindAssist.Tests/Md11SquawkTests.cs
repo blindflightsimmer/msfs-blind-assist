@@ -80,7 +80,9 @@ public class Md11SquawkTests
     {
         var panel = Def.GetPanelControls()["Transponder"];
         Assert.Contains(Md11Squawk.SetKey, panel);
-        Assert.Equal(Md11Squawk.CodeKey, panel[^1]);                       // the read-back is a status row: last
+        Assert.DoesNotContain(Md11Squawk.CodeKey, panel);   // the read-back is a Status Display row now, first in the list
+        Assert.Equal(Md11Squawk.CodeKey, Def.GetPanelDisplayVariables()["Transponder"][0]);
+        Assert.Contains("MD11_PED_XPNDR_FAIL_LT", Def.GetPanelDisplayVariables()["Transponder"]);
         Assert.Equal(panel.IndexOf("MD11_PED_XPNDR_ABV_BLW_SW") + 1, panel.IndexOf(Md11Squawk.SetKey));   // right after the selectors
         Assert.DoesNotContain(panel, k => Md11Squawk.DigitButtons.Contains(k));
         Assert.Contains("MD11_PED_XPNDR_IDENT_BT", panel);

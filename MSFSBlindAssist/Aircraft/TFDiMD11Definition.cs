@@ -528,8 +528,6 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
         return d;
     }
 
-    public override Dictionary<string, List<string>> GetPanelDisplayVariables() => new();
-
     public void Dispose()
     {
         _announceGeneration++;   // a deferred dark transition must not speak for a disposed definition

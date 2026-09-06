@@ -751,6 +751,19 @@ public partial class TFDiMD11Definition
     /// </summary>
     public override bool TryGetDisplayOverride(string varKey, double value, out string displayText)
     {
+        // Status Display rows (the read-only list, Ctrl+3). A lamp reads its composed state — the
+        // delivered value for its own var, the cache for the DC gate — and an exported number reads
+        // with its unit; Md11StatusRow decides the words. A null means "nothing special" and the
+        // generic path (ValueDescriptions, then the bare number) takes over.
+        if (_byNodeId.TryGetValue(varKey, out var lamp) && lamp.Kind == Md11Kinds.Annunciator)
+        {
+            var text = Md11StatusRow.Lamp(lamp.State, lamp.StateVar, value, ReadStateVar, IsDcPowered());
+            displayText = text ?? "";
+            return text != null;
+        }
+        var readout = Md11StatusRow.Readout(varKey, value, key => _sim?.GetCachedVariableValue(key));
+        if (readout != null) { displayText = readout; return true; }
+
         switch (varKey)
         {
             case Md11FlapSystem.LeverKey:

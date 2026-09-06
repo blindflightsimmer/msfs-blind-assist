@@ -73,14 +73,14 @@ public class Md11RadioTests
     }
 
     [Fact]
-    public void TheRadiosPanel_OpensThePedestal_AndListsEachRadioAsActiveStandbySetTransfer()
+    public void TheRadiosPanel_OpensThePedestal_ReadBacksInTheStatusDisplay_TypedAndTransferAsRows()
     {
         var structure = Def.GetPanelStructure();
         Assert.Equal("Radios", structure["Pedestal"][0]);
         Assert.DoesNotContain("Radios", structure["Read-outs"]);
         Assert.Equal(Md11Radios.PanelKeys, Def.GetPanelControls()["Radios"]);
-        Assert.Equal(new[] { "COM_ACTIVE_FREQUENCY:1", "COM_STANDBY_FREQUENCY:1", "COM_STANDBY_FREQUENCY_SET:1", "COM1_RADIO_SWAP" },
-                     Md11Radios.PanelKeys.Take(4));
+        Assert.Equal(new[] { "COM_STANDBY_FREQUENCY_SET:1", "COM1_RADIO_SWAP" }, Md11Radios.PanelKeys.Take(2));
+        Assert.Equal(Md11Radios.Keys, Def.GetPanelDisplayVariables()["Radios"]);   // "COM 1 Active Frequency: 135.500"
     }
 
     [Theory]

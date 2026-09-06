@@ -119,6 +119,27 @@ public class Md11PanelLayoutTests
         Assert.Equal("Read-outs", structure.Keys.Last());
         Assert.Contains("V-Speeds", structure["Read-outs"]);
         Assert.Equal(P.Controls["Electrical"], def.GetPanelControls()["Electrical"]);
+
+        // Lamps and read-outs are Status Display rows; the read-out panels have no control rows.
+        var display = def.GetPanelDisplayVariables();
+        Assert.Equal(P.Displays["Electrical"], display["Electrical"]);
+        Assert.Equal(new[] { "MD11_V1", "MD11_VR", "MD11_V2", "MD11_VSR", "MD11_VFR" }, display["V-Speeds"]);
+        Assert.Empty(def.GetPanelControls()["V-Speeds"]);
+        Assert.Equal(new[] { "MD11_CAP_MINIMUMS", "MD11_FO_MINIMUMS", "MD11_CAP_ALTIMETER", "MD11_FO_ALTIMETER", "MD11_STBY_ALTIMETER" },
+                     display["Minimums and Altimeters"]);
+        Assert.Contains("MD11_AFS_HDG", display["Autoflight Status"]);
+        Assert.Contains("MD11_APU_N1", display["APU Status"]);
+        Assert.Contains("MD11_OVHD_TANK_TAIL_VAL", display["Fuel Quantity"]);
+
+        // Every display row is a registered variable, and none is also a control row.
+        var vars = def.GetVariables();
+        var controlRows = def.GetPanelControls().Values.SelectMany(k => k).ToHashSet(StringComparer.Ordinal);
+        foreach (var (panel, rows) in display)
+            foreach (var row in rows)
+            {
+                Assert.True(vars.ContainsKey(row), $"{panel}: display row {row} is not a registered variable");
+                Assert.DoesNotContain(row, controlRows);
+            }
     }
 
     [Fact]
