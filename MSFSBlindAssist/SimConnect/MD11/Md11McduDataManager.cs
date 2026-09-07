@@ -306,13 +306,19 @@ public sealed class Md11McduDataManager : IDisposable
 
     /// <summary>
     /// Content equality. Compares the flags too: `msg` lighting up is a real event with no text
-    /// change behind it, and a blind pilot has no other way to notice it.
+    /// change behind it, and a blind pilot has no other way to notice it. And the per-line font
+    /// size: this is the STORAGE gate as well as the event gate (an identical repeat keeps the old
+    /// object), and the size carries meaning the window does not yet render — a font-only change
+    /// must still reach it once it does.
     /// </summary>
     private static bool SameContent(Md11McduScreen a, Md11McduScreen b)
     {
         if (a.Dspy != b.Dspy || a.Fail != b.Fail || a.Msg != b.Msg || a.Ofst != b.Ofst) return false;
         for (var i = 0; i < Md11McduLayout.Rows; i++)
+        {
             if (!string.Equals(a.Lines[i], b.Lines[i], StringComparison.Ordinal)) return false;
+            if (a.LineIsLarge[i] != b.LineIsLarge[i]) return false;
+        }
         return true;
     }
 

@@ -32,7 +32,10 @@ public static class Md11McduTitle
     /// <summary>
     /// The Honeywell FMS retitles a page while a modification is pending — ACT F-PLN becomes
     /// MOD F-PLN the moment a waypoint is entered — and it is the same page with the same lines
-    /// under the cursor; SEC F-PLN is a different flight plan and stays distinct.
+    /// under the cursor; SEC F-PLN is a different flight plan and stays distinct. "ACT F-PLN" is
+    /// captured live on this aircraft; "MOD" is the Honeywell convention and not yet captured —
+    /// folding a prefix that never appears is harmless, and folding one that does can only KEEP
+    /// a cursor on its row, never throw it.
     /// </summary>
     private static readonly string[] PendingPrefixes = { "ACT ", "MOD " };
 

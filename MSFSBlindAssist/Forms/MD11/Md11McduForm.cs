@@ -224,7 +224,21 @@ public class Md11McduForm : Form
             // combo — the double-announce this handler exists to prevent.
             _screen = null;
             _lastRendered = null;
-            Render(silentTitle: true);
+            _blankSince = null;                      // the new unit's blank clock starts now
+
+            // The previous unit's pending scratchpad announce is void: fired now, it would read
+            // the new unit's pad against the old unit's text and could say "Scratchpad cleared"
+            // for a scratchpad nobody cleared. Re-baseline on what the new unit shows.
+            _scratchpadDebounceTimer?.Stop();
+            var switched = _sim.Md11McduDataManager?.GetScreen(_unit);
+            _lastAnnouncedScratchpad = switched?.Scratchpad.Trim() ?? "";
+
+            // Render at once only when the new unit has CONTENT. A blank or never-delivered unit
+            // waits for the next 250 ms tick, whose blank-hold judgement (Md11McduPresence.Decide)
+            // this direct call bypasses — a unit caught mid-erase would otherwise speak a spurious
+            // "blank" some 300 ms before its page appears.
+            if (Md11McduPresence.Classify(switched) == Md11McduPresenceState.Content)
+                Render(silentTitle: true);
         };
 
         scratchpadInput.KeyDown += ScratchpadInput_KeyDown;
@@ -548,6 +562,11 @@ public class Md11McduForm : Form
         {
             RestoreCursor(cursor);
         }
+
+        // Never leave the list with nothing selected (a first-ever render of a frame whose title
+        // row is empty adopts no title and restores no cursor): the screen reader would announce
+        // an empty list and Space/Enter would act on nothing. Same guard as the advisory's.
+        if (mcduDisplay.SelectedIndex < 0 && mcduDisplay.Items.Count > 0) mcduDisplay.SelectedIndex = 0;
 
         if (screen.Scratchpad.Trim() != _lastAnnouncedScratchpad)
         {
