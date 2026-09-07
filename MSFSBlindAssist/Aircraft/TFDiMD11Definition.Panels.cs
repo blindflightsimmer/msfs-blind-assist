@@ -163,13 +163,19 @@ public partial class TFDiMD11Definition
             Type = SimVarType.Event,
             UpdateFrequency = UpdateFrequency.OnRequest,
         };
+        // Continuous + IsAnnounced so the code speaks on CHANGE whichever way it was set — the
+        // A380's XPNDR_CODE / the PMDGs' TRANSPONDER_CODE_SET shape; it was OnRequest (a panel
+        // row only) and so never announced an ATC assignment or a hardware transponder. Decoded
+        // and spoken by ProcessSimVarUpdate through Md11SquawkAnnouncer; the row stays the panel's
+        // read-back, and "Squawk code" is the Ctrl+M row that mutes the call-out.
         v[Md11Squawk.CodeKey] = new SimVarDefinition
         {
             Name = "TRANSPONDER CODE:1",
             DisplayName = "Squawk code",
             Type = SimVarType.SimVar,
             Units = "BCO16",
-            UpdateFrequency = UpdateFrequency.OnRequest,
+            UpdateFrequency = UpdateFrequency.Continuous,
+            IsAnnounced = true,
             RenderAsReadOnlyStatus = true,
         };
 

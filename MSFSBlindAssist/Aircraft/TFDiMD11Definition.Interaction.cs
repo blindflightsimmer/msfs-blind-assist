@@ -277,8 +277,17 @@ public partial class TFDiMD11Definition
             return;
         }
         if (_bus == null) return;
+        _squawk.EntryInProgress = true;   // UI thread: deliveries during the entry are tracked, not spoken
         _ = SetSquawkAsync(code, simConnect, announcer);
     }
+
+    /// <summary>
+    /// Post-request wait for the entry's read-back. The code rides the 1 Hz continuous batch, so
+    /// a forced read is honoured on the NEXT delivery rather than answered at once — the same
+    /// reasoning as the minimums read-back, and why 400 ms (right for the individually
+    /// registered var this used to be) is not enough any more.
+    /// </summary>
+    private const int SquawkReadBackMs = 1100;
 
     private async Task SetSquawkAsync(string code, SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
@@ -291,7 +300,7 @@ public partial class TFDiMD11Definition
             }
             await Task.Delay(SquawkCommitMs).ConfigureAwait(false);
             sim.RequestVariable(Md11Squawk.CodeKey, forceUpdate: true);
-            await Task.Delay(400).ConfigureAwait(false);
+            await Task.Delay(SquawkReadBackMs).ConfigureAwait(false);
             var read = sim.GetCachedVariableValue(Md11Squawk.CodeKey);
             var readBack = read is double v ? Md11Squawk.Decode(v) : null;
             OnUiThread(() => announcer.Announce(Md11Squawk.Confirmation(code, readBack)));
@@ -299,6 +308,13 @@ public partial class TFDiMD11Definition
         catch (Exception ex)
         {
             Log.Debug("MD11", $"Squawk entry failed: {ex.Message}");
+        }
+        finally
+        {
+            // Posted after the confirmation (same context, in order) and on EVERY exit — a
+            // missing digit key or an exception must not leave the change announcement muted
+            // for the rest of the session.
+            OnUiThread(() => _squawk.EntryInProgress = false);
         }
     }
 
@@ -737,6 +753,17 @@ public partial class TFDiMD11Definition
             return true;
         }
 
+        // The squawk speaks on change, whichever way it was set (Md11SquawkAnnouncer): a hardware
+        // transponder, the sim's own keys, an ATC assignment. A typed entry's deliveries are
+        // tracked but not spoken — its own confirmation is the sentence. Consumed here, or the
+        // generic path would speak the raw BCO16 word; Ctrl+M mutes through MainForm's wrap.
+        if (varName == Md11Squawk.CodeKey)
+        {
+            var squawk = _squawk.OnUpdate(value);
+            if (squawk != null) announcer.Announce(squawk);
+            return true;
+        }
+
         // The captain's altimeter speaks once it settles (a knob wind speaks the final setting,
         // not every hundredth). Consumed here — the var has no ValueDescriptions, so it would
         // otherwise be a silent read-out, and the generic path would speak a raw number if it
@@ -1013,8 +1040,17 @@ public partial class TFDiMD11Definition
                 AnnounceFuel(simConnect, announcer, kilograms: true);
                 return true;
 
-            // Stock SimVar — nothing MD-11-specific, so it goes through the same shared
-            // request/announce path every other aircraft uses.
+            // Stock SimVar — nothing MD-11-specific, so both go through the same shared
+            // request/announce path every other aircraft uses. W in output mode is the
+            // waypoint-info key by registration, and every other definition repurposes it for
+            // gross weight in POUNDS (Shift+W is kilograms); this one had no case for it, so W
+            // said nothing on the MD-11 (reported 2026-09-07).
+            case HotkeyAction.ReadWaypointInfo:
+                simConnect.RequestSingleValue(
+                    (int)SimConnectManager.DATA_DEFINITIONS.DEF_GROSS_WEIGHT,
+                    "TOTAL WEIGHT", "pounds", "GROSS_WEIGHT");
+                return true;
+
             case HotkeyAction.ReadGrossWeightKg:
                 simConnect.RequestSingleValue(
                     (int)SimConnectManager.DATA_DEFINITIONS.DEF_GROSS_WEIGHT_KG,

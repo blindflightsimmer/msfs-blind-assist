@@ -41,6 +41,7 @@ public partial class TFDiMD11Definition
 
     private readonly Md11AnnouncementGate _gate = new();
     private readonly Md11ComAnnouncer _com = new();   // COM 1-3 active/standby, baseline-first
+    private readonly Md11SquawkAnnouncer _squawk = new();   // the squawk on change, baseline-first
 
     /// <summary>
     /// The UI thread's context, captured by <see cref="SetControl"/> the first time it runs (every
@@ -261,6 +262,7 @@ public partial class TFDiMD11Definition
         _lampChangeTicks.Clear();
         _gate.Reset();
         _com.Reset();
+        _squawk.Reset();                        // the next squawk is a baseline again
         _altimeter.Reset();                     // the next altimeter value is a baseline again
         _spdbrkHandle = double.NaN;             // the speedbrake re-baselines on reconnect too
         _lastSpoilerSpoken = string.Empty;

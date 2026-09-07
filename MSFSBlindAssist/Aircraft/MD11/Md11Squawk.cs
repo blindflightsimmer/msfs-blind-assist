@@ -63,3 +63,42 @@ public static class Md11Squawk
         return $"Squawk entry did not take, the transponder reads {readBack}.";
     }
 }
+
+/// <summary>
+/// Speaks the squawk when it CHANGES, whichever way it was set — the panel field, a hardware
+/// transponder, the sim's own keys, an ATC assignment — the way the A380 and the PMDGs do it
+/// (<c>TRANSPONDER CODE:1</c> rides the 1 Hz batch). Pure: the definition feeds it deliveries on
+/// the UI thread and does the speaking.
+///
+/// Baseline-first: the first code after connecting is remembered, never spoken. An unchanged
+/// redelivery (the status display's per-second force-read while the Transponder panel is open)
+/// is silent. While a typed entry is in progress (<see cref="EntryInProgress"/>) every delivery
+/// is tracked but none is spoken: the entry presses four keypad digits, so the transponder may
+/// show intermediate codes as they land, and its own confirmation ("Squawk 1200.") is the
+/// sentence — the final code must not be spoken a second time after it.
+/// </summary>
+public sealed class Md11SquawkAnnouncer
+{
+    private int _last = -1;
+
+    /// <summary>Set by the typed entry for its duration; deliveries are tracked, not spoken.</summary>
+    public bool EntryInProgress { get; set; }
+
+    /// <summary>A code arrived: "Squawk 1234" when it is a change worth speaking, else null.</summary>
+    public string? OnUpdate(double bco16)
+    {
+        int bcd = (int)Math.Round(bco16);
+        bool first = _last < 0;
+        bool changed = bcd != _last;
+        _last = bcd;
+        if (first || !changed || EntryInProgress) return null;
+        return $"Squawk {Md11Squawk.Decode(bcd)}";
+    }
+
+    /// <summary>Forget everything: the next code is a baseline again (reconnect, aircraft switch).</summary>
+    public void Reset()
+    {
+        _last = -1;
+        EntryInProgress = false;
+    }
+}

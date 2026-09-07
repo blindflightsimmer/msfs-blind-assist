@@ -161,7 +161,8 @@ Aircraft state:
   Shift+G    Read gear lever position
   B          Read the captain's altimeter in both units, "Altimeter: 1013, 29.92", or
              "Altimeter standard"
-  Shift+W    Read gross weight
+  W          Read gross weight (pounds)
+  Shift+W    Read gross weight (kilograms)
 
 
 INDICATOR LIGHTS ON THE PANELS
@@ -238,6 +239,8 @@ transponder back and tells you what it actually shows - "Squawk 1200", or "Squaw
 take, the transponder reads 5473" if the aircraft refused it. The current code is the panel's
 last row, "Squawk code". The eight digit keys are not listed any more; the field replaces them.
 Ident, Clear, the mode knob, the system select and the TCAS filter are where they were.
+Whenever the squawk changes - a hardware transponder, the sim's own keys, an assignment from
+ATC - it is announced ("Squawk 1200"). Mute it in Ctrl+M under "Squawk code".
 
 
 THE SPEEDBRAKE

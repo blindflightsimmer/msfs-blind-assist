@@ -101,7 +101,9 @@ public class Md11SquawkTests
         Assert.Equal("TRANSPONDER CODE:1", code.Name);
         Assert.Equal("BCO16", code.Units);
         Assert.Equal(SimVarType.SimVar, code.Type);
-        Assert.Equal(UpdateFrequency.OnRequest, code.UpdateFrequency);
+        Assert.Equal(UpdateFrequency.Continuous, code.UpdateFrequency);   // rides the batch: it announces on change
+        Assert.True(code.IsAnnounced);
+        Assert.False(code.ExcludeFromMonitorManager);                     // "Squawk code" is the Ctrl+M row that mutes it
         Assert.True(code.RenderAsReadOnlyStatus);
     }
 
@@ -112,5 +114,42 @@ public class Md11SquawkTests
         var placement = Md11PanelLayout.Place(Md11ControlMap.Load());
         Assert.Empty(placement.Unplaced);
         Assert.All(Md11Squawk.DigitButtons, b => Assert.Contains(b, Md11PanelLayout.SupersededByEntryField));
+    }
+
+    /// <summary>
+    /// The code is announced on CHANGE whichever way it was set — a hardware transponder, the
+    /// sim's own keys, an ATC assignment — the way the A380 and the PMDGs do it. Baseline-first,
+    /// and an unchanged redelivery (the panel's per-second force-read) is silent.
+    /// </summary>
+    [Fact]
+    public void TheCode_IsAnnouncedOnChange_BaselineFirst()
+    {
+        var a = new Md11SquawkAnnouncer();
+        Assert.Null(a.OnUpdate(0x1200));            // connecting mid-flight is not a change
+        Assert.Null(a.OnUpdate(0x1200));            // redelivered unchanged
+        Assert.Equal("Squawk 5473", a.OnUpdate(0x5473));
+        Assert.Null(a.OnUpdate(0x5473));
+        a.Reset();
+        Assert.Null(a.OnUpdate(0x7000));            // a baseline again after a reconnect
+        Assert.Equal("Squawk 1200", a.OnUpdate(0x1200));
+    }
+
+    /// <summary>
+    /// A typed entry presses four digits and speaks its own confirmation, so while it is in
+    /// progress the transponder's intermediate codes are tracked but never spoken, and the final
+    /// code is not spoken a second time after the confirmation. A change AFTER the entry speaks.
+    /// </summary>
+    [Fact]
+    public void ATypedEntry_IsNeitherNarratedDigitByDigit_NorRepeatedAfterItsConfirmation()
+    {
+        var a = new Md11SquawkAnnouncer();
+        a.OnUpdate(0x1200);
+        a.EntryInProgress = true;
+        Assert.Null(a.OnUpdate(0x5000));
+        Assert.Null(a.OnUpdate(0x5400));
+        Assert.Null(a.OnUpdate(0x5473));
+        a.EntryInProgress = false;                  // the confirmation has spoken "Squawk 5473."
+        Assert.Null(a.OnUpdate(0x5473));            // the same code again is not news
+        Assert.Equal("Squawk 1200", a.OnUpdate(0x1200));
     }
 }
