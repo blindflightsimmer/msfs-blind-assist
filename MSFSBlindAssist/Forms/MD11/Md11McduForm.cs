@@ -468,6 +468,7 @@ public class Md11McduForm : Form
             return;
         }
 
+        TickBlankClocks(manager);   // every unit's clock, ahead of the current unit's own judgement and its no-data return
         var screen = manager.GetScreen(_unit);
         if (screen == null)
         {
@@ -485,7 +486,6 @@ public class Md11McduForm : Form
         // "has it stayed blank?" question can only be answered by this timer tick, never by a
         // delivery. Judging it after the shortcut would mean a persistent blank was never
         // reported at all.
-        TickBlankClocks(manager);
         var presence = Md11McduPresence.Classify(screen);
         var since = _blankSince[(int)_unit];
         var blankFor = since == null ? TimeSpan.Zero : DateTime.UtcNow - since.Value;
