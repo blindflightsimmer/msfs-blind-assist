@@ -34,8 +34,10 @@ public static class Md11McduTitle
     /// MOD F-PLN the moment a waypoint is entered — and it is the same page with the same lines
     /// under the cursor; SEC F-PLN is a different flight plan and stays distinct. "ACT F-PLN" is
     /// captured live on this aircraft; "MOD" is the Honeywell convention and not yet captured —
-    /// folding a prefix that never appears is harmless, and folding one that does can only KEEP
-    /// a cursor on its row, never throw it.
+    /// folding a prefix that never appears is harmless. The one residual is prefix versus BARE:
+    /// "ACT F-PLN" and a plain "F-PLN" page would read as one page and keep the cursor mid-page
+    /// on different lines; no bare-named twin of a prefixed page has been captured, and the
+    /// direction is a kept cursor, never a thrown one.
     /// </summary>
     private static readonly string[] PendingPrefixes = { "ACT ", "MOD " };
 

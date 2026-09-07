@@ -55,13 +55,17 @@ public class Md11McduForm : Form
     private string _lastAnnouncedTitle = "";
 
     /// <summary>
-    /// When the unit went continuously blank, or null while it has content.
+    /// When each UNIT went continuously blank, or null while it has content — one clock per
+    /// unit, all three ticked on every poll (<see cref="TickBlankClocks"/>), because the clock
+    /// belongs to the unit and not to the window: a switch to a unit that has been blank for a
+    /// while must judge it settled at once, not hold the previous unit's page under the new
+    /// unit's name for the settle time.
     ///
     /// The MD-11 ERASES its CDU before redrawing, so a blank frame arrives on every page change
     /// and the new page follows 202-438 ms later (37 measured page changes). This is what lets a
     /// repaint be held rather than believed. See <see cref="Md11McduPresence.BlankSettleMs"/>.
     /// </summary>
-    private DateTime? _blankSince;
+    private readonly DateTime?[] _blankSince = new DateTime?[3];
     private string _lastAnnouncedScratchpad = "";
     private string _lastAnnouncedFlags = "";
 
@@ -224,14 +228,16 @@ public class Md11McduForm : Form
             // combo — the double-announce this handler exists to prevent.
             _screen = null;
             _lastRendered = null;
-            _blankSince = null;                      // the new unit's blank clock starts now
 
             // The previous unit's pending scratchpad announce is void: fired now, it would read
             // the new unit's pad against the old unit's text and could say "Scratchpad cleared"
-            // for a scratchpad nobody cleared. Re-baseline on what the new unit shows.
+            // for a scratchpad nobody cleared. Re-baseline on what the new unit shows — and the
+            // annunciator flags likewise, or a unit whose MSG was already lit would announce
+            // "MSG" as though it had just come on.
             _scratchpadDebounceTimer?.Stop();
             var switched = _sim.Md11McduDataManager?.GetScreen(_unit);
             _lastAnnouncedScratchpad = switched?.Scratchpad.Trim() ?? "";
+            _lastAnnouncedFlags = switched == null ? "" : FlagsOf(switched);
 
             // Render at once only when the new unit has CONTENT. A blank or never-delivered unit
             // waits for the next 250 ms tick, whose blank-hold judgement (Md11McduPresence.Decide)
@@ -479,11 +485,10 @@ public class Md11McduForm : Form
         // "has it stayed blank?" question can only be answered by this timer tick, never by a
         // delivery. Judging it after the shortcut would mean a persistent blank was never
         // reported at all.
+        TickBlankClocks(manager);
         var presence = Md11McduPresence.Classify(screen);
-        if (presence == Md11McduPresenceState.Blank) _blankSince ??= DateTime.UtcNow;
-        else _blankSince = null;
-
-        var blankFor = _blankSince == null ? TimeSpan.Zero : DateTime.UtcNow - _blankSince.Value;
+        var since = _blankSince[(int)_unit];
+        var blankFor = since == null ? TimeSpan.Zero : DateTime.UtcNow - since.Value;
 
         // Hold the page through a repaint: draw nothing, say nothing, leave the list and the
         // screen-reader cursor exactly where they are.
@@ -565,13 +570,30 @@ public class Md11McduForm : Form
 
         // Never leave the list with nothing selected (a first-ever render of a frame whose title
         // row is empty adopts no title and restores no cursor): the screen reader would announce
-        // an empty list and Space/Enter would act on nothing. Same guard as the advisory's.
-        if (mcduDisplay.SelectedIndex < 0 && mcduDisplay.Items.Count > 0) mcduDisplay.SelectedIndex = 0;
+        // an empty list and Space/Enter would act on nothing. Line 1, as a page change lands.
+        if (mcduDisplay.SelectedIndex < 0 && mcduDisplay.Items.Count > 0)
+            mcduDisplay.SelectedIndex = mcduDisplay.Items.Count > 1 ? 1 : 0;
 
         if (screen.Scratchpad.Trim() != _lastAnnouncedScratchpad)
         {
             _scratchpadDebounceTimer?.Stop();
             _scratchpadDebounceTimer?.Start();
+        }
+    }
+
+    /// <summary>
+    /// Advances every unit's blank clock from its latest frame: started when the unit reads blank,
+    /// cleared when it has content or has never delivered. Three classifications of cached objects
+    /// per 250 ms tick — the same three RenderAdvisory already walks.
+    /// </summary>
+    private void TickBlankClocks(Md11McduDataManager manager)
+    {
+        var now = DateTime.UtcNow;
+        foreach (var u in new[] { Md11McduUnit.Left, Md11McduUnit.Center, Md11McduUnit.Right })
+        {
+            var s = manager.GetScreen(u);
+            if (s != null && Md11McduPresence.Classify(s) == Md11McduPresenceState.Blank) _blankSince[(int)u] ??= now;
+            else _blankSince[(int)u] = null;
         }
     }
 
@@ -646,12 +668,7 @@ public class Md11McduForm : Form
     /// </summary>
     private void UpdateStatus(Md11McduScreen screen)
     {
-        var lit = new List<string>(4);
-        if (screen.Msg) lit.Add("MSG");
-        if (screen.Fail) lit.Add("FAIL");
-        if (screen.Dspy) lit.Add("DSPY");
-        if (screen.Ofst) lit.Add("OFST");
-
+        var lit = LitFlags(screen);
         var flags = string.Join(", ", lit);
         statusLabel.Text = lit.Count == 0 ? "MCDU: connected" : "MCDU: " + flags;
 
@@ -664,6 +681,19 @@ public class Md11McduForm : Form
             if (added.Count > 0) _announcer.Announce(string.Join(", ", added));
         }
     }
+
+    private static List<string> LitFlags(Md11McduScreen screen)
+    {
+        var lit = new List<string>(4);
+        if (screen.Msg) lit.Add("MSG");
+        if (screen.Fail) lit.Add("FAIL");
+        if (screen.Dspy) lit.Add("DSPY");
+        if (screen.Ofst) lit.Add("OFST");
+        return lit;
+    }
+
+    /// <summary>The annunciator string UpdateStatus compares against — what a unit switch re-baselines to.</summary>
+    private static string FlagsOf(Md11McduScreen screen) => string.Join(", ", LitFlags(screen));
 
     // ---------------------------------------------------------------------------------
     // Lifecycle
