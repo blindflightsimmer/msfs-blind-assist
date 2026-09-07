@@ -154,11 +154,12 @@ public class Md11SquawkTests
     }
 
     /// <summary>
-    /// Entries are counted: a second Set pressed inside the first entry's three-second window
-    /// must not have the first entry's end unmute the second one mid-flight (its keypad presses
-    /// would then be spoken as the transponder's setting). A reconnect's Reset re-baselines the
-    /// code but leaves a running entry's silence to the entry itself; an EndEntry with nothing
-    /// running is harmless.
+    /// Entries are counted: a second Set pressed inside the first entry's window (two to four
+    /// seconds — the digits, the commit wait and the read-back) must not have the first entry's
+    /// end unmute the second one mid-flight (its keypad presses would then be spoken as the
+    /// transponder's setting). A reconnect's Reset re-baselines the code but leaves a running
+    /// entry's silence to the entry itself; an EndEntry with nothing running must not drive the
+    /// counter below zero, or the next entry would start unmuted.
     /// </summary>
     [Fact]
     public void OverlappingEntries_StaySilentUntilTheLastOneEnds()
@@ -175,8 +176,11 @@ public class Md11SquawkTests
         Assert.Null(a.OnUpdate(0x5473));
         a.EndEntry();
         Assert.False(a.EntryInProgress);
-        a.EndEntry();                               // nothing running: no underflow
+        a.EndEntry();                               // nothing running: must not underflow…
         Assert.False(a.EntryInProgress);
+        a.BeginEntry();
+        Assert.True(a.EntryInProgress);             // …or this entry would start unmuted
+        a.EndEntry();
         Assert.Null(a.OnUpdate(0x5473));            // the baseline after the reset, not a change
         Assert.Equal("Squawk 1200", a.OnUpdate(0x1200));
     }

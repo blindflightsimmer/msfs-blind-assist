@@ -926,7 +926,20 @@ public partial class MainForm
                 button.Location = new Point(110, 0);
                 button.Size = new Size(60, 23);
                 button.AccessibleName = $"Set {varDef.DisplayName}";
-                
+
+                // Enter in the box presses Set, as the guides say ("press Set or Enter") and as
+                // every dedicated dialog already does through AcceptButton. A bare TextBox swallows
+                // Enter, so a blind pilot who typed a squawk and pressed Enter heard nothing at all
+                // and flew on the old code (found in review 2026-09-07). SuppressKeyPress stops the
+                // WinForms ding; the click path is the same one the button takes.
+                textBox.KeyDown += (s4, e4) =>
+                {
+                    if (e4.KeyCode != Keys.Enter) return;
+                    e4.SuppressKeyPress = true;
+                    e4.Handled = true;
+                    button.PerformClick();
+                };
+
                 button.Click += (s2, e2) =>
                 {
                     // Aircraft delegation: let the loaded aircraft claim _SET keys

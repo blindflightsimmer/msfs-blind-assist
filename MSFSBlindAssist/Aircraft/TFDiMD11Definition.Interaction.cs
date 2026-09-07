@@ -278,7 +278,25 @@ public partial class TFDiMD11Definition
         }
         if (_bus == null) return;
         _squawk.BeginEntry();   // UI thread: deliveries during the entry are tracked, not spoken
-        _ = SetSquawkAsync(code, simConnect, announcer);
+        var previous = _squawkEntries;
+        _squawkEntries = RunSquawkEntryAfterAsync(previous, code, simConnect, announcer);
+    }
+
+    /// <summary>
+    /// Typed entries run one after another. Each presses four keypad digits over the paced bus, so
+    /// two overlapping entries would interleave their digits into a code nobody typed; instead the
+    /// second waits for the first to finish (read-back included) and then enters its own, so the
+    /// transponder ends on the code typed last and each entry gets its own confirmation — a pilot
+    /// who corrects a typo with a quick second Set hears "Squawk 1200." then "Squawk 1207.". Only
+    /// ever touched on the UI thread (the panel's Set button).
+    /// </summary>
+    private Task _squawkEntries = Task.CompletedTask;
+
+    private async Task RunSquawkEntryAfterAsync(Task previous, string code, SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    {
+        try { await previous.ConfigureAwait(false); }
+        catch (Exception ex) { Log.Debug("MD11", $"Previous squawk entry faulted: {ex.Message}"); }
+        await SetSquawkAsync(code, sim, announcer).ConfigureAwait(false);
     }
 
     /// <summary>
