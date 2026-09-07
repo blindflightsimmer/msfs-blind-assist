@@ -910,7 +910,8 @@ def parse_tooltip(tooltip):
     # '%!' and the literal '%%'); it is a typo in the aircraft. The Auxiliary IRS selector ships
     # '%{if}%Nav%{else}Off%{end}', which left it with no positions at all and made MSFSBA render
     # the third IRS switch as a read-only row. Drop the stray sign and parse what TFDi meant.
-    tooltip = re.sub(r"%(?=[A-Za-z])", "", tooltip)
+    # The lookbehind keeps the second '%' of a literal '%%' in front of a letter.
+    tooltip = re.sub(r"(?<!%)%(?=[A-Za-z])", "", tooltip)
 
     # The first L:var mentioned anywhere is what the state text keys off.
     state_var = None

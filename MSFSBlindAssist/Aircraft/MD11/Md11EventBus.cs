@@ -57,7 +57,7 @@ public sealed class Md11EventBus : IDisposable
     /// It was 30 ms, which is under one frame at 30 fps — short enough that a CDU key's press and
     /// release could fall in the same tick and the key silently do nothing (the FMC-paging bug).
     /// </summary>
-    private const int MinGapMs = 60;
+    internal const int MinGapMs = 60;
 
     /// <summary>Legacy alias — the down/up gap is now the single <see cref="MinGapMs"/> pacing gap.</summary>
     private const int PressReleaseGapMs = MinGapMs;
@@ -81,6 +81,9 @@ public sealed class Md11EventBus : IDisposable
     private int _seq;
 
     private int _dropped;
+
+    /// <summary>CEVENTs queued and not yet written. The walker adds <see cref="Pending"/> × <see cref="MinGapMs"/> to a click's timestamp so a click behind a burst is judged when it lands, not when it was queued.</summary>
+    public int Pending => _queue.Count;
 
     public Md11EventBus(SimConnectManager sim)
     {

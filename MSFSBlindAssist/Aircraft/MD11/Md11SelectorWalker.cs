@@ -54,6 +54,10 @@ namespace MSFSBlindAssist.Aircraft.MD11;
 /// only the direct-write fallback. <see cref="ToggleCoreAsync"/> reads them fresh, clicks once when
 /// the position differs, and confirms on delivery; a click that changes nothing still hands over
 /// to the fallback.
+/// Twenty-five controls today — also the AFS overrides, the cargo vents, the EVAC horn shutoff, the
+/// thunderstorm light, the cargo-door arm switch and the ADG lever, whose double tap a single click
+/// cannot satisfy (it falls to the direct write as before). The click is decided only on a
+/// DELIVERED read — no delivery, no click — and is stamped at the bus's expected write time.
 ///
 /// The walk is bounded and always terminates: <see cref="MaxSteps"/> caps the step count, and a
 /// control that will not move breaks out rather than hammering CEVENT — which TFDi explicitly asks
@@ -269,11 +273,20 @@ public static class Md11SelectorWalker
     /// The current position: one fresh delivery, plus a settle poll only when the value is not
     /// resting on a point detent (a var caught mid-travel). Legacy protocol for batch-covered vars.
     /// </summary>
-    private static async Task<double?> ReadSettledAsync(Md11Control control, List<double> ordered, Md11WalkIo io, CancellationToken ct)
+    /// <param name="requireDelivery">
+    /// True for a decision that must rest on a DELIVERED value — a toggle click. A fresh read that
+    /// times out then yields null instead of the cache, so the caller refuses rather than acts on
+    /// a position that may be stale (a cached "Off" on a running engine's fuel switch would fire the
+    /// click and cut fuel). The step walker leaves this false: its steps are relative and its stall
+    /// detection catches a stale read on its own.
+    /// </param>
+    private static async Task<double?> ReadSettledAsync(Md11Control control, List<double> ordered, Md11WalkIo io,
+        CancellationToken ct, bool requireDelivery = false)
     {
         if (!io.FreshReads) return await LegacyReadAsync(io, ct).ConfigureAwait(false);
 
-        var v = await io.ReadFresh(ct).ConfigureAwait(false) ?? io.ReadCached();
+        var v = await io.ReadFresh(ct).ConfigureAwait(false);
+        if (v == null && !requireDelivery) v = io.ReadCached();
         if (v == null) return null;
         if (OnDetent(control, ordered, v.Value)) return v;
 
@@ -281,9 +294,14 @@ public static class Md11SelectorWalker
         for (var waited = 0; waited < SettleCapMs; waited += PollMs)
         {
             await io.Delay(PollMs, ct).ConfigureAwait(false);
-            var next = await io.ReadFresh(ct).ConfigureAwait(false) ?? prev;
-            if (Math.Abs(next - prev) < SettledTolerance) return next;
-            prev = next;
+            var next = await io.ReadFresh(ct).ConfigureAwait(false);
+            if (next == null)
+            {
+                if (requireDelivery) return null;
+                next = prev;
+            }
+            if (Math.Abs(next.Value - prev) < SettledTolerance) return next;
+            prev = next.Value;
         }
         return prev;
     }
@@ -297,8 +315,14 @@ public static class Md11SelectorWalker
     private static async Task<double?> StepAndReadAsync(Md11Control control, List<double> ordered, Md11WalkIo io,
         int eventId, int beforeIdx, CancellationToken ct)
     {
+        // The bus writes queued CEVENTs MinGapMs apart, so a click behind a burst (the Dial-A-Flap
+        // analog walk can queue dozens) lands later than it is fired. Stamp the click, and the
+        // no-movement deadline below, at the time it will WRITE: judged at enqueue time, a still-
+        // queued click reads as "no movement", the direct-write fallback runs, and the click then
+        // lands and undoes it — silently, with the combo showing the target.
+        var lands = io.Now() + (long)io.Pending() * Md11EventBus.MinGapMs;
         io.Fire(eventId);
-        LastClick[control.NodeId] = io.Now();
+        LastClick[control.NodeId] = lands;
 
         if (!io.FreshReads)
         {
@@ -306,7 +330,7 @@ public static class Md11SelectorWalker
             return await LegacyReadAsync(io, ct).ConfigureAwait(false);
         }
 
-        var deadline = io.Now() + StepCapMs;
+        var deadline = lands + StepCapMs;
         double? prev = null, last = null;
         while (true)
         {
@@ -395,12 +419,15 @@ public static class Md11SelectorWalker
     }
 
     /// <summary>
-    /// Toggle protocol: read where the control is (a fresh read for an individual-def var — a
-    /// toggle decided on a stale cache would flip a fuel switch the wrong way), click once if that
-    /// is not the target, and confirm on delivery through the same settle rules as a step. A click
-    /// that changes nothing returns false so <c>SafeWalk</c>'s direct-write fallback still runs —
-    /// what every one of these controls relied on before, now after the cockpit's own action
-    /// instead of in place of it.
+    /// Toggle protocol: read where the control is — a DELIVERED fresh read, never the cache: a
+    /// toggle decided on a stale cache would flip a running engine's fuel switch the wrong way —
+    /// click once if that is not the target, and confirm on delivery through the same settle rules
+    /// as a step. No delivery, no click, and a click that changes nothing both return false so
+    /// <c>SafeWalk</c>'s direct-write fallback still runs — it is absolute, so it is safe where a
+    /// click is not, and it is what every one of these controls relied on before, now after the
+    /// cockpit's own action instead of in place of it. Not offered to a var without fresh reads:
+    /// two agreeing cache reads of a batch-covered var are both pre-delivery (none of the 25
+    /// single-click controls is batch-covered today; this guards the day one is).
     /// </summary>
     private static async Task<bool> ToggleCoreAsync(Md11Control control, double targetValue, int clickId, Md11WalkIo io, CancellationToken ct)
     {
@@ -410,6 +437,11 @@ public static class Md11SelectorWalker
             Log.Debug("MD11", $"{control.NodeId}: single-click control with {ordered.Count} positions — cannot toggle.");
             return false;
         }
+        if (!io.FreshReads)
+        {
+            Log.Debug("MD11", $"{control.NodeId}: no fresh reads for this var — leaving the toggle to the direct write.");
+            return false;
+        }
 
         var node = control.NodeId;
         var targetIdx = PositionIndex(control, ordered, targetValue);
@@ -417,15 +449,17 @@ public static class Md11SelectorWalker
         await SettleAfterRecentClickAsync(node, io, ct).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
 
-        var current = await ReadSettledAsync(control, ordered, io, ct).ConfigureAwait(false);
+        var current = await ReadSettledAsync(control, ordered, io, ct, requireDelivery: true).ConfigureAwait(false);
         if (current == null)
         {
-            Log.Debug("MD11", $"{node}: state var {control.StateVar} unreadable — aborting toggle.");
+            Log.Debug("MD11", $"{node}: no fresh delivery of {control.StateVar} — not toggling on a cached position.");
             return false;
         }
-        if (PositionIndex(control, ordered, current.Value) == targetIdx) return true;
+        var currentIdx = PositionIndex(control, ordered, current.Value);
+        if (currentIdx == targetIdx) return true;
 
-        var after = await StepAndReadAsync(control, ordered, io, clickId, PositionIndex(control, ordered, current.Value), ct).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();   // superseded while reading: the newer selection decides
+        var after = await StepAndReadAsync(control, ordered, io, clickId, currentIdx, ct).ConfigureAwait(false);
         if (after == null) return false;
         if (PositionIndex(control, ordered, after.Value) == targetIdx) return true;
 

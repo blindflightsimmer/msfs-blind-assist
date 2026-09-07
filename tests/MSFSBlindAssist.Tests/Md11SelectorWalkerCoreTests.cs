@@ -41,6 +41,8 @@ public class Md11SelectorWalkerCoreTests : IDisposable
         public bool Fresh = true;               // false = the legacy cache-poll protocol
         public bool BlockUp;                    // clicks in the increasing direction are ignored (a one-way inhibit)
         public bool ToggleOnLeft;               // TFDi's single-click template: Left flips 0 <-> Max
+        public bool FreshTimesOut;              // every fresh read times out (null); the cache still answers
+        public int PendingQueue;                // CEVENTs queued ahead of ours on the bus
         public int ReadFreshCalls;
         public int RequestReadCalls;
         public readonly List<int> Clicks = new();
@@ -78,10 +80,11 @@ public class Md11SelectorWalkerCoreTests : IDisposable
 
         public Md11WalkIo Io() => new()
         {
-            ReadFresh = _ => { ReadFreshCalls++; return Task.FromResult(Read()); },
+            ReadFresh = _ => { ReadFreshCalls++; return Task.FromResult(FreshTimesOut ? (double?)null : Read()); },
             ReadCached = () => _visible,
             RequestRead = () => { RequestReadCalls++; Read(); },
             Fire = Fire,
+            Pending = () => PendingQueue,
             Delay = (ms, _) => { Clock += ms; return Task.CompletedTask; },
             Now = () => Clock,
             FreshReads = Fresh,
@@ -374,6 +377,8 @@ public class Md11SelectorWalkerCoreTests : IDisposable
 
         Assert.Equal(new[] { Left }, sw.Clicks);
         Assert.Equal(25, sw.Position);
+        Assert.Equal(6, sw.ReadFreshCalls);   // 1 before the click, 3 lagged, then two agreeing reads of 25
+        Assert.Equal(400, sw.Clock);          // the two-agreeing-reads settle, not the first index change
     }
 
     [Fact]
@@ -399,14 +404,57 @@ public class Md11SelectorWalkerCoreTests : IDisposable
         Assert.Empty(sw.Clicks);
     }
 
+    /// <summary>
+    /// The one property that matters on a fuel switch: no delivered read, no click. A stale cached
+    /// "Off" on a running engine must never be turned into a click; the fallback's absolute write
+    /// takes over instead.
+    /// </summary>
     [Fact]
-    public async Task SingleClickSwitch_LegacyProtocol_AlsoToggles()
+    public async Task SingleClickSwitch_WhenNoFreshDeliveryArrives_DoesNotClick()
+    {
+        var sw = new FakeSwitch(0) { Max = 1, ToggleOnLeft = true, FreshTimesOut = true };
+
+        Assert.False(await Walk(SingleClick(NewId()), 1, sw));
+
+        Assert.Empty(sw.Clicks);
+        Assert.True(sw.ReadFreshCalls > 0);
+    }
+
+    /// <summary>
+    /// A click queued behind a burst on the CEVENT bus is judged when it will land, not when it was
+    /// queued: the no-movement deadline moves out by the backlog, and the next walk on the node
+    /// waits for the landed click to settle.
+    /// </summary>
+    [Fact]
+    public async Task AClickQueuedBehindABurst_IsJudgedWhenItLands()
+    {
+        var id = NewId();
+        var control = SingleClick(id);
+        var backlogMs = 20 * Md11EventBus.MinGapMs;
+
+        var stuck = new FakeSwitch(0) { Max = 1, ToggleOnLeft = true, Inhibited = true, PendingQueue = 20 };
+        Assert.False(await Walk(control, 1, stuck));
+        Assert.True(stuck.Clock - stuck.ClickTimes[0] >= backlogMs + Md11SelectorWalker.StepCapMs,
+            $"deadline not moved out by the backlog: waited {stuck.Clock - stuck.ClickTimes[0]} ms");
+
+        var sw = new FakeSwitch(0) { Max = 1, ToggleOnLeft = true, PendingQueue = 20 };
+        Assert.True(await Walk(control, 1, sw));
+        var clickedAt = sw.ClickTimes[0];
+        sw.FirstReadAt = -1;
+        Assert.True(await Walk(control, 1, sw));   // already there: no click, but the read must wait for the landed one
+        Assert.Empty(sw.Clicks.Skip(1));
+        Assert.True(sw.FirstReadAt >= clickedAt + backlogMs + Md11SelectorWalker.ClickSettleMs,
+            $"second walk read at {sw.FirstReadAt}, click queued at {clickedAt}");
+    }
+
+    /// <summary>A var without fresh reads cannot support an absolute decision; the toggle steps aside for the direct write.</summary>
+    [Fact]
+    public async Task SingleClickSwitch_WithoutFreshReads_DoesNotToggle_LeavesTheFallback()
     {
         var sw = new FakeSwitch(0) { Max = 1, ToggleOnLeft = true, Fresh = false };
 
-        Assert.True(await Walk(SingleClick(NewId()), 1, sw));
+        Assert.False(await Walk(SingleClick(NewId()), 1, sw));
 
-        Assert.Equal(new[] { Left }, sw.Clicks);
-        Assert.Equal(0, sw.ReadFreshCalls);
+        Assert.Empty(sw.Clicks);
     }
 }
