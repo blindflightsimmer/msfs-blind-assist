@@ -330,6 +330,12 @@ public static class Md11SelectorWalker
             return await LegacyReadAsync(io, ct).ConfigureAwait(false);
         }
 
+        // A change seen before the click is even written cannot be the click's doing (an external
+        // actuation inside the backlog window — a starter cutout, say) and must not be reported as
+        // it: wait for the write before the first read.
+        var backlog = lands - io.Now();
+        if (backlog > 0) await io.Delay((int)backlog, ct).ConfigureAwait(false);
+
         var deadline = lands + StepCapMs;
         double? prev = null, last = null;
         while (true)
