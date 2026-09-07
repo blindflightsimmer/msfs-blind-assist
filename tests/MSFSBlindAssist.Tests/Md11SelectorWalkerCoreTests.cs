@@ -40,6 +40,7 @@ public class Md11SelectorWalkerCoreTests : IDisposable
         public int DetentsPerClick = 1;         // 2 = the click lands twice
         public bool Fresh = true;               // false = the legacy cache-poll protocol
         public bool BlockUp;                    // clicks in the increasing direction are ignored (a one-way inhibit)
+        public bool ToggleOnLeft;               // TFDi's single-click template: Left flips 0 <-> Max
         public int ReadFreshCalls;
         public int RequestReadCalls;
         public readonly List<int> Clicks = new();
@@ -56,6 +57,11 @@ public class Md11SelectorWalkerCoreTests : IDisposable
             Clicks.Add(id);
             ClickTimes.Add(Clock);
             if (Inhibited) return;
+            if (ToggleOnLeft)
+            {
+                if (id == Left) { Position = Position == 0 ? Max : 0; _pendingReads = LagReads; }
+                return;
+            }
             var up = (id == Left) == LeftIncreases;
             if (up && BlockUp) return;
             Position = Math.Clamp(Position + (up ? 1 : -1) * DetentsPerClick, 0, Max);
@@ -91,6 +97,16 @@ public class Md11SelectorWalkerCoreTests : IDisposable
         StateVar = id,
         ValueMap = new Dictionary<string, string> { ["0"] = "Off", ["1"] = "Auto", ["2"] = "On" },
         Events = new Dictionary<string, int> { ["LEFT_BUTTON_DOWN"] = Left, ["RIGHT_BUTTON_DOWN"] = Right },
+    };
+
+    /// <summary>TFDi's single-click template: one LEFT_BUTTON_DOWN event, two positions.</summary>
+    private static Md11Control SingleClick(string id, string off = "Off", string on = "Nav") => new()
+    {
+        NodeId = id,
+        Kind = Md11Kinds.Switch,
+        StateVar = id,
+        ValueMap = new Dictionary<string, string> { ["0"] = off, ["1"] = on },
+        Events = new Dictionary<string, int> { ["LEFT_BUTTON_DOWN"] = Left },
     };
 
     private static Task<bool> Walk(Md11Control c, double target, FakeSwitch sw)
@@ -303,5 +319,94 @@ public class Md11SelectorWalkerCoreTests : IDisposable
         var leverOrdered = Md11SelectorWalker.OrderedValues(lever);
         Assert.True(Md11SelectorWalker.OnDetent(lever, leverOrdered, 70));    // a point detent
         Assert.False(Md11SelectorWalker.OnDetent(lever, leverOrdered, 50));   // Dial-A-Flap is a range, never "settled" by value alone
+    }
+
+    // ---------------------------------------------------------------------------------
+    // Single-click toggles (IRS selectors, fuel switches, starters, parking brake, gear lever …)
+    // ---------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task SingleClickSwitch_AlreadyAtTarget_ClicksNothing()
+    {
+        var sw = new FakeSwitch(1) { Max = 1, ToggleOnLeft = true };
+
+        Assert.True(await Walk(SingleClick(NewId()), 1, sw));
+
+        Assert.Empty(sw.Clicks);
+    }
+
+    [Fact]
+    public async Task SingleClickSwitch_ThatDiffers_ClicksOnce_AndLands_WithoutLearningPolarity()
+    {
+        var id = NewId();
+        var sw = new FakeSwitch(0) { Max = 1, ToggleOnLeft = true };
+
+        Assert.True(await Walk(SingleClick(id), 1, sw));
+
+        Assert.Equal(new[] { Left }, sw.Clicks);
+        Assert.Equal(1, sw.Position);
+        Assert.Null(Md11SelectorWalker.PolarityFor(id));   // a toggle has no direction to learn
+        Assert.InRange(sw.Clock, 1, 400);                  // one click, confirmed within a poll or two
+    }
+
+    [Fact]
+    public async Task SingleClickSwitch_BackToOff_ClicksOnce()
+    {
+        var sw = new FakeSwitch(1) { Max = 1, ToggleOnLeft = true };
+
+        Assert.True(await Walk(SingleClick(NewId()), 0, sw));
+
+        Assert.Equal(new[] { Left }, sw.Clicks);
+        Assert.Equal(0, sw.Position);
+    }
+
+    /// <summary>
+    /// The gear lever's var is the lever's 0-25 TRAVEL while the map says {0 Up, 1 Down}: the
+    /// nearest-position rule reads 25 as Down, the click flips it, and the read-back settles on
+    /// two agreeing reads because 25 sits on no point detent.
+    /// </summary>
+    [Fact]
+    public async Task GearLikeTravelVar_TogglesUpToDown_AndConfirmsOnceSettled()
+    {
+        var sw = new FakeSwitch(0) { Max = 25, ToggleOnLeft = true, LagReads = 3 };
+
+        Assert.True(await Walk(SingleClick(NewId(), "Up", "Down"), 1, sw));
+
+        Assert.Equal(new[] { Left }, sw.Clicks);
+        Assert.Equal(25, sw.Position);
+    }
+
+    [Fact]
+    public async Task SingleClickSwitch_Inhibited_ClicksOnce_ThenReportsFalse_ForTheFallback()
+    {
+        var sw = new FakeSwitch(0) { Max = 1, ToggleOnLeft = true, Inhibited = true };
+
+        Assert.False(await Walk(SingleClick(NewId()), 1, sw));
+
+        Assert.Equal(new[] { Left }, sw.Clicks);
+        Assert.True(sw.ClickTimes.Count == 1 && sw.Clock - sw.ClickTimes[0] >= Md11SelectorWalker.StepCapMs);
+    }
+
+    [Fact]
+    public async Task SingleClickControl_WithoutPositions_CannotToggle_AndClicksNothing()
+    {
+        var control = SingleClick(NewId());
+        control.ValueMap = new Dictionary<string, string>();   // the FDR event marker shape
+        var sw = new FakeSwitch(0) { Max = 1, ToggleOnLeft = true };
+
+        Assert.False(await Walk(control, 1, sw));
+
+        Assert.Empty(sw.Clicks);
+    }
+
+    [Fact]
+    public async Task SingleClickSwitch_LegacyProtocol_AlsoToggles()
+    {
+        var sw = new FakeSwitch(0) { Max = 1, ToggleOnLeft = true, Fresh = false };
+
+        Assert.True(await Walk(SingleClick(NewId()), 1, sw));
+
+        Assert.Equal(new[] { Left }, sw.Clicks);
+        Assert.Equal(0, sw.ReadFreshCalls);
     }
 }

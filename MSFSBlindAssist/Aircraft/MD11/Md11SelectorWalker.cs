@@ -48,6 +48,13 @@ namespace MSFSBlindAssist.Aircraft.MD11;
 /// way (on the engine fire handles the walked axis is the agent discharge) — so it gives up at once,
 /// and so does a second no-movement in the same walk.
 ///
+/// A control on TFDi's SINGLE-CLICK template has one event that toggles its two positions (the
+/// IRS selectors, fuel switches, starters, parking brake, gear lever, QNH/QFE, minimums mode, the
+/// transponder mode switches). Those cannot be stepped and used to fail the walk outright, leaving
+/// only the direct-write fallback. <see cref="ToggleCoreAsync"/> reads them fresh, clicks once when
+/// the position differs, and confirms on delivery; a click that changes nothing still hands over
+/// to the fallback.
+///
 /// The walk is bounded and always terminates: <see cref="MaxSteps"/> caps the step count, and a
 /// control that will not move breaks out rather than hammering CEVENT — which TFDi explicitly asks
 /// us not to overuse.
@@ -139,8 +146,13 @@ public static class Md11SelectorWalker
         var (incEvent, decEvent) = StepEvents(control);
         if (incEvent == null || decEvent == null)
         {
-            Log.Debug("MD11", $"{control.NodeId}: no step events — cannot walk.");
-            return false;
+            var click = ToggleEvent(control);
+            if (click == null)
+            {
+                Log.Debug("MD11", $"{control.NodeId}: no step events — cannot walk.");
+                return false;
+            }
+            return await ToggleCoreAsync(control, targetValue, click.Value, io, ct).ConfigureAwait(false);
         }
 
         var ordered = OrderedValues(control);
@@ -366,6 +378,60 @@ public static class Md11SelectorWalker
         if (left != null && right != null) return (left, right);
 
         return (null, null);
+    }
+
+    /// <summary>
+    /// The one click of a control built on TFDi's single-click template
+    /// (<c>TFDi_Design_MD11_Switch_SingleEvent_Template</c>): the IRS selectors, the fuel switches
+    /// and starters, the parking brake, the gear lever, QNH/QFE, the minimums mode, the transponder
+    /// mode switches. That click TOGGLES the state — there is nothing to step and no polarity to
+    /// learn. Null for a control that has a step pair (those walk) or no click at all.
+    /// </summary>
+    private static int? ToggleEvent(Md11Control c)
+    {
+        var (inc, dec) = StepEvents(c);
+        if (inc != null && dec != null) return null;
+        return c.Event("LEFT_BUTTON_DOWN");
+    }
+
+    /// <summary>
+    /// Toggle protocol: read where the control is (a fresh read for an individual-def var — a
+    /// toggle decided on a stale cache would flip a fuel switch the wrong way), click once if that
+    /// is not the target, and confirm on delivery through the same settle rules as a step. A click
+    /// that changes nothing returns false so <c>SafeWalk</c>'s direct-write fallback still runs —
+    /// what every one of these controls relied on before, now after the cockpit's own action
+    /// instead of in place of it.
+    /// </summary>
+    private static async Task<bool> ToggleCoreAsync(Md11Control control, double targetValue, int clickId, Md11WalkIo io, CancellationToken ct)
+    {
+        var ordered = OrderedValues(control);
+        if (ordered.Count != 2)
+        {
+            Log.Debug("MD11", $"{control.NodeId}: single-click control with {ordered.Count} positions — cannot toggle.");
+            return false;
+        }
+
+        var node = control.NodeId;
+        var targetIdx = PositionIndex(control, ordered, targetValue);
+
+        await SettleAfterRecentClickAsync(node, io, ct).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+
+        var current = await ReadSettledAsync(control, ordered, io, ct).ConfigureAwait(false);
+        if (current == null)
+        {
+            Log.Debug("MD11", $"{node}: state var {control.StateVar} unreadable — aborting toggle.");
+            return false;
+        }
+        if (PositionIndex(control, ordered, current.Value) == targetIdx) return true;
+
+        var after = await StepAndReadAsync(control, ordered, io, clickId, PositionIndex(control, ordered, current.Value), ct).ConfigureAwait(false);
+        if (after == null) return false;
+        if (PositionIndex(control, ordered, after.Value) == targetIdx) return true;
+
+        Log.Debug("MD11",
+            $"{node}: toggle click left the control at {after.Value} (target {targetValue}) — control may be inhibited or unpowered.");
+        return false;
     }
 
     /// <summary>
