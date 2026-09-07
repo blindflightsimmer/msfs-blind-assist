@@ -316,4 +316,19 @@ public class Md11PanelLayoutTests
         Assert.Equal(new[] { "MD11_ENG1_N1", "MD11_ENG2_N1", "MD11_ENG3_N1" }, def.GetPanelDisplayVariables()["Engines"]);
         Assert.Empty(def.GetPanelControls()["Engines"]);
     }
+
+    /// <summary>The typed minimums field sits right after its side's minimums knob, and is a control row exactly once.</summary>
+    [Fact]
+    public void MinimumsFields_FollowTheirKnobs_OnTheEfisPanels()
+    {
+        var controls = new TFDiMD11Definition().GetPanelControls();
+        foreach (var side in Md11Minimums.Sides)
+        {
+            var keys = controls[side.PanelName];
+            int knob = keys.IndexOf(side.AnchorKey);
+            Assert.True(knob >= 0, $"{side.AnchorKey} missing from {side.PanelName}");
+            Assert.Equal(side.SetKey, keys[knob + 1]);
+            Assert.Equal(1, controls.Values.SelectMany(k => k).Count(k => k == side.SetKey));
+        }
+    }
 }

@@ -1,4 +1,5 @@
 using MSFSBlindAssist.Aircraft;
+using MSFSBlindAssist.Aircraft.MD11;
 using MSFSBlindAssist.SimConnect;
 
 namespace MSFSBlindAssist.Tests;
@@ -246,5 +247,20 @@ public class Md11DefinitionStateTests
         var d = Vars["MD11_CAP_ALTIMETER"];
         Assert.True(d.IsAnnounced);
         Assert.False(d.ExcludeFromMonitorManager);
+    }
+
+    [Fact]
+    public void MinimumsFields_AreTypedEntries_PreFilledFromTheReading()
+    {
+        foreach (var side in Md11Minimums.Sides)
+        {
+            var d = Vars[side.SetKey];
+            Assert.Equal($"{side.Name} Minimums", d.DisplayName);
+            Assert.Equal(side.WriteVar, d.Name);
+            Assert.Equal(SimVarType.LVar, d.Type);
+            Assert.Equal(UpdateFrequency.Never, d.UpdateFrequency);   // claimed by HandleUIVariableSet; never read, never generic-written
+            Assert.Equal(side.ReadKey, d.CurrentValueSourceKey);
+            Assert.False(d.PreventTextInput);
+        }
     }
 }

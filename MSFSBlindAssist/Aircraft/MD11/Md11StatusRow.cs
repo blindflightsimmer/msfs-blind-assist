@@ -40,7 +40,10 @@ public static class Md11StatusRow
 
             case "MD11_CAP_MINIMUMS":
             case "MD11_FO_MINIMUMS":
-                return value <= 0 ? "not set" : $"{Whole(value)} feet";
+                // The export shows the RADIO or the BARO minimums depending on the side's mode
+                // switch (measured — see Md11Minimums), so the row names the mode when the switch
+                // has been read; before that it is just the feet.
+                return value <= 0 ? "not set" : Md11Minimums.DescribeReading(value, read(Md11Minimums.ModeKeyFor(key)));
 
             case Md11Fcp.ReadCaptainBaro:
             case "MD11_FO_ALTIMETER":

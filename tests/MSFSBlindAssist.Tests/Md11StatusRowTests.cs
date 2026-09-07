@@ -83,4 +83,15 @@ public class Md11StatusRowTests
         Assert.Null(Md11StatusRow.Readout("MD11_AP_STATE", 1, None));   // ValueDescriptions: "AP 1"
         Assert.Null(Md11StatusRow.Readout("COM_ACTIVE_FREQUENCY:1", 135500, None));   // its own override
     }
+
+    [Fact]
+    public void Readout_MinimumsRows_SayWhichModeTheyShow()
+    {
+        static double? Radio(string k) => k == "MD11_LECP_MINIMUMS_KB" ? 0 : null;
+        static double? Baro(string k) => k == "MD11_RECP_MINIMUMS_KB" ? 1 : null;
+        Assert.Equal("200 feet, radio", Md11StatusRow.Readout("MD11_CAP_MINIMUMS", 200, Radio));
+        Assert.Equal("500 feet, baro", Md11StatusRow.Readout("MD11_FO_MINIMUMS", 500, Baro));
+        Assert.Equal("200 feet", Md11StatusRow.Readout("MD11_CAP_MINIMUMS", 200, None));   // mode never read
+        Assert.Equal("not set", Md11StatusRow.Readout("MD11_FO_MINIMUMS", 0, Baro));
+    }
 }

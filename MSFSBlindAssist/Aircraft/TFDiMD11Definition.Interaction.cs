@@ -65,6 +65,11 @@ public partial class TFDiMD11Definition
             SwapCom(varKey, simConnect, announcer);
             return true;
         }
+        if (Md11Minimums.TryGetSide(varKey, out var minimumsSide))
+        {
+            SetMinimums(minimumsSide, value, simConnect, announcer);
+            return true;
+        }
         if (varKey == Md11SpeedbrakeSystem.ArmKey)
         {
             SetGroundSpoilers(value, simConnect, announcer);
@@ -198,6 +203,49 @@ public partial class TFDiMD11Definition
         catch (Exception ex)
         {
             Log.Debug("MD11", $"COM tuning read-back failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>The inbox is consumed within the next FCC cycle and the export rides the 1 Hz batch; allow one batch after the write, and one more after the forced read.</summary>
+    private const int MinimumsSettleMs = 1200;
+    private const int MinimumsReadBackMs = 1100;
+
+    /// <summary>
+    /// The typed minimums: validated (a refusal is spoken and nothing is sent), written to the
+    /// side's inbox, then read back and spoken — including, when the side's mode switch is on
+    /// Radio, the fact that the display cannot show the baro value just set (Md11Minimums).
+    /// </summary>
+    private void SetMinimums(Md11MinimumsSide side, double typed, SimConnectManager simConnect, ScreenReaderAnnouncer announcer)
+    {
+        Attach(simConnect);
+        _uiContext ??= SynchronizationContext.Current;
+        if (!Md11Minimums.TryParse(typed, out var feet, out var error))
+        {
+            announcer.Announce(error);
+            return;
+        }
+        if (_bus == null) return;
+        _bus.WriteExternal(side.WriteVar, feet);
+        _ = VerifyMinimumsAsync(side, feet, simConnect, announcer);
+    }
+
+    private async Task VerifyMinimumsAsync(Md11MinimumsSide side, int feet, SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    {
+        try
+        {
+            await Task.Delay(MinimumsSettleMs).ConfigureAwait(false);
+            sim.RequestVariable(side.ReadKey, forceUpdate: true);   // batch-covered: honoured on the next delivery
+            sim.RequestVariable(side.ModeKey, forceUpdate: true);   // an OnRequest switch: answers at once
+            await Task.Delay(MinimumsReadBackMs).ConfigureAwait(false);
+            var read = sim.GetCachedVariableValue(side.ReadKey);
+            var mode = sim.GetCachedVariableValue(side.ModeKey);
+            bool? modeIsBaro = mode is double m ? m > 0.5 : null;
+            var sentence = Md11Minimums.Confirmation(side, feet, read, modeIsBaro);
+            OnUiThread(() => announcer.Announce(sentence));
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("MD11", $"Minimums read-back failed: {ex.Message}");
         }
     }
 

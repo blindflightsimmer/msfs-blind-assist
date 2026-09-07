@@ -173,6 +173,24 @@ public partial class TFDiMD11Definition
             RenderAsReadOnlyStatus = true,
         };
 
+        // ---- Minimums (typed) ---------------------------------------------------------
+        // The BARO minimums take a typed value through MD11_EXTCTL_{CAP,FO}_MIN (probed live
+        // 2026-09-06: consumed in either mode, applied to the baro minimums only, inbox idles at
+        // -9999 — see Md11Minimums). One "_SET" field per side; HandleUIVariableSet claims both,
+        // so the LVar/Never registration costs no data definition and is never written generically.
+        foreach (var side in Md11Minimums.Sides)
+        {
+            v[side.SetKey] = new SimVarDefinition
+            {
+                Name = side.WriteVar,
+                DisplayName = $"{side.Name} Minimums",
+                Type = SimVarType.LVar,
+                UpdateFrequency = UpdateFrequency.Never,
+                CurrentValueSourceKey = side.ReadKey,   // the box pre-fills with what the display shows
+                HelpText = $"Type the {side.Name.ToLowerInvariant()} baro minimums in feet and press Set",
+            };
+        }
+
         // ---- Speedbrake --------------------------------------------------------------
         // The lever's PULL (0 down, 1 = ground spoilers armed, 2 = auto-extended on landing) is
         // a row of this app's own; the Spoilers row is the map control, re-pointed at the
@@ -291,6 +309,7 @@ public partial class TFDiMD11Definition
         var displays = placement.Displays;
         AddReadoutPanels(placement.Structure, placement.Controls, displays);
         AddSquawkEntry(placement.Controls, displays);
+        AddMinimumsEntries(placement.Controls);
         AddRadiosPanel(placement.Structure, placement.Controls, displays);
         AddSpeedbrakeArm(placement.Controls);
 
@@ -312,6 +331,20 @@ public partial class TFDiMD11Definition
         keys.Insert(at < 0 ? 0 : at + 1, Md11Squawk.SetKey);
         if (!displays.TryGetValue("Transponder", out var rows)) displays["Transponder"] = rows = new List<string>();
         rows.Insert(0, Md11Squawk.CodeKey);
+    }
+
+    /// <summary>
+    /// The typed minimums field is not a map control, so the layout table cannot name it: it goes
+    /// right after the side's own minimums knob on its EFIS panel (see Md11Minimums).
+    /// </summary>
+    private static void AddMinimumsEntries(Dictionary<string, List<string>> controls)
+    {
+        foreach (var side in Md11Minimums.Sides)
+        {
+            if (!controls.TryGetValue(side.PanelName, out var keys)) continue;
+            int at = keys.IndexOf(side.AnchorKey);
+            keys.Insert(at < 0 ? keys.Count : at + 1, side.SetKey);
+        }
     }
 
     /// <summary>The Ground spoilers row sits right after the lever it belongs to.</summary>
