@@ -69,6 +69,13 @@ public static class Md11StatusRow
                     Md11AutoflightState.VerticalValue(value, fpa));
             }
 
+            // Engine N1 to a tenth, the EAD's own resolution — and the only way a blind pilot gets
+            // N1 on this aircraft, the EAD being WASM-rendered.
+            case "MD11_ENG1_N1":
+            case "MD11_ENG2_N1":
+            case "MD11_ENG3_N1":
+                return $"{value.ToString("0.0", CultureInfo.InvariantCulture)} percent";
+
             case "MD11_APU_N1":
             case "MD11_APU_N2":
                 return $"{Whole(value)} percent";

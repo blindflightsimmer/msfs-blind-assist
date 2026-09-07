@@ -351,6 +351,9 @@ public partial class TFDiMD11Definition
             "MD11_AP_STATE", "MD11_ATS_STATE",
             "MD11_AFS_SPD", "MD11_AFS_HDG", "MD11_AFS_ALT", "MD11_AFS_VS",
         };
+        // The three exported N1s (undocumented but real — see BuildExportVariables). The hotkey
+        // guide promised N1 in the Read-outs; until this panel existed nothing carried it.
+        displays["Engines"] = new List<string> { "MD11_ENG1_N1", "MD11_ENG2_N1", "MD11_ENG3_N1" };
         displays["APU Status"] = new List<string> { "MD11_APU_STATE", "MD11_APU_N1", "MD11_APU_N2" };
         displays["Fuel Quantity"] = new List<string>
         {
@@ -358,7 +361,7 @@ public partial class TFDiMD11Definition
             "MD11_OVHD_TANK_AUX_VAL", "MD11_OVHD_TANK_TAIL_VAL",
         };
 
-        var names = new List<string> { "V-Speeds", "Minimums and Altimeters", "Autoflight Status", "APU Status", "Fuel Quantity" };
+        var names = new List<string> { "V-Speeds", "Minimums and Altimeters", "Autoflight Status", "Engines", "APU Status", "Fuel Quantity" };
         foreach (var name in names) controls[name] = new List<string>();   // display-only: MainForm needs the (empty) entry
         structure["Read-outs"] = names;
     }

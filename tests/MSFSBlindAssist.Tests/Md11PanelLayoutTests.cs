@@ -301,4 +301,19 @@ public class Md11PanelLayoutTests
         Assert.Equal(lamp, P.Displays[panel][^1]);
         Assert.DoesNotContain(lamp, P.Controls[panel]);
     }
+
+    /// <summary>
+    /// The hotkey guide promised engine N1 in the Read-outs section, but no panel carried it — a
+    /// pilot could not read N1 on demand at all. The three exported N1s are their own panel,
+    /// between the autoflight and APU read-outs.
+    /// </summary>
+    [Fact]
+    public void ReadoutsSection_HasAnEnginesPanel_WithTheThreeN1s()
+    {
+        var def = new TFDiMD11Definition();
+        Assert.Equal(new[] { "V-Speeds", "Minimums and Altimeters", "Autoflight Status", "Engines", "APU Status", "Fuel Quantity" },
+                     def.GetPanelStructure()["Read-outs"]);
+        Assert.Equal(new[] { "MD11_ENG1_N1", "MD11_ENG2_N1", "MD11_ENG3_N1" }, def.GetPanelDisplayVariables()["Engines"]);
+        Assert.Empty(def.GetPanelControls()["Engines"]);
+    }
 }
