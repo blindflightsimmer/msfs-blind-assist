@@ -206,7 +206,11 @@ public partial class TFDiMD11Definition
         }
     }
 
-    /// <summary>The inbox is consumed within the next FCC cycle and the export rides the 1 Hz batch; allow one batch after the write, and one more after the forced read.</summary>
+    /// <summary>
+    /// The inbox is consumed within the next FCC cycle and the export rides the 1 Hz batch. The
+    /// two delays together span more than two batch deliveries, which is what actually makes the
+    /// read-back current; the forced reads in between are belt-and-braces.
+    /// </summary>
     private const int MinimumsSettleMs = 1200;
     private const int MinimumsReadBackMs = 1100;
 
@@ -234,8 +238,12 @@ public partial class TFDiMD11Definition
         try
         {
             await Task.Delay(MinimumsSettleMs).ConfigureAwait(false);
-            sim.RequestVariable(side.ReadKey, forceUpdate: true);   // batch-covered: honoured on the next delivery
-            sim.RequestVariable(side.ModeKey, forceUpdate: true);   // also batch-covered (the switch's silent mirror): honoured on the next delivery
+            // Both keys are batch-covered (the read-back and the mode switch's silent mirror), so
+            // a forced read is honoured on the next delivery rather than answered immediately —
+            // and the 2.3 s of waiting either side already spans two of those. These are
+            // belt-and-braces, not the thing that makes the read current.
+            sim.RequestVariable(side.ReadKey, forceUpdate: true);
+            sim.RequestVariable(side.ModeKey, forceUpdate: true);
             await Task.Delay(MinimumsReadBackMs).ConfigureAwait(false);
             var read = sim.GetCachedVariableValue(side.ReadKey);
             var mode = sim.GetCachedVariableValue(side.ModeKey);
@@ -652,7 +660,13 @@ public partial class TFDiMD11Definition
     /// <summary>
     /// A hold-to-test button (<see cref="Md11TestButtons"/>): cover lifted first when guarded,
     /// then DOWN, held, UP. The lights the test brings on speak for themselves through the lamp
-    /// path; the press feedback stays silent, as for every stateless button.
+    /// path.
+    ///
+    /// Eight of the eleven are stateless, so their press feedback is silent and the lights are
+    /// the whole read-out. The other three carry a lamp state block of their own — cargo fire and
+    /// smoke, hydraulic, cargo door — so those DO speak a feedback sentence ("…: Test" or
+    /// "…: On"), composed from whatever their lamp reads at the settle and corrected by the lamp
+    /// if it lands later.
     /// </summary>
     private async Task HoldTestButtonAsync(Md11Control control, SimConnectManager sim, bool guarded)
     {

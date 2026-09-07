@@ -111,7 +111,10 @@ public static class Md11Fcp
     //
     // STD is a MODE, not a value: pushing the baro knob (BaroKnob's press) toggles it, and the
     // "STD" indication lives on the PFD — which is WASM-rendered and unreadable, so the STD state
-    // cannot be read back. The push is offered as a toggle, honestly labelled.
+    // cannot be read back. That is why the Ctrl+B dialog's "Standard" does NOT push the knob: it
+    // writes standard pressure as a VALUE to all three inboxes (StandardFor), the PMDG dialogs'
+    // way, so the result is readable. The knob push stays available as an EFIS-panel control in
+    // its own right (BaroKnob), where it is honestly labelled as a toggle.
     // ---------------------------------------------------------------------------------
 
     public const string ReadCaptainBaro = "MD11_CAP_ALTIMETER";
