@@ -75,14 +75,27 @@ public static class Md11Squawk
 /// is silent. While a typed entry is in progress (<see cref="EntryInProgress"/>) every delivery
 /// is tracked but none is spoken: the entry presses four keypad digits, so the transponder may
 /// show intermediate codes as they land, and its own confirmation ("Squawk 1200.") is the
-/// sentence — the final code must not be spoken a second time after it.
+/// sentence — the final code must not be spoken a second time after it. Entries are COUNTED,
+/// not flagged: a second Set pressed inside the first entry's window must not have the first
+/// entry's end unmute the second one mid-flight, and a reconnect's <see cref="Reset"/> leaves a
+/// running entry's silence in place — the entry ends it itself.
 /// </summary>
 public sealed class Md11SquawkAnnouncer
 {
     private int _last = -1;
+    private int _entries;
 
-    /// <summary>Set by the typed entry for its duration; deliveries are tracked, not spoken.</summary>
-    public bool EntryInProgress { get; set; }
+    /// <summary>True while at least one typed entry is running; deliveries are tracked, not spoken.</summary>
+    public bool EntryInProgress => _entries > 0;
+
+    /// <summary>A typed entry started (UI thread).</summary>
+    public void BeginEntry() => _entries++;
+
+    /// <summary>A typed entry ended, however it ended (UI thread, posted from the entry's finally).</summary>
+    public void EndEntry()
+    {
+        if (_entries > 0) _entries--;
+    }
 
     /// <summary>A code arrived: "Squawk 1234" when it is a change worth speaking, else null.</summary>
     public string? OnUpdate(double bco16)
@@ -95,10 +108,6 @@ public sealed class Md11SquawkAnnouncer
         return $"Squawk {Md11Squawk.Decode(bcd)}";
     }
 
-    /// <summary>Forget everything: the next code is a baseline again (reconnect, aircraft switch).</summary>
-    public void Reset()
-    {
-        _last = -1;
-        EntryInProgress = false;
-    }
+    /// <summary>The next code is a baseline again (reconnect, aircraft switch). A running entry keeps its silence until it ends.</summary>
+    public void Reset() => _last = -1;
 }

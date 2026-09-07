@@ -237,7 +237,7 @@ The Pedestal section's Transponder panel has a Squawk field: type the four digit
 (or Enter). MSFS Blind Assist presses the aircraft's own keypad for you, then reads the
 transponder back and tells you what it actually shows - "Squawk 1200", or "Squawk entry did not
 take, the transponder reads 5473" if the aircraft refused it. The current code is the panel's
-last row, "Squawk code". The eight digit keys are not listed any more; the field replaces them.
+first row, "Squawk code". The eight digit keys are not listed any more; the field replaces them.
 Ident, Clear, the mode knob, the system select and the TCAS filter are where they were.
 Whenever the squawk changes - a hardware transponder, the sim's own keys, an assignment from
 ATC - it is announced ("Squawk 1200"). Mute it in Ctrl+M under "Squawk code".

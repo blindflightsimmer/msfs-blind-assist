@@ -144,12 +144,40 @@ public class Md11SquawkTests
     {
         var a = new Md11SquawkAnnouncer();
         a.OnUpdate(0x1200);
-        a.EntryInProgress = true;
+        a.BeginEntry();
         Assert.Null(a.OnUpdate(0x5000));
         Assert.Null(a.OnUpdate(0x5400));
         Assert.Null(a.OnUpdate(0x5473));
-        a.EntryInProgress = false;                  // the confirmation has spoken "Squawk 5473."
+        a.EndEntry();                               // the confirmation has spoken "Squawk 5473."
         Assert.Null(a.OnUpdate(0x5473));            // the same code again is not news
+        Assert.Equal("Squawk 1200", a.OnUpdate(0x1200));
+    }
+
+    /// <summary>
+    /// Entries are counted: a second Set pressed inside the first entry's three-second window
+    /// must not have the first entry's end unmute the second one mid-flight (its keypad presses
+    /// would then be spoken as the transponder's setting). A reconnect's Reset re-baselines the
+    /// code but leaves a running entry's silence to the entry itself; an EndEntry with nothing
+    /// running is harmless.
+    /// </summary>
+    [Fact]
+    public void OverlappingEntries_StaySilentUntilTheLastOneEnds()
+    {
+        var a = new Md11SquawkAnnouncer();
+        a.OnUpdate(0x1200);
+        a.BeginEntry();
+        a.BeginEntry();
+        a.EndEntry();                               // the first entry's finally
+        Assert.True(a.EntryInProgress);
+        Assert.Null(a.OnUpdate(0x5400));            // the second entry's intermediate code
+        a.Reset();                                  // a reconnect mid-entry
+        Assert.True(a.EntryInProgress);
+        Assert.Null(a.OnUpdate(0x5473));
+        a.EndEntry();
+        Assert.False(a.EntryInProgress);
+        a.EndEntry();                               // nothing running: no underflow
+        Assert.False(a.EntryInProgress);
+        Assert.Null(a.OnUpdate(0x5473));            // the baseline after the reset, not a change
         Assert.Equal("Squawk 1200", a.OnUpdate(0x1200));
     }
 }

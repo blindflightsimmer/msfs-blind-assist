@@ -277,17 +277,19 @@ public partial class TFDiMD11Definition
             return;
         }
         if (_bus == null) return;
-        _squawk.EntryInProgress = true;   // UI thread: deliveries during the entry are tracked, not spoken
+        _squawk.BeginEntry();   // UI thread: deliveries during the entry are tracked, not spoken
         _ = SetSquawkAsync(code, simConnect, announcer);
     }
 
     /// <summary>
-    /// Post-request wait for the entry's read-back. The code rides the 1 Hz continuous batch, so
-    /// a forced read is honoured on the NEXT delivery rather than answered at once — the same
-    /// reasoning as the minimums read-back, and why 400 ms (right for the individually
-    /// registered var this used to be) is not enough any more.
+    /// How long the entry's read-back waits for the code to be DELIVERED. The code rides the 1 Hz
+    /// continuous batch, so a forced read is honoured on the next delivery — up to a whole period
+    /// plus jitter — rather than answered at once; a fixed sleep was either too short (a
+    /// successful entry read back as "did not take", then contradicted by the change
+    /// announcement) or needlessly long. ReadFreshAsync completes on the delivery itself; this
+    /// is only the ceiling, two periods with margin.
     /// </summary>
-    private const int SquawkReadBackMs = 1100;
+    private const int SquawkReadBackTimeoutMs = 2500;
 
     private async Task SetSquawkAsync(string code, SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
@@ -299,9 +301,7 @@ public partial class TFDiMD11Definition
                 await _bus.PressAndSettleAsync(key, settleMs: 150).ConfigureAwait(false);
             }
             await Task.Delay(SquawkCommitMs).ConfigureAwait(false);
-            sim.RequestVariable(Md11Squawk.CodeKey, forceUpdate: true);
-            await Task.Delay(SquawkReadBackMs).ConfigureAwait(false);
-            var read = sim.GetCachedVariableValue(Md11Squawk.CodeKey);
+            var read = await sim.ReadFreshAsync(Md11Squawk.CodeKey, SquawkReadBackTimeoutMs).ConfigureAwait(false);
             var readBack = read is double v ? Md11Squawk.Decode(v) : null;
             OnUiThread(() => announcer.Announce(Md11Squawk.Confirmation(code, readBack)));
         }
@@ -314,7 +314,7 @@ public partial class TFDiMD11Definition
             // Posted after the confirmation (same context, in order) and on EVERY exit — a
             // missing digit key or an exception must not leave the change announcement muted
             // for the rest of the session.
-            OnUiThread(() => _squawk.EntryInProgress = false);
+            OnUiThread(() => _squawk.EndEntry());
         }
     }
 
