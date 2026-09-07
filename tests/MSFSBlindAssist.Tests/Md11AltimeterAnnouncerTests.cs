@@ -44,6 +44,22 @@ public class Md11AltimeterAnnouncerTests
         Assert.Null(a.Due(7000));
     }
 
+    /// <summary>
+    /// A panel's status-display auto-refresh force-reads this variable every second while the
+    /// "Minimums and Altimeters" panel is open, and a forced read re-delivers an UNCHANGED value.
+    /// That redelivery must not re-arm the settle, or the setting is never spoken while the panel
+    /// is open and is spoken stale when it closes.
+    /// </summary>
+    [Fact]
+    public void ARedeliveryOfTheSameValue_DoesNotReArmTheSettle()
+    {
+        var a = new Md11AltimeterAnnouncer();
+        a.OnUpdate(29.92, 0);                       // baseline
+        a.OnUpdate(29.95, 1000);                    // the change
+        a.OnUpdate(29.95, 2000);                    // a force-read redelivery, unchanged
+        Assert.Equal("Altimeter: 1014, 29.95", a.Due(2600));   // 1600 ms after the CHANGE, not 600 after the redelivery
+    }
+
     [Fact]
     public void StandardPressure_IsSpokenAsStandard_InEitherUnit()
     {

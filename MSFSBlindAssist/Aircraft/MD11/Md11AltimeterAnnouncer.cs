@@ -18,20 +18,34 @@ public sealed class Md11AltimeterAnnouncer
     public const int SettleMs = 1500;
 
     private bool _baselined;
+    private double _lastSeen;
     private double _pending;
     private bool _hasPending;
     private long _pendingAtMs;
     private string? _lastSpoken;
 
-    /// <summary>A value arrived (any value: the batch re-delivers unchanged ones too).</summary>
+    /// <summary>
+    /// A value arrived. An unchanged redelivery is ignored outright — it neither arms nor
+    /// re-stamps a pending settle. MainForm's status-display auto-refresh force-reads every
+    /// display variable of an open panel about once a second, and a forced read of a
+    /// batch-covered variable redelivers the same value even when nothing changed
+    /// (SimConnectManager.VarCache still raises the update). Left unguarded, that redelivery
+    /// would land inside the <see cref="SettleMs"/> window on every single delivery while the
+    /// "Minimums and Altimeters" panel is open, so the settle would never expire: the setting
+    /// would never be spoken while the panel is open, and would be spoken stale — describing a
+    /// change that may be minutes old — the moment the pilot leaves it.
+    /// </summary>
     public void OnUpdate(double value, long nowMs)
     {
         if (!_baselined)
         {
             _baselined = true;
+            _lastSeen = value;
             _lastSpoken = Sentence(value);   // never spoken: connecting mid-flight is not a change
             return;
         }
+        if (value == _lastSeen) return;      // unchanged redelivery: must not re-arm the settle
+        _lastSeen = value;
         _pending = value;
         _hasPending = true;
         _pendingAtMs = nowMs;

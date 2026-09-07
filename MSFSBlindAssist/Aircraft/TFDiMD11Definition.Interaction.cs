@@ -942,9 +942,7 @@ public partial class TFDiMD11Definition
                 var b = simConnect.GetCachedVariableValue(Md11Fcp.ReadCaptainBaro);
                 announcer.AnnounceImmediate(b == null
                     ? "Altimeter unavailable"
-                    : Md11Fcp.IsStandard(b.Value)
-                        ? "Altimeter standard"
-                        : $"Altimeter: {Md11Fcp.DescribeAltimeter(b.Value)}");
+                    : Md11AltimeterAnnouncer.Sentence(b.Value));
                 return true;
             }
 
