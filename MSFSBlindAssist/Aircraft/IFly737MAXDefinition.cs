@@ -1699,8 +1699,8 @@ public partial class IFly737MAXDefinition : BaseAircraftDefinition
     /// not survive into a later landing rollout (found in the MD-11's review, 2026-09-07). The
     /// machine keeps its V-speeds — the SDK shared memory fires only on change and its re-seed is
     /// an initial snapshot MainForm drops, so they would not come back. This override covers the
-    /// callout machine only; this definition's other announcers keep their own baselines as
-    /// before (the base resets the shared ones).
+    /// callout machine only; this definition's other announcers keep their own baselines exactly
+    /// as before (the base's ResetAnnouncementBaselines is empty).
     /// </summary>
     public override void ResetAnnouncementBaselines()
     {
@@ -1990,9 +1990,13 @@ public partial class IFly737MAXDefinition : BaseAircraftDefinition
                 var muted = Settings.SettingsManager.Current.IFlyDisabledMonitorVariablesSet;
                 foreach (string callout in callouts)
                 {
+                    // An unknown callout maps to no row and is never muted — fail open, as the
+                    // MD-11 does for the same shared machine (a new call must be spoken until it
+                    // is given a row, never swallowed by the V2 checkbox).
                     string gateKey = callout == "V1" ? "IFLY_V1"
-                                   : callout == "Rotate" ? "IFLY_VR" : "IFLY_V2";
-                    if (!muted.Contains(gateKey))
+                                   : callout == "Rotate" ? "IFLY_VR"
+                                   : callout == "V2" ? "IFLY_V2" : "";
+                    if (gateKey.Length == 0 || !muted.Contains(gateKey))
                         announcer.AnnounceImmediate(callout);
                 }
             }
