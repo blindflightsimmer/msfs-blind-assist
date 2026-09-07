@@ -751,8 +751,11 @@ public partial class TFDiMD11Definition
             {
                 var muted = Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet;
                 foreach (var callout in callouts)
-                    if (!muted.Contains(Md11TakeoffCallouts.MuteKeyFor(callout)))
+                {
+                    var row = Md11TakeoffCallouts.MuteKeyFor(callout);
+                    if (row.Length == 0 || !muted.Contains(row))   // no row: never muted
                         announcer.AnnounceImmediate(callout);
+                }
             }
             return true;
         }

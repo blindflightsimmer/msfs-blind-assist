@@ -266,7 +266,7 @@ public partial class TFDiMD11Definition
         _altimeter.Reset();                     // the next altimeter value is a baseline again
         _spdbrkHandle = double.NaN;             // the speedbrake re-baselines on reconnect too
         _lastSpoilerSpoken = string.Empty;
-        _takeoffCallouts.Reset();               // an arm from before the drop must not fire on a later landing
+        _takeoffCallouts.Reset();               // drops the arm, keeps the speeds: the batch delivered them before this runs
         _n1SeventyAnnounced = false;            // the take-off cue re-arms with the session too
         Array.Fill(_n1, double.NaN);
         _announceGeneration++;   // drops any dark transition still waiting out its settle

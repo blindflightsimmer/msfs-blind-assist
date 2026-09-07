@@ -1695,10 +1695,12 @@ public partial class IFly737MAXDefinition : BaseAircraftDefinition
     private bool _calloutOnGround = true; // last SIM_ON_GROUND sample (ramp default)
 
     /// <summary>
-    /// A SimConnect reconnect resets the roll-callout machine: an arm from before the drop must
-    /// not survive into a later landing rollout (found in the MD-11's review, 2026-09-07; the
-    /// speeds are redelivered with the first batch, and a fresh arm needs a ground sample below
-    /// 40 kt again).
+    /// A SimConnect reconnect disarms the roll-callout machine: an arm from before the drop must
+    /// not survive into a later landing rollout (found in the MD-11's review, 2026-09-07). The
+    /// machine keeps its V-speeds — the SDK shared memory fires only on change and its re-seed is
+    /// an initial snapshot MainForm drops, so they would not come back. This override covers the
+    /// callout machine only; this definition's other announcers keep their own baselines as
+    /// before (the base resets the shared ones).
     /// </summary>
     public override void ResetAnnouncementBaselines()
     {

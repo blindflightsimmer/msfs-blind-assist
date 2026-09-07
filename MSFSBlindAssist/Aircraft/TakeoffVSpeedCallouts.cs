@@ -26,10 +26,15 @@ namespace MSFSBlindAssist.Aircraft;
 ///   V-speeds run 90+ kt on a 737 and ~130-170 kt on the MD-11; a sub-40
 ///   "threshold" could re-fire inside the arm band).
 /// - Clearing V1 or VR (FMC route wipe) disarms immediately and silently.
-/// - <see cref="Reset"/> disarms and forgets the speeds and the last sample.
-///   The definitions call it on a SimConnect reconnect: the "a landing can
-///   never fire" guarantee above holds for a fresh or reset machine, and an arm
-///   from before the drop would otherwise survive into a later landing rollout.
+/// - <see cref="Reset"/> disarms and forgets the last sample but KEEPS the
+///   speeds. The definitions call it on a SimConnect reconnect: the "a landing
+///   can never fire" guarantee above holds for a fresh or reset machine, and an
+///   arm from before the drop would otherwise survive into a later landing
+///   rollout. The speeds stay because the aircraft does not necessarily send
+///   them again after a reconnect (the iFly's shared memory fires only on
+///   change and its re-seed is an initial snapshot MainForm drops; the MD-11's
+///   reset runs after its first batch has already delivered them) — clearing
+///   them silenced every callout for the rest of the session.
 /// </summary>
 public sealed class TakeoffVSpeedCallouts
 {
@@ -55,14 +60,14 @@ public sealed class TakeoffVSpeedCallouts
     public void SetV2(double knots) => _v2 = Sanitize(knots);
 
     /// <summary>
-    /// Forget everything: speeds, the last sample, the arm and the fired flags. For a SimConnect
-    /// reconnect — the speeds are redelivered with the first batch, and a fresh arm needs a
-    /// ground sample below <see cref="ArmBelowKnots"/> again, so nothing armed before the drop can
-    /// fire on a later landing.
+    /// Forget the roll — the last sample, the arm and the fired flags — but not the speeds. For a
+    /// SimConnect reconnect: a fresh arm needs a ground sample below <see cref="ArmBelowKnots"/>
+    /// again, so nothing armed before the drop can fire on a later landing; the speeds are kept
+    /// because a reconnect does not reliably redeliver them (see the class summary), and a
+    /// machine that forgot them went silent for the session.
     /// </summary>
     public void Reset()
     {
-        _v1 = _vr = _v2 = 0;
         _lastIas = double.NaN;
         _armed = false;
         _firedV1 = _firedVR = _firedV2 = false;
