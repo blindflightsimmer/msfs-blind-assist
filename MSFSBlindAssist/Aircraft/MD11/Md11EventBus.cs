@@ -189,11 +189,12 @@ public sealed class Md11EventBus : IDisposable
 
     /// <summary>
     /// How long to wait between queuing the DOWN and queuing the UP so the button is down for
-    /// <paramref name="holdMs"/> from the time the DOWN is written: the hold itself (never less
-    /// than one pacing gap, or the UP could be written in the same pump tick) plus the backlog
-    /// the DOWN has to wait behind.
+    /// <paramref name="holdMs"/> from the time the DOWN is written: the hold itself plus the
+    /// backlog the DOWN has to wait behind. The one-gap floor is belt-and-braces — the pump paces
+    /// every write by <see cref="MinGapMs"/> regardless of what a caller waits, so the UP can never
+    /// share a tick with the DOWN — kept so a zero hold still reads as "one paced press".
     /// </summary>
-    internal static int HoldDelayMs(int holdMs, int backlogMs) => Math.Max(holdMs, MinGapMs) + Math.Max(backlogMs, 0);
+    internal static int HoldDelayMs(int holdMs, int backlogMs) => Math.Max(holdMs, MinGapMs) + backlogMs;
 
     /// <summary>
     /// Writes one <c>MD11_EXTCTL_*</c> variable — the sanctioned direct-write family, and the only

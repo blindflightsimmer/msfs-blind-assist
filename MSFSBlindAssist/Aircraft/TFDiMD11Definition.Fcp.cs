@@ -233,7 +233,8 @@ public partial class TFDiMD11Definition
     /// writes standard pressure as a value to all three — deterministic, where the knob-push STD
     /// toggle it replaces could flip an already-STD side back to QNH. The captain's setting is
     /// confirmed by the settle announcement (Md11AltimeterAnnouncer), so the dialog adds no
-    /// second sentence.
+    /// second sentence; a side that did NOT take its value is reported by the read-back
+    /// (<see cref="VerifyAltimetersAsync"/>), and only that.
     /// </summary>
     private void ShowBaroDialog(SimConnectManager sim, ScreenReaderAnnouncer announcer,
         System.Windows.Forms.Form parentForm)
@@ -275,9 +276,8 @@ public partial class TFDiMD11Definition
     /// Writes <paramref name="typed"/> (or standard pressure when null) to every altimeter, each in
     /// the unit its own display currently shows. A display whose reading is not cached yet is
     /// assumed to be in the typed value's unit (or inHg for Standard) — the inbox is one-shot, so
-    /// a wrong-unit write would simply be corrected by the next entry. The first officer's and
-    /// standby settings are then read back (<see cref="VerifyAltimetersAsync"/>); the captain's
-    /// confirms itself through the settle announcement.
+    /// a wrong-unit write would simply be corrected by the next entry. All three settings are
+    /// then read back (<see cref="VerifyAltimetersAsync"/>).
     /// </summary>
     private void SetAllAltimeters(SimConnectManager sim, ScreenReaderAnnouncer announcer, double? typed)
     {
@@ -290,22 +290,32 @@ public partial class TFDiMD11Definition
             allWritten &= SetFcpValue(write, value, sim);
             written.Add((side, read, value));
         }
-        if (allWritten) _ = VerifyAltimetersAsync(sim, announcer, written);
+        int entry = ++_altimeterEntrySeq;   // UI thread: the dialog's callbacks and the tail below
+        if (allWritten) _ = VerifyAltimetersAsync(sim, announcer, written, entry);
     }
 
     /// <summary>
+    /// Latest entry wins for the altimeter read-back. The dialog stays open for more input, so a
+    /// Standard followed by the ATIS QNH within the read-back window — or a typo corrected — would
+    /// otherwise have the FIRST entry's tail compare its values against the SECOND entry's, already
+    /// in the cache, and speak a false "not set" citing the pilot's own newest value.
+    /// </summary>
+    private int _altimeterEntrySeq;
+
+    /// <summary>
     /// The three inboxes are proven, but a write that silently did not take would leave a pilot
-    /// flying an altimeter they believe they set — and only the captain's has a confirmation of
-    /// its own. So once the exports have had time to ride the 1 Hz batch, the first officer's and
-    /// standby readings are compared with what was written for each (its own unit, its own value)
-    /// and ONLY a disagreement is spoken, as one utterance: "First officer altimeter not set,
-    /// reads 1012, 29.88". Agreement stays silent — the screen reader announced the entry and the
-    /// captain's sentence confirms the set. Not gated on Ctrl+M: this is the read-back of the
-    /// pilot's own entry, an error condition, not a background change. Same shape as the
+    /// flying an altimeter they believe they set. The captain's settle announcement does not
+    /// cover that case either: it speaks only on a CHANGE, and it has a Ctrl+M row of its own. So
+    /// once the exports have had time to ride the 1 Hz batch, every side's reading is compared
+    /// with what was written for it (its own unit, its own value) and ONLY a disagreement is
+    /// spoken, as one utterance: "Standby altimeter not set, reads 1012, 29.88". Agreement stays
+    /// silent, so a successful set is never spoken twice — the screen reader announced the entry
+    /// and the captain's sentence confirms the set. Not gated on Ctrl+M: this is the read-back of
+    /// the pilot's own entry, an error condition, not a background change. Same shape as the
     /// minimums read-back and the altimeter settle: the UI-thread tail carries its own catch.
     /// </summary>
     private async Task VerifyAltimetersAsync(SimConnectManager sim, ScreenReaderAnnouncer announcer,
-        List<(string Side, string Read, double Value)> written)
+        List<(string Side, string Read, double Value)> written, int entry)
     {
         int generation = _announceGeneration;
         try
@@ -316,10 +326,10 @@ public partial class TFDiMD11Definition
                 try
                 {
                     if (generation != _announceGeneration) return;   // aircraft switch / reconnect
+                    if (entry != _altimeterEntrySeq) return;         // a newer entry owns the read-back
                     var shortfalls = new List<string>();
                     foreach (var (side, read, value) in written)
                     {
-                        if (read == Md11Fcp.ReadCaptainBaro) continue;   // the settle announcement covers it
                         var text = Md11Fcp.DescribeAltimeterShortfall(side, value, sim.GetCachedVariableValue(read));
                         if (text != null) shortfalls.Add(text);
                     }

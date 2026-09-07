@@ -133,7 +133,7 @@ public static class Md11Fcp
     public static readonly (string Side, string Read, string Write)[] Altimeters =
     {
         ("Captain", ReadCaptainBaro, WriteCaptainBaro),
-        ("First officer", ReadFoBaro, WriteFoBaro),
+        ("First Officer", ReadFoBaro, WriteFoBaro),
         ("Standby", ReadStandbyBaro, WriteStandbyBaro),
     };
 
@@ -213,8 +213,9 @@ public static class Md11Fcp
 
     /// <summary>
     /// Converts a typed value to the unit the display is CURRENTLY in, so "1013" and "29.92" both
-    /// do the right thing whichever unit the PFD is set to. <paramref name="displayValue"/> is the
-    /// current MD11_CAP_ALTIMETER reading, whose magnitude tells us the unit.
+    /// do the right thing whichever unit the PFD is set to. <paramref name="displayValue"/> is that
+    /// altimeter's OWN current reading (captain, first officer or standby export), whose magnitude
+    /// tells us the unit.
     /// </summary>
     public static double BaroToDisplayUnit(double typed, double displayValue)
     {
@@ -230,12 +231,14 @@ public static class Md11Fcp
     }
 
     /// <summary>
-    /// A written setting and its read-back describe the same pressure. The export follows the
-    /// display's own resolution — whole hectopascals (1013 for a written 1013.25; 1010.84 may show
-    /// as 1011 or 1010) or two-decimal inches — so the tolerance is one display step of the
-    /// coarser unit plus a hair: 1.01 hPa, or 0.011 inHg when both sides are inches. A value that
-    /// did not take at all is normally many steps away; a one-step miss is deliberately let
-    /// through, since a false "not set" would teach a pilot to distrust the real one.
+    /// A written setting and its read-back describe the same pressure. TFDi's tooltip renders the
+    /// export as whole hectopascals above 500 and two-decimal inches below, so the export MAY be
+    /// rounded or truncated (1013 for a written 1013.25; 1010.84 as 1011 or 1010) — unmeasured,
+    /// which is why the tolerance is one display step of the coarser unit plus a hair, covering
+    /// whole, truncated and fractional exports alike: 1.01 hPa, or 0.011 inHg when both sides
+    /// are inches. A value that did not take at all is normally many steps away; a one-step miss
+    /// is deliberately let through, since a false "not set" would teach a pilot to distrust the
+    /// real one.
     /// </summary>
     public static bool AltimeterAgrees(double written, double readBack)
     {
@@ -248,13 +251,14 @@ public static class Md11Fcp
     /// <summary>
     /// After Ctrl+B, the sentence for an altimeter that did NOT take its value — "Standby
     /// altimeter not set, reads 1012, 29.88" — or null when it did, or when nothing has been read
-    /// back yet (an export that never arrived is no evidence either way). Only a disagreement is
-    /// ever spoken: the entry itself was already announced by the screen reader and the captain's
-    /// setting confirms itself through <see cref="Md11AltimeterAnnouncer"/>.
+    /// back (an export that never arrived, or one reading 0 — a nonexistent L:var reads a flat 0,
+    /// and "reads 0, 0.00" is neither true nor actionable — is no evidence either way). Only a
+    /// disagreement is ever spoken: the entry itself was already announced by the screen reader
+    /// and the captain's setting confirms itself through <see cref="Md11AltimeterAnnouncer"/>.
     /// </summary>
     public static string? DescribeAltimeterShortfall(string side, double written, double? readBack)
     {
-        if (readBack is not double r || AltimeterAgrees(written, r)) return null;
+        if (readBack is not double r || r <= 0 || AltimeterAgrees(written, r)) return null;
         return $"{side} altimeter not set, reads {DescribeAltimeter(r)}";
     }
 

@@ -192,9 +192,10 @@ public class Md11FcpTests
 
     /// <summary>
     /// The read-back after Ctrl+B compares what was written with what the export shows, at one
-    /// display step of the coarser unit: the export shows whole hectopascals (a written 1013.25
-    /// reads 1013; a written 1010.84 may read 1011 or 1010) and two-decimal inches. A one-step
-    /// miss is let through on purpose — a false "not set" is the worse failure.
+    /// display step of the coarser unit: TFDi's tooltip renders whole hectopascals and two-decimal
+    /// inches, so the export may be rounded or truncated (a written 1013.25 may read 1013; a
+    /// written 1010.84 may read 1011 or 1010) — or fractional; the tolerance admits all three. A
+    /// one-step miss is let through on purpose — a false "not set" is the worse failure.
     /// </summary>
     [Theory]
     [InlineData(1013.25, 1013, true)]
@@ -217,10 +218,11 @@ public class Md11FcpTests
     {
         Assert.Null(Md11Fcp.DescribeAltimeterShortfall("Standby", 29.85, 29.85));
         Assert.Null(Md11Fcp.DescribeAltimeterShortfall("Standby", 29.85, null));   // never read back: no evidence
+        Assert.Null(Md11Fcp.DescribeAltimeterShortfall("Standby", 29.85, 0));      // a missing L:var reads 0: no evidence
         Assert.Equal("Standby altimeter not set, reads 1012, 29.88",
             Md11Fcp.DescribeAltimeterShortfall("Standby", 1020, 1012));
-        Assert.Equal("First officer altimeter not set, reads standard",
-            Md11Fcp.DescribeAltimeterShortfall("First officer", 30.12, 29.92));
+        Assert.Equal("First Officer altimeter not set, reads standard",
+            Md11Fcp.DescribeAltimeterShortfall("First Officer", 30.12, 29.92));
     }
 
     [Fact]
@@ -241,7 +243,7 @@ public class Md11FcpTests
         Assert.Equal(new[]
         {
             ("Captain", "MD11_CAP_ALTIMETER", "MD11_EXTCTL_CAP_BARO"),
-            ("First officer", "MD11_FO_ALTIMETER", "MD11_EXTCTL_FO_BARO"),
+            ("First Officer", "MD11_FO_ALTIMETER", "MD11_EXTCTL_FO_BARO"),
             ("Standby", "MD11_STBY_ALTIMETER", "MD11_EXTCTL_STBY_BARO"),
         }, Md11Fcp.Altimeters);
         Assert.Equal("MD11_FO_ALTIMETER", Md11Fcp.ReadFoBaro);
