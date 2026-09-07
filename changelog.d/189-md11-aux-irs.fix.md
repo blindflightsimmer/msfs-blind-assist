@@ -1,1 +1,0 @@
-MD-11: the third IRS switch, "Auxiliary IRS", is now an Off/Nav selector like IRS 1 and IRS 2. It showed as a bare button because TFDi's own label for it has a typo that the app's label reader tripped over.
