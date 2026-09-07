@@ -17,7 +17,8 @@ public class Md11MinimumsTests
         Assert.Equal("Captain", cap.Name);
         Assert.Equal("MD11_CAP_MINIMUMS", cap.ReadKey);
         Assert.Equal("MD11_EXTCTL_CAP_MIN", cap.WriteVar);
-        Assert.Equal("MD11_LECP_MINIMUMS_KB", cap.ModeKey);
+        Assert.Equal("MD11_LECP_MINIMUMS_KB", cap.ModeSwitch);
+        Assert.Equal("MD11_CAP_MINIMUMS_MODE", cap.ModeKey);
         Assert.Equal("MD11_LECP_MINIMUMS_CAP", cap.AnchorKey);
         Assert.Equal("EFIS Captain", cap.PanelName);
 
@@ -25,7 +26,8 @@ public class Md11MinimumsTests
         Assert.Equal("First Officer", fo.Name);
         Assert.Equal("MD11_FO_MINIMUMS", fo.ReadKey);
         Assert.Equal("MD11_EXTCTL_FO_MIN", fo.WriteVar);
-        Assert.Equal("MD11_RECP_MINIMUMS_KB", fo.ModeKey);
+        Assert.Equal("MD11_RECP_MINIMUMS_KB", fo.ModeSwitch);
+        Assert.Equal("MD11_FO_MINIMUMS_MODE", fo.ModeKey);
         Assert.Equal("EFIS First Officer", fo.PanelName);
 
         Assert.False(Md11Minimums.TryGetSide("MD11_SQUAWK_SET", out _));
@@ -70,16 +72,7 @@ public class Md11MinimumsTests
         Assert.Equal("200 feet", Md11Minimums.DescribeReading(200, null));
         Assert.Equal("200 feet, radio", Md11Minimums.DescribeReading(200, 0));
         Assert.Equal("500 feet, baro", Md11Minimums.DescribeReading(500, 1));
-        Assert.Equal("MD11_LECP_MINIMUMS_KB", Md11Minimums.ModeKeyFor("MD11_CAP_MINIMUMS"));
-        Assert.Equal("MD11_RECP_MINIMUMS_KB", Md11Minimums.ModeKeyFor("MD11_FO_MINIMUMS"));
-    }
-
-    [Fact]
-    public void IsModeKey_NamesOnlyTheTwoModeSwitches()
-    {
-        Assert.True(Md11Minimums.IsModeKey("MD11_LECP_MINIMUMS_KB"));
-        Assert.True(Md11Minimums.IsModeKey("MD11_RECP_MINIMUMS_KB"));
-        Assert.False(Md11Minimums.IsModeKey("MD11_LECP_MINIMUMS_CAP"));
-        Assert.False(Md11Minimums.IsModeKey("MD11_CAP_MINIMUMS_SET"));
+        Assert.Equal("MD11_CAP_MINIMUMS_MODE", Md11Minimums.ModeKeyFor("MD11_CAP_MINIMUMS"));
+        Assert.Equal("MD11_FO_MINIMUMS_MODE", Md11Minimums.ModeKeyFor("MD11_FO_MINIMUMS"));
     }
 }

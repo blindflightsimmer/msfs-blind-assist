@@ -191,6 +191,27 @@ public partial class TFDiMD11Definition
             };
         }
 
+        // A silent, batch-covered MIRROR of each side's Radio/Baro mode switch, read by the minimums
+        // rows ("200 feet, radio") and by the typed entry's read-back. The switch's own key stays
+        // OnRequest: it is a walkable combo, and a batch-covered var has no individual definition,
+        // which downgrades the walker to the legacy cache-poll protocol that can call a real move
+        // "did not move". Same shape as MD11_CAP_MINIMUMS beside the walkable minimums knob — two
+        // keys, one Name, only one of them batched. No ValueDescriptions, so ProcessSimVarUpdate
+        // consumes it silently with the other Export-style read-outs; never a panel row.
+        foreach (var side in Md11Minimums.Sides)
+        {
+            v[side.ModeKey] = new SimVarDefinition
+            {
+                Name = side.ModeSwitch,
+                DisplayName = $"{side.Name} minimums mode",
+                Type = SimVarType.LVar,
+                UpdateFrequency = UpdateFrequency.Continuous,
+                IsAnnounced = true,                  // batch-covered; consumed silently (no ValueDescriptions)
+                ExcludeFromMonitorManager = true,    // a checkbox here would silence nothing
+                RenderAsReadOnlyStatus = true,
+            };
+        }
+
         // ---- Speedbrake --------------------------------------------------------------
         // The lever's PULL (0 down, 1 = ground spoilers armed, 2 = auto-extended on landing) is
         // a row of this app's own; the Spoilers row is the map control, re-pointed at the

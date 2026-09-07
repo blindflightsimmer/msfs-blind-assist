@@ -265,24 +265,29 @@ public class Md11DefinitionStateTests
     }
 
     /// <summary>
-    /// The minimums rows read their mode word ("200 feet, radio") from these two switches' cache.
-    /// On request they were written only by an EFIS panel build or a typed entry, so the read-out
-    /// panel never had the word and a mode flipped in the cockpit left a stale one. Batch-covered,
-    /// the cache tracks the aircraft, and a change announces like any other background state.
+    /// The minimums rows read their mode word from a silent batch-covered MIRROR of each side's
+    /// mode switch. The switch itself stays OnRequest: batch-covering it (94c60c42, reverted) had
+    /// no individual data definition, which downgraded its combo's walk to the legacy cache-poll
+    /// protocol that can call a real move "did not move". Two keys, one Name, only one batched.
     /// </summary>
     [Theory]
-    [InlineData("MD11_LECP_MINIMUMS_KB", "Captain Minimums Mode")]
-    [InlineData("MD11_RECP_MINIMUMS_KB", "First Officer Minimums Mode")]
-    public void MinimumsModeSwitch_RidesTheBatch_SoTheRowsModeWordStaysCurrent(string key, string displayName)
+    [InlineData("MD11_LECP_MINIMUMS_KB", "MD11_CAP_MINIMUMS_MODE", "Captain minimums mode")]
+    [InlineData("MD11_RECP_MINIMUMS_KB", "MD11_FO_MINIMUMS_MODE", "First Officer minimums mode")]
+    public void MinimumsModeSwitch_StaysOnRequest_AndItsMirrorRidesTheBatch(string switchKey, string mirrorKey, string mirrorName)
     {
-        var d = Vars[key];
-        Assert.Equal(displayName, d.DisplayName);
-        Assert.Equal(UpdateFrequency.Continuous, d.UpdateFrequency);
-        Assert.True(d.IsAnnounced);
-        Assert.False(d.ExcludeFromBatch);
-        Assert.False(d.HighFrequency);
-        Assert.False(d.ExcludeFromMonitorManager);
-        Assert.Equal("Radio", d.ValueDescriptions[0]);
-        Assert.Equal("Baro", d.ValueDescriptions[1]);
+        var sw = Vars[switchKey];
+        Assert.Equal(UpdateFrequency.OnRequest, sw.UpdateFrequency);
+        Assert.False(sw.IsAnnounced);
+        Assert.Equal("Radio", sw.ValueDescriptions[0]);
+        Assert.Equal("Baro", sw.ValueDescriptions[1]);
+
+        var mirror = Vars[mirrorKey];
+        Assert.Equal(switchKey, mirror.Name);
+        Assert.Equal(mirrorName, mirror.DisplayName);
+        Assert.Equal(UpdateFrequency.Continuous, mirror.UpdateFrequency);
+        Assert.True(mirror.IsAnnounced);
+        Assert.False(mirror.ExcludeFromBatch);
+        Assert.True(mirror.ExcludeFromMonitorManager);
+        Assert.Empty(mirror.ValueDescriptions);   // silent: consumed with the other Export-style read-outs
     }
 }

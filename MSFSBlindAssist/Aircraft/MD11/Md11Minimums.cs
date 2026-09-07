@@ -2,8 +2,8 @@ using System.Globalization;
 
 namespace MSFSBlindAssist.Aircraft.MD11;
 
-/// <summary>One side's minimums: the panel field, the export read back, the inbox written, the mode switch, where the field sits.</summary>
-public sealed record Md11MinimumsSide(string Name, string SetKey, string ReadKey, string WriteVar, string ModeKey, string AnchorKey, string PanelName);
+/// <summary>One side's minimums: the panel field, the export read back, the inbox written, the mode switch and its silent mirror, where the field sits.</summary>
+public sealed record Md11MinimumsSide(string Name, string SetKey, string ReadKey, string WriteVar, string ModeSwitch, string ModeKey, string AnchorKey, string PanelName);
 
 /// <summary>
 /// Typed minimums (DH/MDA) for the captain and the first officer.
@@ -21,6 +21,16 @@ public sealed record Md11MinimumsSide(string Name, string SetKey, string ReadKey
 /// The field is MainForm's "_SET" text box plus Set button (the COM-standby convention), pre-
 /// filled from the export so tabbing in reads the current value; the aircraft's own minimums
 /// knob and mode switch stay on the panel beside it.
+///
+/// The mode word the rows speak ("200 feet, radio") comes from <see cref="Md11MinimumsSide.ModeKey"/>
+/// — a silent, batch-covered MIRROR of the switch's own L:var (<see cref="Md11MinimumsSide.ModeSwitch"/>),
+/// registered separately in <c>TFDiMD11Definition.Panels.BuildExportVariables</c>. The switch itself
+/// stays <c>OnRequest</c>, because it is also an operable combo: batch-covering it directly (once
+/// tried, reverted) leaves it with no individual data definition, and <c>Md11SelectorWalker</c> reads
+/// <c>SimConnectManager.SupportsFreshReads</c> to choose its read protocol — false for a batch-covered
+/// var with no individual def, which downgrades the walk to the legacy cache-poll protocol that can
+/// call a real movement "did not move". Same shape as <c>MD11_CAP_MINIMUMS</c> sharing its Name with
+/// the walkable minimums knob: two keys, one underlying L:var, only one of them batched.
 /// </summary>
 public static class Md11Minimums
 {
@@ -36,12 +46,14 @@ public static class Md11Minimums
 
     public static readonly Md11MinimumsSide Captain = new(
         Name: "Captain", SetKey: "MD11_CAP_MINIMUMS_SET", ReadKey: "MD11_CAP_MINIMUMS",
-        WriteVar: "MD11_EXTCTL_CAP_MIN", ModeKey: "MD11_LECP_MINIMUMS_KB",
+        WriteVar: "MD11_EXTCTL_CAP_MIN", ModeSwitch: "MD11_LECP_MINIMUMS_KB",
+        ModeKey: "MD11_CAP_MINIMUMS_MODE",
         AnchorKey: "MD11_LECP_MINIMUMS_CAP", PanelName: "EFIS Captain");
 
     public static readonly Md11MinimumsSide FirstOfficer = new(
         Name: "First Officer", SetKey: "MD11_FO_MINIMUMS_SET", ReadKey: "MD11_FO_MINIMUMS",
-        WriteVar: "MD11_EXTCTL_FO_MIN", ModeKey: "MD11_RECP_MINIMUMS_KB",
+        WriteVar: "MD11_EXTCTL_FO_MIN", ModeSwitch: "MD11_RECP_MINIMUMS_KB",
+        ModeKey: "MD11_FO_MINIMUMS_MODE",
         AnchorKey: "MD11_RECP_MINIMUMS_CAP", PanelName: "EFIS First Officer");
 
     public static readonly Md11MinimumsSide[] Sides = { Captain, FirstOfficer };
@@ -54,14 +66,9 @@ public static class Md11Minimums
         return false;
     }
 
-    /// <summary>The mode switch that decides what a side's export shows: radio (0) or baro (1).</summary>
+    /// <summary>The mirror key that carries what a side's export shows: radio (0) or baro (1).</summary>
     public static string ModeKeyFor(string readKey)
         => string.Equals(readKey, FirstOfficer.ReadKey, StringComparison.Ordinal) ? FirstOfficer.ModeKey : Captain.ModeKey;
-
-    /// <summary>True for a side's Radio/Baro mode switch — the var the minimums rows read their mode word from.</summary>
-    public static bool IsModeKey(string nodeId)
-        => string.Equals(nodeId, Captain.ModeKey, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(nodeId, FirstOfficer.ModeKey, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// What the pilot typed, as MainForm hands it over (a double; an empty or unparseable box is 0).

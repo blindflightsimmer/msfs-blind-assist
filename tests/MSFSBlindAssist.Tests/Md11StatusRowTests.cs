@@ -87,8 +87,8 @@ public class Md11StatusRowTests
     [Fact]
     public void Readout_MinimumsRows_SayWhichModeTheyShow()
     {
-        static double? Radio(string k) => k == "MD11_LECP_MINIMUMS_KB" ? 0 : null;
-        static double? Baro(string k) => k == "MD11_RECP_MINIMUMS_KB" ? 1 : null;
+        static double? Radio(string k) => k == "MD11_CAP_MINIMUMS_MODE" ? 0 : null;
+        static double? Baro(string k) => k == "MD11_FO_MINIMUMS_MODE" ? 1 : null;
         Assert.Equal("200 feet, radio", Md11StatusRow.Readout("MD11_CAP_MINIMUMS", 200, Radio));
         Assert.Equal("500 feet, baro", Md11StatusRow.Readout("MD11_FO_MINIMUMS", 500, Baro));
         Assert.Equal("200 feet", Md11StatusRow.Readout("MD11_CAP_MINIMUMS", 200, None));   // mode never read

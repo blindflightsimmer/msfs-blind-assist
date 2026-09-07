@@ -235,7 +235,7 @@ public partial class TFDiMD11Definition
         {
             await Task.Delay(MinimumsSettleMs).ConfigureAwait(false);
             sim.RequestVariable(side.ReadKey, forceUpdate: true);   // batch-covered: honoured on the next delivery
-            sim.RequestVariable(side.ModeKey, forceUpdate: true);   // an OnRequest switch: answers at once
+            sim.RequestVariable(side.ModeKey, forceUpdate: true);   // also batch-covered (the switch's silent mirror): honoured on the next delivery
             await Task.Delay(MinimumsReadBackMs).ConfigureAwait(false);
             var read = sim.GetCachedVariableValue(side.ReadKey);
             var mode = sim.GetCachedVariableValue(side.ModeKey);
