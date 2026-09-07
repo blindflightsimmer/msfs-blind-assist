@@ -655,6 +655,19 @@ public partial class TFDiMD11Definition
             return true;
         }
 
+        // The captain's altimeter speaks once it settles (a knob wind speaks the final setting,
+        // not every hundredth). Consumed here — the var has no ValueDescriptions, so it would
+        // otherwise be a silent read-out, and the generic path would speak a raw number if it
+        // were not. The speaking happens from a timer, so AnnounceAltimeterWhenSettledAsync
+        // checks the Ctrl+M mute itself.
+        if (varName == Md11Fcp.ReadCaptainBaro)
+        {
+            _uiContext ??= SynchronizationContext.Current;
+            _altimeter.OnUpdate(value, Environment.TickCount64);
+            _ = AnnounceAltimeterWhenSettledAsync(announcer);
+            return true;
+        }
+
         // Silent numeric read-outs: cached for the hotkeys, never narrated on change. Consuming
         // them here suppresses the generic auto-announce (an N1/fuel stream spoken every second).
         // The single exception is the take-off cue: engine N1 first reaching 70% (ATS takeover).
@@ -676,6 +689,37 @@ public partial class TFDiMD11Definition
         }
 
         return base.ProcessSimVarUpdate(varName, value, announcer);
+    }
+
+    /// <summary>Settle-then-speak for the captain's altimeter — see <see cref="Md11AltimeterAnnouncer"/>.</summary>
+    private readonly Md11AltimeterAnnouncer _altimeter = new();
+
+    /// <summary>
+    /// Waits out the settle, then speaks the pending sentence on the UI thread — if the value is
+    /// still the latest (each update arms its own check; an early one finds nothing due and the
+    /// last one speaks), if no reconnect/aircraft switch intervened, and if the pilot has not
+    /// muted the altimeter in Ctrl+M. That last check is here, not in MainForm's Suppressed
+    /// wrap, because this runs from a timer outside ProcessSimVarUpdate.
+    /// </summary>
+    private async Task AnnounceAltimeterWhenSettledAsync(ScreenReaderAnnouncer announcer)
+    {
+        int generation = _announceGeneration;
+        try
+        {
+            await Task.Delay(Md11AltimeterAnnouncer.SettleMs + 50).ConfigureAwait(false);
+            OnUiThread(() =>
+            {
+                if (generation != _announceGeneration) return;
+                var sentence = _altimeter.Due(Environment.TickCount64);
+                if (sentence == null) return;
+                if (Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet.Contains(Md11Fcp.ReadCaptainBaro)) return;
+                announcer.Announce(sentence);
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("MD11", $"Altimeter announcement threw: {ex.Message}");
+        }
     }
 
     /// <summary>

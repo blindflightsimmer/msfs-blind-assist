@@ -238,4 +238,13 @@ public class Md11DefinitionStateTests
         Assert.Equal("on", d.ValueDescriptions[1]);
         Assert.Equal("on", d.ValueDescriptions[2]);   // 2 never observed; Md11AutoflightState treats ≥0.5 as on
     }
+
+    /// <summary>The captain's altimeter now speaks (Task 7), so it keeps a Ctrl+M row — the flag means "muted by plumbing" and must never sit on a var that speaks.</summary>
+    [Fact]
+    public void CaptainAltimeter_KeepsItsMonitorRow_BecauseItSpeaks()
+    {
+        var d = Vars["MD11_CAP_ALTIMETER"];
+        Assert.True(d.IsAnnounced);
+        Assert.False(d.ExcludeFromMonitorManager);
+    }
 }

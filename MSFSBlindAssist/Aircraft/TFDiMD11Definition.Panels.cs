@@ -66,6 +66,10 @@ public partial class TFDiMD11Definition
         v["MD11_CAP_MINIMUMS"] = Export("MD11_CAP_MINIMUMS", "Captain minimums");
         v["MD11_FO_MINIMUMS"] = Export("MD11_FO_MINIMUMS", "First officer minimums");
         v["MD11_CAP_ALTIMETER"] = Export("MD11_CAP_ALTIMETER", "Captain altimeter");
+        // Unlike the other Export() rows this one SPEAKS — once the setting settles, through
+        // Md11AltimeterAnnouncer in ProcessSimVarUpdate — so it keeps its Ctrl+M row: the flag
+        // means "muted by plumbing" and must never sit on a var that speaks.
+        v["MD11_CAP_ALTIMETER"].ExcludeFromMonitorManager = false;
         v["MD11_FO_ALTIMETER"] = Export("MD11_FO_ALTIMETER", "First officer altimeter");
         v["MD11_STBY_ALTIMETER"] = Export("MD11_STBY_ALTIMETER", "Standby altimeter");
 

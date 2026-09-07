@@ -254,6 +254,7 @@ public partial class TFDiMD11Definition
         _lampChangeTicks.Clear();
         _gate.Reset();
         _com.Reset();
+        _altimeter.Reset();                     // the next altimeter value is a baseline again
         _spdbrkHandle = double.NaN;             // the speedbrake re-baselines on reconnect too
         _lastSpoilerSpoken = string.Empty;
         _announceGeneration++;   // drops any dark transition still waiting out its settle
