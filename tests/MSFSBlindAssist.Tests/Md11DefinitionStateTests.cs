@@ -188,4 +188,23 @@ public class Md11DefinitionStateTests
     {
         Assert.False(new TFDiMD11Definition().TryDescribeControlState("MD11_OVHD_ELEC_BATT_BT", out _));
     }
+
+    /// <summary>
+    /// A position control with no value map renders as a bare BUTTON (RenderAsReadOnlyStatus with
+    /// no units falls through MainForm's branches to the plain button). That is what hid the
+    /// third IRS switch. Every IRS switch must be a two-position combo.
+    /// </summary>
+    [Theory]
+    [InlineData("MD11_OVHD_IRS_1_KB")]
+    [InlineData("MD11_OVHD_IRS_2_KB")]
+    [InlineData("MD11_OVHD_IRS_3_KB")]
+    public void IrsSwitch_RendersAsAnOffNavCombo(string key)
+    {
+        var d = Vars[key];
+        Assert.False(d.RenderAsReadOnlyStatus);
+        Assert.False(d.RenderAsButton);
+        Assert.Equal("Off", d.ValueDescriptions[0]);
+        Assert.Equal("Nav", d.ValueDescriptions[1]);
+        Assert.Equal(2, d.ValueDescriptions.Count);
+    }
 }

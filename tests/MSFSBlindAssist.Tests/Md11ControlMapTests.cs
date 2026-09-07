@@ -90,4 +90,26 @@ public class Md11ControlMapTests
         Assert.True(Map.Controls.Count(c => c.NodeId.Contains("CRGSMK", StringComparison.OrdinalIgnoreCase)) > 0,
             "cargo smoke detection controls are missing");
     }
+
+    /// <summary>
+    /// The aircraft has THREE IRS switches — IRS 1, IRS 2 and the one TFDi call "Auxiliary IRS" —
+    /// and all three are Off/Nav. The third shipped with no positions because TFDi's tooltip for
+    /// it has a stray '%' ('%{if}%Nav') that the generator's if/else parser tripped over, so the
+    /// app showed a bare button named "Auxiliary IRS" and a pilot counted two IRS switches.
+    /// </summary>
+    [Theory]
+    [InlineData("MD11_OVHD_IRS_1_KB", "IRS 1")]
+    [InlineData("MD11_OVHD_IRS_2_KB", "IRS 2")]
+    [InlineData("MD11_OVHD_IRS_3_KB", "Auxiliary IRS")]
+    public void EveryIrsSwitch_IsAnOffNavSelector(string nodeId, string label)
+    {
+        var c = Find(nodeId);
+
+        Assert.NotNull(c);
+        Assert.Equal(label, c!.Label);
+        Assert.Equal(Md11Kinds.Switch, c.Kind);
+        Assert.Equal("Nav", c.ValueMap["1"]);
+        Assert.Equal("Off", c.ValueMap["0"]);
+        Assert.Equal(2, c.ValueMap.Count);
+    }
 }

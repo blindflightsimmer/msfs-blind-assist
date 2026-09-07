@@ -253,4 +253,11 @@ public class Md11PanelLayoutTests
         Assert.True(Md11PanelLayout.IsMcduControl("MD11_RMCDU_BRT_KB"));
         Assert.False(Md11PanelLayout.IsMcduControl("MD11_PED_SD_ENG_BT"));
     }
+
+    [Fact]
+    public void IrsPanel_ListsAllThreeSwitches_ThenTheirLamps()
+    {
+        Assert.Equal(new[] { "MD11_OVHD_IRS_1_KB", "MD11_OVHD_IRS_2_KB", "MD11_OVHD_IRS_3_KB" }, P.Controls["IRS"]);
+        Assert.Equal(new[] { "MD11_OVHD_IRS_1_LT", "MD11_OVHD_IRS_2_LT", "MD11_OVHD_IRS_3_LT" }, P.Displays["IRS"]);
+    }
 }

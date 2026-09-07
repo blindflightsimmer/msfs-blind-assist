@@ -59,6 +59,16 @@ class StrayPercentTests(unittest.TestCase):
         self.assertEqual("MD11_PED_DU1_BRT_KB", var)
         self.assertEqual({}, value_map)
 
+    def test_a_triple_percent_before_a_directive_is_untouched(self):
+        # '%%%{else}': a literal '%%' straight before a directive — the audio volume knobs.
+        # Neither '%' before the '{' is a stray sign, and the knob still yields NO positions
+        # (its state is a live number).
+        label, _, value_map = g.parse_tooltip(
+            "Captain VHF1 Volume (%((L:MD11_PED_CPT_AUDIO_PNL_VHF1_VOL_BT))%{if}"
+            "%((L:MD11_PED_CPT_AUDIO_PNL_VHF1_VOL_KB) 10 *)%!d!%%%{else}Disabled%{end})")
+        self.assertEqual("Captain VHF1 Volume", label)
+        self.assertEqual({}, value_map)
+
 
 class FinalizeTests(unittest.TestCase):
     def test_guard_is_named_after_the_control_it_covers(self):
