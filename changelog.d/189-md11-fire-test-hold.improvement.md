@@ -1,0 +1,1 @@
+MD-11: the fire test button is named "Engine and APU Fire Test" - it tests all three engine fire loops and the APU at once, as TFDi's guide says, not just the APU - and every test button is now held for three seconds instead of tapped, so the lights a test brings on are announced.

@@ -1,0 +1,1 @@
+MD-11: Ctrl+B now sets the captain's, first officer's and standby altimeters together from one entry, and its Standard button sets standard pressure on all three. The EFIS Captain and EFIS First Officer panels gain a typed Minimums field; the aircraft applies it to the baro minimums, and the read-back tells you when the minimums mode switch is still on Radio.

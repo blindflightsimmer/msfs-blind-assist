@@ -1,0 +1,1 @@
+MD-11: the cockpit, cabin and cargo temperature knobs can be set from the Air panel as numbered positions from full cold to full hot. They used to show as buttons that could only nudge the knob one way.

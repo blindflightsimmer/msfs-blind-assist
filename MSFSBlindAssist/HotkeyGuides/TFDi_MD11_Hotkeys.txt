@@ -59,8 +59,10 @@ knob-winding:
              the number itself, and sets the unit for you.
   Ctrl+A     Set altitude
   Ctrl+V     Set vertical speed. Type feet per minute (-1500) or a flight path angle (-3).
-  Ctrl+B     Set the captain's altimeter. Type hPa (1013) or inHg (29.92) - it converts to
-             whichever unit the display is currently in. The dialog also has a Standard button.
+  Ctrl+B     Set the altimeters - captain, first officer and standby together, from one entry.
+             Type hPa (1013) or inHg (29.92); each altimeter is set in whichever unit its own
+             display shows. The Standard button sets standard pressure on all three. The
+             captain's new setting is read back a moment later ("Altimeter: 1013, 29.92").
 
 Each dialog also carries the related buttons: the heading dialog has NAV (engaged or not
 engaged) and the knob's Push and Pull, the speed dialog FMS Speed and its knob, the altitude
@@ -168,6 +170,29 @@ Tab moves only between the controls you can operate. A light on a dead bus reads
 The Read-outs section works the same way: each of its panels is one list, with units - "V1: 152
 knots", "Captain altimeter: standard", "Tank 1: 12000 pounds".
 
+The Read-outs section has an Engines panel with N1 for all three engines ("Engine 1 N1: 25.4
+percent"), between Autoflight Status and APU Status.
+
+
+MINIMUMS
+
+The EFIS Captain and EFIS First Officer panels each have a Minimums field next to the minimums
+knob: type the minimums in feet and press Set. The aircraft applies a typed value to the BARO
+minimums; if the minimums mode switch beside it is on Radio, you are told so ("Captain baro
+minimums set to 500 feet. Minimums mode is Radio, showing 200 feet") and the display keeps
+showing the radio value until you switch the mode to Baro. The minimums rows in Read-outs say
+which mode they show ("200 feet, radio").
+
+
+TESTS
+
+Every test button on this aircraft is hold-to-test, so MSFS Blind Assist holds it for three
+seconds and the lights that come on are announced as they light. The fire test is one button
+for the whole aircraft - "Engine and APU Fire Test" lights all three engine FIRE lights, the
+APU FIRE light and the master warning together (TFDi's own label says "APU"; it tests every
+loop). The aircraft has no stall, overspeed or per-engine fire-loop test switch; those exist
+only as warnings in flight.
+
 
 BACKGROUND ANNOUNCEMENTS - Ctrl+M
 
@@ -180,7 +205,8 @@ box to narrow the list ("fuel" finds every fuel lamp), use the Show filter to se
 muted rows, and uncheck an item to stop it announcing. The list is sorted by spoken name, and
 your choices are remembered between sessions.
 
-Also announced as they change: autopilot engagement, APU state, the COM radios ("COM 1 active
+Also announced as they change: autopilot engagement, autothrottle engagement, the captain's
+altimeter setting (once the knob stops moving), APU state, the COM radios ("COM 1 active
 135.500" - active and standby for COM 1, 2 and 3, so a tuner click and a frequency swap both read
 back; each radio has its own line in Ctrl+M), and flap movement ("flaps moving" then the new
 position - which on an aircraft with no flap gauge is your only confirmation that a selection
