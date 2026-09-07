@@ -226,9 +226,13 @@ public partial class TFDiMD11Definition
     // ---------------------------------------------------------------------------------
 
     /// <summary>
-    /// Sets the captain's altimeter. Accepts hPa (900-1100) or inHg (26-32) and figures out which
-    /// from the number's magnitude — then converts to whatever unit the display is CURRENTLY in
-    /// before writing, so "1013" and "29.92" each do the right thing regardless of the PFD's unit.
+    /// Ctrl+B — one typed value sets the captain's, the first officer's AND the standby altimeter
+    /// (the A320's "enter QNH once, both sides" behaviour; all three inboxes proven live, see
+    /// <see cref="Md11Fcp.Altimeters"/>). Each is converted to ITS OWN display's unit. "Standard"
+    /// writes standard pressure as a value to all three — deterministic, where the knob-push STD
+    /// toggle it replaces could flip an already-STD side back to QNH. The captain's setting is
+    /// confirmed by the settle announcement (Md11AltimeterAnnouncer), so the dialog adds no
+    /// second sentence.
     /// </summary>
     private void ShowBaroDialog(SimConnectManager sim, ScreenReaderAnnouncer announcer,
         System.Windows.Forms.Form parentForm)
@@ -237,13 +241,11 @@ public partial class TFDiMD11Definition
 
         var toggles = new List<ToggleButtonDef>
         {
-            // STD is a toggle with no readable state (the "STD" flag is on the WASM PFD), so this
-            // shows the action, not a live value. Pushing the baro knob is the real mechanism.
-            new("&Standard (toggle)", () => "", () => PressControl(Md11Fcp.BaroKnob)),
+            new("&Standard, all three", () => "", () => SetAllAltimeters(sim, typed: null)),
         };
 
         var dialog = new ValueInputForm(
-            "Captain Altimeter", "altimeter", "hPa (900-1100) or inHg such as 29.92", announcer,
+            "Altimeters", "altimeter", "hPa (900-1100) or inHg such as 29.92; sets captain, first officer and standby", announcer,
             input =>
             {
                 if (!double.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
@@ -261,12 +263,27 @@ public partial class TFDiMD11Definition
             input =>
             {
                 if (!double.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) return;
-                var display = sim.GetCachedVariableValue(Md11Fcp.ReadCaptainBaro) ?? v;
-                SetFcpValue(Md11Fcp.WriteCaptainBaro, Md11Fcp.BaroToDisplayUnit(v, display), sim);
+                SetAllAltimeters(sim, v);
             });
 
         dialog.ShowCancelButton = false;
         dialog.Show(parentForm);
+    }
+
+    /// <summary>
+    /// Writes <paramref name="typed"/> (or standard pressure when null) to every altimeter, each in
+    /// the unit its own display currently shows. A display whose reading is not cached yet is
+    /// assumed to be in the typed value's unit (or inHg for Standard) — the inbox is one-shot, so
+    /// a wrong-unit write would simply be corrected by the next entry.
+    /// </summary>
+    private void SetAllAltimeters(SimConnectManager sim, double? typed)
+    {
+        foreach (var (read, write) in Md11Fcp.Altimeters)
+        {
+            var display = sim.GetCachedVariableValue(read) ?? typed ?? Md11Fcp.StandardInHg;
+            var value = typed is double t ? Md11Fcp.BaroToDisplayUnit(t, display) : Md11Fcp.StandardFor(display);
+            SetFcpValue(write, value, sim);
+        }
     }
 
     // ---------------------------------------------------------------------------------

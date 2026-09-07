@@ -174,6 +174,37 @@ public class Md11FcpTests
         Assert.Equal(expected, Md11Fcp.BaroToDisplayUnit(typed, display), precision: 0);
     }
 
+    /// <summary>
+    /// All three altimeters take a typed value through their own inbox, proven live 2026-09-06:
+    /// MD11_EXTCTL_FO_BARO ← 29.85 put 29.85 in MD11_FO_ALTIMETER, MD11_EXTCTL_STBY_BARO ← 29.80
+    /// put 29.8 in MD11_STBY_ALTIMETER, both inboxes back to -1. Ctrl+B writes all three from one
+    /// entry, captain first.
+    /// </summary>
+    [Fact]
+    public void AllThreeAltimeters_HaveReadAndWritePairs_CaptainFirst()
+    {
+        Assert.Equal(new[]
+        {
+            ("MD11_CAP_ALTIMETER", "MD11_EXTCTL_CAP_BARO"),
+            ("MD11_FO_ALTIMETER", "MD11_EXTCTL_FO_BARO"),
+            ("MD11_STBY_ALTIMETER", "MD11_EXTCTL_STBY_BARO"),
+        }, Md11Fcp.Altimeters);
+        Assert.Equal("MD11_FO_ALTIMETER", Md11Fcp.ReadFoBaro);
+        Assert.Equal("MD11_EXTCTL_STBY_BARO", Md11Fcp.WriteStandbyBaro);
+    }
+
+    /// <summary>
+    /// "Standard" writes standard pressure as a VALUE in each display's own unit (the PMDG/787
+    /// dialogs' way), not a knob-push toggle that could flip an already-STD side back to QNH.
+    /// </summary>
+    [Theory]
+    [InlineData(29.85, 29.92)]
+    [InlineData(30.12, 29.92)]
+    [InlineData(1005, 1013.25)]
+    [InlineData(1013, 1013.25)]
+    public void StandardFor_IsStandardPressureInTheDisplaysUnit(double display, double expected)
+        => Assert.Equal(expected, Md11Fcp.StandardFor(display), precision: 2);
+
     [Theory]
     [InlineData(29.92, false)]
     [InlineData(30.10, false)]

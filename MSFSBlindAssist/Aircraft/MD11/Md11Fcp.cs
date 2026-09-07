@@ -118,6 +118,22 @@ public static class Md11Fcp
     public const string WriteCaptainBaro = "MD11_EXTCTL_CAP_BARO";
     public const string BaroKnob = "MD11_LECP_BAROSET_CAP";   // push = STD toggle
 
+    // The other two altimeters are inboxes of the same contract, PROVEN live (2026-09-06):
+    // MD11_EXTCTL_FO_BARO ← 29.85 → MD11_FO_ALTIMETER 29.85; MD11_EXTCTL_STBY_BARO ← 29.80 →
+    // MD11_STBY_ALTIMETER 29.8; both inboxes reset to -1. Each is set in ITS OWN display's unit.
+    public const string ReadFoBaro = "MD11_FO_ALTIMETER";
+    public const string WriteFoBaro = "MD11_EXTCTL_FO_BARO";
+    public const string ReadStandbyBaro = "MD11_STBY_ALTIMETER";
+    public const string WriteStandbyBaro = "MD11_EXTCTL_STBY_BARO";
+
+    /// <summary>Every altimeter Ctrl+B sets, captain first: (the export read back, the inbox written).</summary>
+    public static readonly (string Read, string Write)[] Altimeters =
+    {
+        (ReadCaptainBaro, WriteCaptainBaro),
+        (ReadFoBaro, WriteFoBaro),
+        (ReadStandbyBaro, WriteStandbyBaro),
+    };
+
     public const double MinInHg = 26.00;
     public const double MaxInHg = 32.00;
     public const double MinHpa = 900;
@@ -146,6 +162,15 @@ public static class Md11Fcp
 
     public const double StandardInHg = 29.92;
     public const double StandardHpa = 1013.25;
+
+    /// <summary>
+    /// Standard pressure as a VALUE in the unit the display is currently in — what the dialog's
+    /// "Standard" writes to all three altimeters (the PMDG/787 dialogs' way, KOHLSMAN_SET 29.92).
+    /// The knob-push STD toggle on the EFIS panel is the aircraft's own STD flag; it stays
+    /// available there, but a toggle cannot be commanded to a known state when the flag lives on
+    /// the WASM PFD where nothing can read it.
+    /// </summary>
+    public static double StandardFor(double displayValue) => IsHpa(displayValue) ? StandardHpa : StandardInHg;
 
     /// <summary>The PMDG definitions' factor, so a 30.12 reads 1020 here exactly as it does on the 737/777.</summary>
     private const double HpaPerInHg = 33.8639;
