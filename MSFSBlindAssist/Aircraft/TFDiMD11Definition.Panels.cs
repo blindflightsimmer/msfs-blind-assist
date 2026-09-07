@@ -38,7 +38,13 @@ public partial class TFDiMD11Definition
         {
             [0] = "off", [1] = "AP 1", [2] = "AP 2", [3] = "AP 1 and 2",
         });
-        v["MD11_ATS_STATE"] = Export("MD11_ATS_STATE", "Autothrottle state");
+        // Announced, not a silent read-out: engagement is news, exactly as MD11_AP_STATE is. 1 was
+        // measured live with the autothrottle engaged, 0 off; 2 has never been observed and
+        // Md11AutoflightState treats anything ≥ 0.5 as on, so it decodes as on here too.
+        v["MD11_ATS_STATE"] = Announced("MD11_ATS_STATE", "Autothrottle", new()
+        {
+            [0] = "off", [1] = "on", [2] = "on",
+        });
         v["MD11_ATS_CLAMP"] = Export("MD11_ATS_CLAMP", "Autothrottle clamp");
 
         // Unit/mode toggles — these decide how the FCP windows above are SPOKEN, so they are

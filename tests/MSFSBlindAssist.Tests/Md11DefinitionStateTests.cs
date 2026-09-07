@@ -221,4 +221,21 @@ public class Md11DefinitionStateTests
         Assert.Equal("1 (full cold)", d.ValueDescriptions[0]);
         Assert.Equal(UpdateFrequency.OnRequest, d.UpdateFrequency);
     }
+
+    /// <summary>
+    /// Autothrottle engagement is news (the 777 and A320 both speak it); the autopilot was
+    /// announced here, the autothrottle was a silent read-out. Same path as MD11_AP_STATE: the
+    /// generic monitor speaks the decoded value, baseline-first, and Ctrl+M carries the row.
+    /// </summary>
+    [Fact]
+    public void Autothrottle_IsAnnouncedOnChange_WithAMonitorRow()
+    {
+        var d = Vars["MD11_ATS_STATE"];
+        Assert.Equal("Autothrottle", d.DisplayName);
+        Assert.True(d.IsAnnounced);
+        Assert.False(d.ExcludeFromMonitorManager);
+        Assert.Equal("off", d.ValueDescriptions[0]);
+        Assert.Equal("on", d.ValueDescriptions[1]);
+        Assert.Equal("on", d.ValueDescriptions[2]);   // 2 never observed; Md11AutoflightState treats ≥0.5 as on
+    }
 }
