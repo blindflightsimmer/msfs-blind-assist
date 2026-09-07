@@ -25,15 +25,16 @@ public class FreshReadWaitersTests
     }
 
     [Fact]
-    public async Task TimesOutToNull_AndUnregisters()
+    public async Task TimesOutToNull_AndTheNextDeliveryClearsTheLeftoverWaiter()
     {
         var waiters = new FreshReadWaiters();
 
         var value = await waiters.WaitAsync("K", () => { }, timeoutMs: 20);
 
-        Assert.Null(value);
+        Assert.Null(value);                        // never a stale cached value
+        Assert.Equal(1, waiters.Count);            // the waiter stays until a delivery clears it
+        Assert.True(waiters.Complete("K", 1.0));
         Assert.Equal(0, waiters.Count);
-        Assert.False(waiters.Complete("K", 1.0));   // nothing left to complete
     }
 
     [Fact]
@@ -51,7 +52,7 @@ public class FreshReadWaitersTests
     }
 
     [Fact]
-    public async Task CancellationThrows_AndUnregisters()
+    public async Task CancellationThrows_AndLeavesTheWaiterForTheNextDelivery()
     {
         var waiters = new FreshReadWaiters();
         using var cts = new CancellationTokenSource();
@@ -60,6 +61,8 @@ public class FreshReadWaitersTests
         cts.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read);
+        Assert.Equal(1, waiters.Count);
+        Assert.True(waiters.Complete("K", 1.0));
         Assert.Equal(0, waiters.Count);
     }
 
@@ -85,16 +88,18 @@ public class FreshReadWaitersTests
         Assert.Equal(0, waiters.Count);
     }
 
-    /// <summary>A waiter that timed out must not be satisfied by a later delivery meant for a NEW waiter.</summary>
+    /// <summary>Two callers share one waiter; the first timing out must not orphan the second.</summary>
     [Fact]
-    public async Task ATimedOutWaiterDoesNotStealTheNextCallersDelivery()
+    public async Task ACallerThatOverlapsATimedOutOne_StillGetsTheDelivery()
     {
         var waiters = new FreshReadWaiters();
-        Assert.Null(await waiters.WaitAsync("K", () => { }, timeoutMs: 20));
 
-        var fresh = waiters.WaitAsync("K", () => { }, timeoutMs: 5000);
+        var first = waiters.WaitAsync("K", () => { }, timeoutMs: 20);
+        var second = waiters.WaitAsync("K", () => { }, timeoutMs: 5000);
+        Assert.Null(await first);
+
         Assert.True(waiters.Complete("K", 3.0));
-
-        Assert.Equal(3.0, await fresh);
+        Assert.Equal(3.0, await second);
+        Assert.Equal(0, waiters.Count);
     }
 }

@@ -40,11 +40,13 @@ namespace MSFSBlindAssist.Aircraft.MD11;
 /// click recorded on its node before its first read, because a walk cancelled by fast arrowing can
 /// have a click still landing.
 ///
-/// A FIRST "no movement" (fresh protocol) is ambiguous — an inhibited control, or a wrong polarity
-/// guess at the end stop in the asked direction — so the walker clicks the OTHER event once:
-/// toward the target means the polarity was wrong (flip, continue); away means the asked direction
-/// is blocked (continue); nothing either way means inhibited (give up). A second no-movement in the
-/// same walk gives up.
+/// A FIRST "no movement" AT AN END STOP (fresh protocol) is ambiguous — an inhibited control, or a
+/// wrong polarity guess whose asked direction is the stop itself — so the walker clicks the OTHER
+/// event once: toward the target means the polarity was wrong (flip, continue); nothing either way
+/// means inhibited (give up). A stall at mid-range can only be a dropped or refused click, because a
+/// wrong guess would have MOVED the control, and probing there would actuate the control the wrong
+/// way (on the engine fire handles the walked axis is the agent discharge) — so it gives up at once,
+/// and so does a second no-movement in the same walk.
 ///
 /// The walk is bounded and always terminates: <see cref="MaxSteps"/> caps the step count, and a
 /// control that will not move breaks out rather than hammering CEVENT — which TFDi explicitly asks
@@ -179,17 +181,21 @@ public static class Md11SelectorWalker
             if (afterIdx == currentIdx)
             {
                 noMovement++;
-                if (!io.FreshReads || noMovement > 1)
+                // A stall at MID-RANGE can only be a dropped or refused click: a wrong polarity guess
+                // would have MOVED the control, which the direction test below catches. Probing the
+                // other event there would actuate the control the wrong way — on the engine fire
+                // handles the walked axis IS the agent discharge — so give up at once, as the legacy
+                // protocol always did. Only at an END STOP is a stall ambiguous (inhibited, or the
+                // guess is wrong and the asked direction is the stop itself), and there the other
+                // event either moves toward the target — polarity learned — or cannot move at all.
+                bool atEndStop = currentIdx == 0 || currentIdx == ordered.Count - 1;
+                if (!io.FreshReads || !atEndStop || noMovement > 1)
                 {
                     Log.Debug("MD11",
                         $"{node}: step produced no movement at value {current.Value} " +
-                        $"(target {targetValue}) — control may be inhibited or at an end stop.");
+                        $"(target {targetValue}) — control may be inhibited, or a click was dropped.");
                     return false;
                 }
-
-                // Ambiguous: inhibited, or the guess is wrong and the control sits at the end stop in
-                // the asked direction. One click the other way tells them apart without giving up on
-                // a control that merely needed the other event.
                 var otherId = eventId == incEvent.Value ? decEvent.Value : incEvent.Value;
                 var probe = await StepAndReadAsync(control, ordered, io, otherId, currentIdx, ct).ConfigureAwait(false);
                 if (probe == null) return false;
@@ -212,7 +218,7 @@ public static class Md11SelectorWalker
                 }
                 else
                 {
-                    Log.Debug("MD11", $"{node}: the asked direction is blocked at {current.Value}; the other event moved to {probe.Value}.");
+                    Log.Debug("MD11", $"{node}: the other event moved {current.Value} -> {probe.Value} AWAY from {targetValue} from an end stop — leaving polarity alone.");
                 }
                 continue;
             }

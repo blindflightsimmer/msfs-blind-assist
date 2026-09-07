@@ -9,9 +9,25 @@ namespace MSFSBlindAssist.Tests;
 /// a wrong polarity guess is learned once and persisted, that an end stop is not mistaken for an
 /// inhibited control, and that a lagging read-back is not mistaken for "no movement".
 /// </summary>
-public class Md11SelectorWalkerCoreTests
+public class Md11SelectorWalkerCoreTests : IDisposable
 {
     private const int Left = 90248, Right = 90249;
+
+    // The walker's polarity hooks are process-wide statics that production wires to the real
+    // settings file (TFDiMD11Definition.Attach). Pin them per test so no walk here can persist a
+    // TEST_ id into the developer's settings, and so a concurrently running test class cannot
+    // clobber a test that pins its own.
+    public Md11SelectorWalkerCoreTests()
+    {
+        Md11SelectorWalker.LoadPolarity = _ => null;
+        Md11SelectorWalker.SavePolarity = (_, _) => { };
+    }
+
+    public void Dispose()
+    {
+        Md11SelectorWalker.LoadPolarity = null;
+        Md11SelectorWalker.SavePolarity = null;
+    }
 
     /// <summary>A three-position switch (0 Off / 1 Auto / 2 On) with a virtual clock.</summary>
     private sealed class FakeSwitch
@@ -144,6 +160,22 @@ public class Md11SelectorWalkerCoreTests
     }
 
     [Fact]
+    public async Task InvertedControl_AtTheTopEndStop_ProbesTheOtherWay_ThenLands()
+    {
+        var id = NewId();
+        var sw = new FakeSwitch(2) { LeftIncreases = false };
+
+        Assert.True(await Walk(Switch(id), 0, sw));
+
+        // Wanting down, the conventional guess sends Right; at the top stop under inverted polarity
+        // that is "up" and stalls. The probe Left moves 2 -> 1, toward the target: learned. One
+        // more Left lands.
+        Assert.Equal(new[] { Right, Left, Left }, sw.Clicks);
+        Assert.Equal(0, sw.Position);
+        Assert.False(Md11SelectorWalker.PolarityFor(id));
+    }
+
+    [Fact]
     public async Task InhibitedControl_GivesUpAfterTryingBothDirections_WithoutLearning()
     {
         var id = NewId();
@@ -156,22 +188,21 @@ public class Md11SelectorWalkerCoreTests
     }
 
     /// <summary>
-    /// A first no-movement probes the other event; when THAT moves away from the target the asked
-    /// direction is simply blocked — the polarity must not flip — and the very next stall ends the
-    /// walk (the second no-movement of the same walk), so a stuck control costs two caps, never the
-    /// whole step budget.
+    /// A stall at mid-range is a dropped or refused click, never a polarity question (a wrong guess
+    /// would have moved the control), so the walker must NOT probe the other direction there —
+    /// on the engine fire handles that probe would discharge a bottle. It gives up at once, the
+    /// polarity untouched, and the control stays where it was.
     /// </summary>
     [Fact]
-    public async Task AControlBlockedInTheAskedDirection_ProbesAway_ThenGivesUpOnTheSecondStall_WithoutFlipping()
+    public async Task AMidRangeStall_IsADroppedClick_GivesUpWithoutProbing_OrFlipping()
     {
         var id = NewId();
         var sw = new FakeSwitch(1) { BlockUp = true };
 
         Assert.False(await Walk(Switch(id), 2, sw));
 
-        // Left (up) stalls; the probe Right moves 1 -> 0, away; Left stalls again -> give up.
-        Assert.Equal(new[] { Left, Right, Left }, sw.Clicks);
-        Assert.Equal(0, sw.Position);
+        Assert.Equal(new[] { Left }, sw.Clicks);
+        Assert.Equal(1, sw.Position);
         Assert.True(Md11SelectorWalker.PolarityFor(id) ?? true);
     }
 

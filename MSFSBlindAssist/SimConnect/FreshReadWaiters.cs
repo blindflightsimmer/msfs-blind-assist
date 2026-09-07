@@ -23,7 +23,7 @@ internal sealed class FreshReadWaiters
     private readonly ConcurrentDictionary<string, TaskCompletionSource<double?>> _pending =
         new(StringComparer.Ordinal);
 
-    /// <summary>Pending waiters — lets the hot delivery paths skip the lookup while idle.</summary>
+    /// <summary>Registered waiters, including any left over after a timeout until the next delivery clears it.</summary>
     public int Count => _pending.Count;
 
     /// <summary>
@@ -44,13 +44,13 @@ internal sealed class FreshReadWaiters
         }
         catch (TimeoutException)
         {
-            // Unregister OUR waiter only — a later caller may already hold a fresh one under the key.
-            _pending.TryRemove(new KeyValuePair<string, TaskCompletionSource<double?>>(key, tcs));
+            // Leave the waiter registered: another caller may share it, and the next delivery (or
+            // FailAll) clears it. A later caller shares it too and correctly receives the first
+            // delivery after its own request.
             return null;
         }
         catch (OperationCanceledException)
         {
-            _pending.TryRemove(new KeyValuePair<string, TaskCompletionSource<double?>>(key, tcs));
             throw;
         }
     }
@@ -58,7 +58,6 @@ internal sealed class FreshReadWaiters
     /// <summary>Completes the waiter for <paramref name="key"/>, if any. Call on EVERY delivery of the key, changed or not.</summary>
     public bool Complete(string key, double value)
     {
-        if (_pending.IsEmpty) return false;
         return _pending.TryRemove(key, out var tcs) && tcs.TrySetResult(value);
     }
 
