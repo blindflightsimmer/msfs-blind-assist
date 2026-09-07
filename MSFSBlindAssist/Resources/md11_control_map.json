@@ -23758,8 +23758,17 @@
    "area": "Overhead",
    "label": "Aft Cabin Temperature",
    "label_source": "tooltip",
+   "value_map": {
+    "0": "1 (full cold)",
+    "1": "2",
+    "2": "3",
+    "3": "4",
+    "4": "5",
+    "5": "6",
+    "6": "7",
+    "7": "8 (full hot)"
+   },
    "state_var": "MD11_OVHD_PNEU_AFT_CAB_TEMP",
-   "value_map": {},
    "num_states": 8,
    "events": {
     "LEFT_BUTTON_DOWN": 90285,
@@ -23775,8 +23784,16 @@
    "area": "Overhead",
    "label": "Aft Lower Cargo Temperature",
    "label_source": "tooltip",
+   "value_map": {
+    "0": "1 (full cold)",
+    "1": "2",
+    "2": "3",
+    "3": "4",
+    "4": "5",
+    "5": "6",
+    "6": "7 (full hot)"
+   },
    "state_var": "MD11_OVHD_PNEU_AFT_CARGO_TEMP",
-   "value_map": {},
    "num_states": 7,
    "events": {
     "LEFT_BUTTON_DOWN": 90277,
@@ -24639,8 +24656,17 @@
    "area": "Overhead",
    "label": "Cockpit Temperature",
    "label_source": "tooltip",
+   "value_map": {
+    "0": "1 (full cold)",
+    "1": "2",
+    "2": "3",
+    "3": "4",
+    "4": "5",
+    "5": "6",
+    "6": "7",
+    "7": "8 (full hot)"
+   },
    "state_var": "MD11_OVHD_PNEU_COCKPIT_TEMP",
-   "value_map": {},
    "num_states": 8,
    "events": {
     "LEFT_BUTTON_DOWN": 90279,
@@ -24811,11 +24837,17 @@
    "area": "Overhead",
    "label": "Forward Cabin/Courier Cabin Temperature",
    "label_source": "tooltip",
-   "state_var": "MD11_OVHD_PNEU_FWD_CAB_TEMP",
    "value_map": {
-    "1": "Courier Cabin",
-    "0": "Forward Cabin"
+    "0": "1 (full cold)",
+    "1": "2",
+    "2": "3",
+    "3": "4",
+    "4": "5",
+    "5": "6",
+    "6": "7",
+    "7": "8 (full hot)"
    },
+   "state_var": "MD11_OVHD_PNEU_FWD_CAB_TEMP",
    "num_states": 8,
    "events": {
     "LEFT_BUTTON_DOWN": 90281,
@@ -24831,8 +24863,12 @@
    "area": "Overhead",
    "label": "Forward Lower Cargo Temperature",
    "label_source": "tooltip",
+   "value_map": {
+    "0": "1 (full cold)",
+    "1": "2",
+    "2": "3 (full hot)"
+   },
    "state_var": "MD11_OVHD_PNEU_FWD_CARGO_TEMP",
-   "value_map": {},
    "num_states": 3,
    "events": {
     "LEFT_BUTTON_DOWN": 90275,
@@ -24981,11 +25017,17 @@
    "area": "Overhead",
    "label": "Middle Cabin/Main Cargo Deck Temperature",
    "label_source": "tooltip",
-   "state_var": "MD11_OVHD_PNEU_MID_CAB_TEMP",
    "value_map": {
-    "1": "Main Cargo Deck",
-    "0": "Middle Cabin"
+    "0": "1 (full cold)",
+    "1": "2",
+    "2": "3",
+    "3": "4",
+    "4": "5",
+    "5": "6",
+    "6": "7",
+    "7": "8 (full hot)"
    },
+   "state_var": "MD11_OVHD_PNEU_MID_CAB_TEMP",
    "num_states": 8,
    "events": {
     "LEFT_BUTTON_DOWN": 90283,

@@ -207,4 +207,18 @@ public class Md11DefinitionStateTests
         Assert.Equal("Nav", d.ValueDescriptions[1]);
         Assert.Equal(2, d.ValueDescriptions.Count);
     }
+
+    [Theory]
+    [InlineData("MD11_OVHD_PNEU_COCKPIT_TEMP", 8)]
+    [InlineData("MD11_OVHD_PNEU_MID_CAB_TEMP", 8)]
+    [InlineData("MD11_OVHD_PNEU_FWD_CARGO_TEMP", 3)]
+    [InlineData("MD11_OVHD_PNEU_AFT_CARGO_TEMP", 7)]
+    public void TemperatureKnob_RendersAsACombo_WithOnePositionPerDetent(string key, int positions)
+    {
+        var d = Vars[key];
+        Assert.False(d.RenderAsReadOnlyStatus);
+        Assert.Equal(positions, d.ValueDescriptions.Count);
+        Assert.Equal("1 (full cold)", d.ValueDescriptions[0]);
+        Assert.Equal(UpdateFrequency.OnRequest, d.UpdateFrequency);
+    }
 }

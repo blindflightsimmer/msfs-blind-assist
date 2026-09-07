@@ -176,6 +176,32 @@ class FinalizeTests(unittest.TestCase):
         self.assertEqual("Glareshield (Captain)", g.area_of("MD11_GSL_MST_WRN_BT"))
         self.assertEqual("Glareshield (First Officer)", g.area_of("MD11_GSR_MST_WRN_BT"))
 
+    def test_curated_value_map_replaces_a_leaked_or_missing_one(self):
+        # The parser cannot see these knobs' positions (their tooltips carry no %{case}), and on
+        # two of them the freighter/pax WORDING leaked into the map through the inline if/else:
+        # {"1": "Courier Cabin", "0": "Forward Cabin"} on an 8-position knob. Curated wins.
+        out = g.finalize_controls([
+            ctl("MD11_OVHD_PNEU_FWD_CAB_TEMP", kind="knob", label="Forward Cabin/Courier Cabin Temperature",
+                value_map={"1": "Courier Cabin", "0": "Forward Cabin"}),
+            ctl("MD11_OVHD_PNEU_COCKPIT_TEMP", kind="knob", label="Cockpit Temperature"),
+            ctl("MD11_OVHD_PNEU_FWD_CARGO_TEMP", kind="knob", label="Forward Lower Cargo Temperature"),
+            ctl("MD11_OVHD_PNEU_AFT_CARGO_TEMP", kind="knob", label="Aft Lower Cargo Temperature"),
+        ])
+        by = {c["node_id"]: c for c in out}
+        self.assertEqual("1 (full cold)", by["MD11_OVHD_PNEU_FWD_CAB_TEMP"]["value_map"]["0"])
+        self.assertEqual("8 (full hot)", by["MD11_OVHD_PNEU_FWD_CAB_TEMP"]["value_map"]["7"])
+        self.assertEqual(8, len(by["MD11_OVHD_PNEU_COCKPIT_TEMP"]["value_map"]))
+        self.assertEqual({"0": "1 (full cold)", "1": "2", "2": "3 (full hot)"},
+                         by["MD11_OVHD_PNEU_FWD_CARGO_TEMP"]["value_map"])
+        self.assertEqual(7, len(by["MD11_OVHD_PNEU_AFT_CARGO_TEMP"]["value_map"]))
+        self.assertEqual("7 (full hot)", by["MD11_OVHD_PNEU_AFT_CARGO_TEMP"]["value_map"]["6"])
+        # The label is untouched: only the positions were curated.
+        self.assertEqual("Forward Cabin/Courier Cabin Temperature", by["MD11_OVHD_PNEU_FWD_CAB_TEMP"]["label"])
+
+    def test_temperature_positions_are_generated_from_the_count(self):
+        self.assertEqual({"0": "1 (full cold)", "1": "2", "2": "3 (full hot)"}, g.temperature_positions(3))
+        self.assertEqual("4", g.temperature_positions(8)["3"])
+
 
 class KindCountsTests(unittest.TestCase):
     def test_reclassified_option_is_counted_once_not_under_annun_too(self):

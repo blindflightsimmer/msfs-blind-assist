@@ -177,6 +177,26 @@ AREA_FIXES = {
 # with a physical gate at 28 so the handle cannot slip straight between the
 # take-off range and the landing range. A go-around from 35/50 retracts to 28
 # first, which is why 28 is its own detent and not just a step on the way up.
+def temperature_positions(count):
+    """Value map for an n-position temperature selector: raw 0..n-1 → "1 (full cold)" … "n (full hot)".
+
+    TFDi's Systems Guide (Overhead → AIR panel) describes the selectors' ends as full COLD ("all
+    3 packs driven to full cold") and HOT ("trim air is added"), 65–85 °F with 75 °F at centre,
+    and the tooltips carry no %{case} map, so the positions have no names of TFDi's to lift.
+    Numbered positions are the honest read-out; the end words are the guide's. Left click lowered
+    the raw value on a live aircraft (2026-09-06), which matches the cold→hot arc.
+    """
+    out = {}
+    for raw in range(count):
+        pos = str(raw + 1)
+        if raw == 0:
+            pos += " (full cold)"
+        elif raw == count - 1:
+            pos += " (full hot)"
+        out[str(raw)] = pos
+    return out
+
+
 CURATED = {
     "MD11_FLAP_LATCH": {
         "label": "Flaps/Slats",
@@ -204,6 +224,18 @@ CURATED = {
             "formula": "degrees = 10 + MD11_DIALAFLAP_IND_RNG / 6.6667",
         },
     },
+    # AIR panel temperature selectors. NUM_STATES from Overhead.xml: 8 for the cockpit and the
+    # three cabin zones (raw 0–7), 3 for the forward lower cargo, 7 for the aft lower cargo. Two
+    # of them (FWD_CAB, MID_CAB) also need this to REPLACE a wrong map: their tooltip chooses its
+    # WORDING with %((L:MD11_EFB_IS_CARGO))%{if}Courier Cabin%{else}Forward Cabin%{end}, and the
+    # inline if/else leaked those two words into value_map, so an 8-position knob rendered as a
+    # two-item combo. finalize_controls lets a curated value_map win for exactly that reason.
+    "MD11_OVHD_PNEU_COCKPIT_TEMP": {"value_map": temperature_positions(8)},
+    "MD11_OVHD_PNEU_FWD_CAB_TEMP": {"value_map": temperature_positions(8)},
+    "MD11_OVHD_PNEU_MID_CAB_TEMP": {"value_map": temperature_positions(8)},
+    "MD11_OVHD_PNEU_AFT_CAB_TEMP": {"value_map": temperature_positions(8)},
+    "MD11_OVHD_PNEU_FWD_CARGO_TEMP": {"value_map": temperature_positions(3)},
+    "MD11_OVHD_PNEU_AFT_CARGO_TEMP": {"value_map": temperature_positions(7)},
 }
 
 # Controls whose exported tooltip is missing or garbage. TFDi's wording where it exists,
@@ -568,6 +600,12 @@ def finalize_controls(controls):
             if text and text.lower().endswith(" button"):
                 text = text[: -len(" button")]
             c["label"] = text
+        # 5. Curated positions. collect() spreads CURATED into the control but then writes the
+        #    PARSED value_map over it (later dict keys win), so a curated map has to be applied
+        #    here, where it can also replace a wrong parsed one — see the temperature knobs.
+        curated_map = (CURATED.get(nid) or {}).get("value_map")
+        if curated_map:
+            c["value_map"] = dict(curated_map)
         if c["label"]:
             c["label"] = speakable(c["label"])
     return kept

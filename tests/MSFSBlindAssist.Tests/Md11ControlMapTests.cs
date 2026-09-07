@@ -112,4 +112,39 @@ public class Md11ControlMapTests
         Assert.Equal("Off", c.ValueMap["0"]);
         Assert.Equal(2, c.ValueMap.Count);
     }
+
+    /// <summary>
+    /// The AIR panel temperature selectors carry curated positions (TFDi's tooltips name none):
+    /// numbered, with the guide's "full cold" / "full hot" at the ends. Two of them used to carry
+    /// the freighter/pax wording ("Courier Cabin" / "Forward Cabin") as their positions — a
+    /// tooltip-parsing leak that turned an 8-position knob into a two-item combo.
+    /// </summary>
+    [Theory]
+    [InlineData("MD11_OVHD_PNEU_COCKPIT_TEMP", 8)]
+    [InlineData("MD11_OVHD_PNEU_FWD_CAB_TEMP", 8)]
+    [InlineData("MD11_OVHD_PNEU_MID_CAB_TEMP", 8)]
+    [InlineData("MD11_OVHD_PNEU_AFT_CAB_TEMP", 8)]
+    [InlineData("MD11_OVHD_PNEU_FWD_CARGO_TEMP", 3)]
+    [InlineData("MD11_OVHD_PNEU_AFT_CARGO_TEMP", 7)]
+    public void TemperatureKnobs_CarryNumberedPositions_ColdToHot(string nodeId, int positions)
+    {
+        var c = Find(nodeId);
+
+        Assert.NotNull(c);
+        Assert.Equal(positions, c!.NumStates);
+        Assert.Equal(positions, c.ValueMap.Count);
+        Assert.Equal("1 (full cold)", c.ValueMap["0"]);
+        Assert.Equal($"{positions} (full hot)", c.ValueMap[(positions - 1).ToString()]);
+    }
+
+    /// <summary>No operable control may carry the airframe variant's wording as a position.</summary>
+    [Fact]
+    public void NoControl_HasTheCargoVariantWordingAsAPosition()
+    {
+        var offenders = Map.Controls
+            .Where(c => c.ValueMap.Values.Any(v => v.Contains("Courier Cabin", StringComparison.OrdinalIgnoreCase)
+                                                 || v.Contains("Main Cargo Deck", StringComparison.OrdinalIgnoreCase)))
+            .Select(c => c.NodeId).ToList();
+        Assert.Empty(offenders);
+    }
 }
