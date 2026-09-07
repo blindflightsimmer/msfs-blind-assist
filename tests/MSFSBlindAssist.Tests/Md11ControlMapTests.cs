@@ -147,4 +147,12 @@ public class Md11ControlMapTests
             .Select(c => c.NodeId).ToList();
         Assert.Empty(offenders);
     }
+
+    [Fact]
+    public void FireTestButton_IsNamedForEveryLoopItTests()
+    {
+        var c = Find("MD11_AOVHD_FIRETEST_BT");
+        Assert.NotNull(c);
+        Assert.Equal("Engine and APU Fire Test", c!.Label);
+    }
 }

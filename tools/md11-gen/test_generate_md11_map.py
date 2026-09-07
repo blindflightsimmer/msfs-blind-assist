@@ -202,6 +202,15 @@ class FinalizeTests(unittest.TestCase):
         self.assertEqual({"0": "1 (full cold)", "1": "2", "2": "3 (full hot)"}, g.temperature_positions(3))
         self.assertEqual("4", g.temperature_positions(8)["3"])
 
+    def test_the_fire_test_button_is_named_for_every_loop_it_tests(self):
+        # TFDi's tooltip says "APU Fire Test"; their Systems Guide calls the button ENG/APU FIRE
+        # TEST and says it lights ENG 1, 2, 3 and APU FIRE — and a live press (2026-09-06) lit all
+        # four plus the master warning. A pilot told "APU" would think the engine loops are untestable.
+        out = g.finalize_controls([ctl("MD11_AOVHD_FIRETEST_BT", label="APU Fire Test",
+                                       events={"LEFT_BUTTON_DOWN": 73748, "LEFT_BUTTON_UP": 73749})])
+        self.assertEqual("Engine and APU Fire Test", out[0]["label"])
+        self.assertEqual("curated", out[0]["label_source"])
+
 
 class KindCountsTests(unittest.TestCase):
     def test_reclassified_option_is_counted_once_not_under_annun_too(self):

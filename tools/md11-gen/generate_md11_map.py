@@ -267,6 +267,12 @@ LABEL_FIXES = {
     "MD11_LYOKE_TRIM_SW001": "First Officer Elevator Trim Switch",
     "MD11_THR_L_ATS_BT": "Left Autothrust Disconnect",
     "MD11_THR_R_ATS_BT": "Right Autothrust Disconnect",
+    # TFDi's tooltip says "APU Fire Test", but their Systems Guide names the button ENG/APU FIRE
+    # TEST and says it lights "ENG 1,2,3 and APU FIRE alerts" — and holding it on a live aircraft
+    # (2026-09-06) lit all three engine FIRE lights, the APU FIRE light and the master warning.
+    # It is the aircraft's ONE fire-detection test; the tooltip's "APU" would tell a pilot the
+    # engine loops cannot be tested.
+    "MD11_AOVHD_FIRETEST_BT": "Engine and APU Fire Test",
     # Same lever as Cylinder11904 / Cylinder11813 (same event, same L:var), which is why only
     # one of each pair survives; the "(cabin lever)" qualifier named a second row that no
     # longer exists, and it read oddly beside the plain "Door 2L Slides" of every other door.
