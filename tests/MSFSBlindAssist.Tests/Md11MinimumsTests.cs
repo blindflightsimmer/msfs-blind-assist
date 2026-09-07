@@ -73,4 +73,13 @@ public class Md11MinimumsTests
         Assert.Equal("MD11_LECP_MINIMUMS_KB", Md11Minimums.ModeKeyFor("MD11_CAP_MINIMUMS"));
         Assert.Equal("MD11_RECP_MINIMUMS_KB", Md11Minimums.ModeKeyFor("MD11_FO_MINIMUMS"));
     }
+
+    [Fact]
+    public void IsModeKey_NamesOnlyTheTwoModeSwitches()
+    {
+        Assert.True(Md11Minimums.IsModeKey("MD11_LECP_MINIMUMS_KB"));
+        Assert.True(Md11Minimums.IsModeKey("MD11_RECP_MINIMUMS_KB"));
+        Assert.False(Md11Minimums.IsModeKey("MD11_LECP_MINIMUMS_CAP"));
+        Assert.False(Md11Minimums.IsModeKey("MD11_CAP_MINIMUMS_SET"));
+    }
 }

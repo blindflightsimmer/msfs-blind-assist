@@ -263,4 +263,26 @@ public class Md11DefinitionStateTests
             Assert.False(d.PreventTextInput);
         }
     }
+
+    /// <summary>
+    /// The minimums rows read their mode word ("200 feet, radio") from these two switches' cache.
+    /// On request they were written only by an EFIS panel build or a typed entry, so the read-out
+    /// panel never had the word and a mode flipped in the cockpit left a stale one. Batch-covered,
+    /// the cache tracks the aircraft, and a change announces like any other background state.
+    /// </summary>
+    [Theory]
+    [InlineData("MD11_LECP_MINIMUMS_KB", "Captain Minimums Mode")]
+    [InlineData("MD11_RECP_MINIMUMS_KB", "First Officer Minimums Mode")]
+    public void MinimumsModeSwitch_RidesTheBatch_SoTheRowsModeWordStaysCurrent(string key, string displayName)
+    {
+        var d = Vars[key];
+        Assert.Equal(displayName, d.DisplayName);
+        Assert.Equal(UpdateFrequency.Continuous, d.UpdateFrequency);
+        Assert.True(d.IsAnnounced);
+        Assert.False(d.ExcludeFromBatch);
+        Assert.False(d.HighFrequency);
+        Assert.False(d.ExcludeFromMonitorManager);
+        Assert.Equal("Radio", d.ValueDescriptions[0]);
+        Assert.Equal("Baro", d.ValueDescriptions[1]);
+    }
 }

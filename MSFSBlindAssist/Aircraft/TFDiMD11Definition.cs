@@ -504,6 +504,14 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                     // walk reads fresh. It reads the TRAVEL var, not its own node var — see
                     // Md11SpeedbrakeSystem for the three-variable model the tooltip revealed.
                     || c.NodeId == Md11SpeedbrakeSystem.LeverKey;
+                // The two minimums MODE switches ride the 1 Hz continuous batch instead of being
+                // read on request: the minimums rows (Md11StatusRow) speak "200 feet, radio" from
+                // this cache, and an OnRequest var is written only when a panel build or a typed
+                // entry asks — so on the read-out panel the mode word was missing all session, and a
+                // mode flipped in the cockpit left a STALE word, which is worse than none. Batch-
+                // covered (no individual def), they also announce a change ("Captain Minimums Mode:
+                // Baro") like every other background state, with a Ctrl+M row.
+                bool minimumsMode = Md11Minimums.IsModeKey(c.NodeId);
                 // The Dial-A-Flap thumbwheel's declared state_var is the INDICATOR needle
                 // (MD11_DIALAFLAP_IND_RNG), which the cockpit XML animates with ANIM_LAG=1000 — it
                 // trails the real value by ~1 s, so the closed-loop walk read it a step behind, saw
@@ -518,8 +526,8 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                     Name = readVar,
                     DisplayName = label,
                     Type = SimVarType.LVar,
-                    UpdateFrequency = flapStream ? UpdateFrequency.Continuous : UpdateFrequency.OnRequest,
-                    IsAnnounced = flapStream,               // required to join continuous monitoring
+                    UpdateFrequency = flapStream || minimumsMode ? UpdateFrequency.Continuous : UpdateFrequency.OnRequest,
+                    IsAnnounced = flapStream || minimumsMode, // required to join continuous monitoring
                     ExcludeFromBatch = flapStream,          // per-var subscription, not the 1 Hz batch
                     HighFrequency = flapStream,             // SIM_FRAME + CHANGED: fresh reads for the walk
                     // NOT ExcludeFromMonitorManager, even though ProcessSimVarUpdate owns the

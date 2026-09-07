@@ -58,6 +58,11 @@ public static class Md11Minimums
     public static string ModeKeyFor(string readKey)
         => string.Equals(readKey, FirstOfficer.ReadKey, StringComparison.Ordinal) ? FirstOfficer.ModeKey : Captain.ModeKey;
 
+    /// <summary>True for a side's Radio/Baro mode switch — the var the minimums rows read their mode word from.</summary>
+    public static bool IsModeKey(string nodeId)
+        => string.Equals(nodeId, Captain.ModeKey, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(nodeId, FirstOfficer.ModeKey, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// What the pilot typed, as MainForm hands it over (a double; an empty or unparseable box is 0).
     /// Whole feet, 1–15000; anything else is refused with a spoken reason and nothing is sent.
