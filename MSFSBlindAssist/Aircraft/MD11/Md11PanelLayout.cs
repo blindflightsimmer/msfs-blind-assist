@@ -88,6 +88,7 @@ public static class Md11PanelLayout
         "MD11_OVHD_HYD_AUX_PUMP_1_BT", "MD11_OVHD_HYD_AUX_PUMP_2_BT",
         "MD11_OVHD_HYD_HYD_TEST_GRD", "MD11_OVHD_HYD_HYD_TEST_BT",
         "MD11_OVHD_HYD_SYS_1_PRESS_LT", "MD11_OVHD_HYD_SYS_2_PRESS_LT", "MD11_OVHD_HYD_SYS_3_PRESS_LT",
+        "MD11_OVHD_HYD_TEST_LT",   // the test's "running" light — its only feedback
     };
 
     private static readonly string[] Air =
@@ -174,7 +175,7 @@ public static class Md11PanelLayout
     private static readonly string[] Miscellaneous =
     {
         "MD11_OVHD_CVR_TEST_BT", "MD11_OVHD_CVR_ERASE_BT", "MD11_OVHD_CRG_DOOR_TEST_BT", "MD11_OVHD_STBY_CMPS_SW",
-        "MD11_OVHD_LOCK_AUTO_LT", "MD11_OVHD_LOCK_FAIL_LT",
+        "MD11_OVHD_LOCK_AUTO_LT", "MD11_OVHD_LOCK_FAIL_LT", "MD11_OVHD_CRG_DOOR_TEST_LT",
     };
 
     // ---- Aft Overhead ---------------------------------------------------------------------
@@ -189,7 +190,7 @@ public static class Md11PanelLayout
         "MD11_AOVHD_CRGSMK_FWD_HEAT_LT", "MD11_AOVHD_CRGSMK_FWD_SMOKE_LT",
         "MD11_AOVHD_CRGSMK_AFT_HEAT_LT", "MD11_AOVHD_CRGSMK_AFT_SMOKE_LT",
         "MD11_AOVHD_CRGSMK_FWD_VENTDISAG_LT", "MD11_AOVHD_CRGSMK_FWD_VENTOFF_LT",
-        "MD11_AOVHD_CRGSMK_AFT_VENTDISAG_LT", "MD11_AOVHD_CRGSMK_AFT_VENTOFF_LT",
+        "MD11_AOVHD_CRGSMK_AFT_VENTDISAG_LT", "MD11_AOVHD_CRGSMK_AFT_VENTOFF_LT", "MD11_AOVHD_CRGSMK_TEST_LT",
     };
 
     private static readonly string[] EngineFire =
@@ -304,14 +305,19 @@ public static class Md11PanelLayout
     };
 
     // ---- Pedestal -------------------------------------------------------------------------
+    // Grouped by ENGINE — starter then fuel for each in turn (the owner's ruling, 2026-09-06),
+    // then the items that are not per engine. The lamps follow the same order.
     private static readonly string[] ThrottleQuadrant =
     {
-        "MD11_THR_L_START_SW", "MD11_THR_C_START_SW", "MD11_THR_R_START_SW",
-        "MD11_THR_L_FUEL_SW", "MD11_THR_C_FUEL_SW", "MD11_THR_R_FUEL_SW",
+        "MD11_THR_L_START_SW", "MD11_THR_L_FUEL_SW",
+        "MD11_THR_C_START_SW", "MD11_THR_C_FUEL_SW",
+        "MD11_THR_R_START_SW", "MD11_THR_R_FUEL_SW",
         "MD11_THR_GA_BT", "MD11_THR_L_ATS_BT", "MD11_THR_R_ATS_BT",
         "MD11_THR_PARK_LVR", "MD11_THR_GEAR_HORN_BT",
-        "MD11_THR_L_START_LT", "MD11_THR_C_START_LT", "MD11_THR_R_START_LT",
-        "MD11_THR_L_FUEL_LT", "MD11_THR_C_FUEL_LT", "MD11_THR_R_FUEL_LT", "MD11_THR_PARK_LT",
+        "MD11_THR_L_START_LT", "MD11_THR_L_FUEL_LT",
+        "MD11_THR_C_START_LT", "MD11_THR_C_FUEL_LT",
+        "MD11_THR_R_START_LT", "MD11_THR_R_FUEL_LT",
+        "MD11_THR_PARK_LT",
     };
 
     private static readonly string[] Flaps = { "MD11_FLAP_LATCH", "MD11_DIALAFLAP_WHEEL_RNG" };

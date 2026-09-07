@@ -260,4 +260,45 @@ public class Md11PanelLayoutTests
         Assert.Equal(new[] { "MD11_OVHD_IRS_1_KB", "MD11_OVHD_IRS_2_KB", "MD11_OVHD_IRS_3_KB" }, P.Controls["IRS"]);
         Assert.Equal(new[] { "MD11_OVHD_IRS_1_LT", "MD11_OVHD_IRS_2_LT", "MD11_OVHD_IRS_3_LT" }, P.Displays["IRS"]);
     }
+
+    /// <summary>
+    /// The owner's ruling (2026-09-06): group the quadrant by ENGINE — starter then fuel for each
+    /// engine in turn — then the go-around, autothrust and brake items; the lights in the same
+    /// engine order. The old table went starters ×3, fuels ×3, which reads as two unrelated rows
+    /// of three to a pilot working one engine at a time.
+    /// </summary>
+    [Fact]
+    public void ThrottleQuadrant_IsGroupedByEngine()
+    {
+        Assert.Equal(new[]
+        {
+            "MD11_THR_L_START_SW", "MD11_THR_L_FUEL_SW",
+            "MD11_THR_C_START_SW", "MD11_THR_C_FUEL_SW",
+            "MD11_THR_R_START_SW", "MD11_THR_R_FUEL_SW",
+            "MD11_THR_GA_BT", "MD11_THR_L_ATS_BT", "MD11_THR_R_ATS_BT",
+            "MD11_THR_PARK_LVR", "MD11_THR_GEAR_HORN_BT",
+        }, P.Controls["Throttle Quadrant"]);
+        Assert.Equal(new[]
+        {
+            "MD11_THR_L_START_LT", "MD11_THR_L_FUEL_LT",
+            "MD11_THR_C_START_LT", "MD11_THR_C_FUEL_LT",
+            "MD11_THR_R_START_LT", "MD11_THR_R_FUEL_LT",
+            "MD11_THR_PARK_LT",
+        }, P.Displays["Throttle Quadrant"]);
+    }
+
+    /// <summary>
+    /// A test's "running" light is the only feedback a test gives; the three the aircraft has were
+    /// announced on change but listed nowhere. They are the last status row of the panel that
+    /// holds their test button.
+    /// </summary>
+    [Theory]
+    [InlineData("Cargo Fire", "MD11_AOVHD_CRGSMK_TEST_LT")]
+    [InlineData("Hydraulic", "MD11_OVHD_HYD_TEST_LT")]
+    [InlineData("Miscellaneous", "MD11_OVHD_CRG_DOOR_TEST_LT")]
+    public void TestRunningLights_AreStatusRowsOfTheirPanel(string panel, string lamp)
+    {
+        Assert.Equal(lamp, P.Displays[panel][^1]);
+        Assert.DoesNotContain(lamp, P.Controls[panel]);
+    }
 }
