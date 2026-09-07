@@ -168,6 +168,22 @@ public sealed class Md11EventBus : IDisposable
     }
 
     /// <summary>
+    /// Holds a momentary control: DOWN now, UP after <paramref name="holdMs"/>. Both ids ride the
+    /// same paced queue, so the release can never overtake the press, and the hold is measured
+    /// from the moment the DOWN is queued — with the queue otherwise idle, that is within one
+    /// pacing gap of when it lands. For the hold-to-test buttons (see Md11TestButtons), whose
+    /// lights are only on while the button is down.
+    /// </summary>
+    public async Task PressAndHoldAsync(Md11Control control, int holdMs)
+    {
+        var down = control.Event("LEFT_BUTTON_DOWN");
+        var up = control.Event("LEFT_BUTTON_UP");
+        if (down is > 0) Fire(down.Value);
+        await Task.Delay(Math.Max(holdMs, MinGapMs)).ConfigureAwait(false);
+        if (up is > 0) Fire(up.Value);
+    }
+
+    /// <summary>
     /// Writes one <c>MD11_EXTCTL_*</c> variable — the sanctioned direct-write family, and the only
     /// thing on this aircraft that is NOT a CEVENT.
     ///

@@ -284,7 +284,9 @@ public partial class TFDiMD11Definition
             {
                 bool guarded = !string.IsNullOrEmpty(control.GuardId);
                 _gate.NotePress(control.NodeId, Environment.TickCount64);
-                if (guarded)
+                if (Md11TestButtons.IsHoldToTest(control.NodeId))
+                    _ = HoldTestButtonAsync(control, simConnect, guarded);   // held, so its lights get seen
+                else if (guarded)
                     _ = GuardedPressAsync(control, simConnect, announcer);
                 else
                     _bus.Press(control);
@@ -597,6 +599,24 @@ public partial class TFDiMD11Definition
     {
         await EnsureGuardOpenAsync(control, sim).ConfigureAwait(false);
         _bus?.Press(control);
+    }
+
+    /// <summary>
+    /// A hold-to-test button (<see cref="Md11TestButtons"/>): cover lifted first when guarded,
+    /// then DOWN, held, UP. The lights the test brings on speak for themselves through the lamp
+    /// path; the press feedback stays silent, as for every stateless button.
+    /// </summary>
+    private async Task HoldTestButtonAsync(Md11Control control, SimConnectManager sim, bool guarded)
+    {
+        try
+        {
+            if (guarded) await EnsureGuardOpenAsync(control, sim).ConfigureAwait(false);
+            if (_bus != null) await _bus.PressAndHoldAsync(control, Md11TestButtons.HoldMs).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("MD11", $"Hold-to-test for {control.NodeId} threw: {ex.Message}");
+        }
     }
 
     // =================================================================================
