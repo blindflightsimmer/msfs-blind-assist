@@ -113,8 +113,8 @@ public static class Md11Fcp
     // "STD" indication lives on the PFD — which is WASM-rendered and unreadable, so the STD state
     // cannot be read back. That is why the Ctrl+B dialog's "Standard" does NOT push the knob: it
     // writes standard pressure as a VALUE to all three inboxes (StandardFor), the PMDG dialogs'
-    // way, so the result is readable. The knob push stays available as an EFIS-panel control in
-    // its own right (BaroKnob), where it is honestly labelled as a toggle.
+    // way, so the result is readable. The knob itself stays an EFIS-panel control in its own
+    // right ("Captain Altimeter Setting", BaroKnob), a walked knob_push whose press is the STD toggle.
     // ---------------------------------------------------------------------------------
 
     public const string ReadCaptainBaro = "MD11_CAP_ALTIMETER";
