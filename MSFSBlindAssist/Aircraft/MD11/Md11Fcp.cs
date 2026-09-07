@@ -129,13 +129,20 @@ public static class Md11Fcp
     public const string ReadStandbyBaro = "MD11_STBY_ALTIMETER";
     public const string WriteStandbyBaro = "MD11_EXTCTL_STBY_BARO";
 
-    /// <summary>Every altimeter Ctrl+B sets, captain first: (the export read back, the inbox written).</summary>
-    public static readonly (string Read, string Write)[] Altimeters =
+    /// <summary>Every altimeter Ctrl+B sets, captain first: (the side as spoken, the export read back, the inbox written).</summary>
+    public static readonly (string Side, string Read, string Write)[] Altimeters =
     {
-        (ReadCaptainBaro, WriteCaptainBaro),
-        (ReadFoBaro, WriteFoBaro),
-        (ReadStandbyBaro, WriteStandbyBaro),
+        ("Captain", ReadCaptainBaro, WriteCaptainBaro),
+        ("First officer", ReadFoBaro, WriteFoBaro),
+        ("Standby", ReadStandbyBaro, WriteStandbyBaro),
     };
+
+    /// <summary>
+    /// How long after Ctrl+B's writes the first officer's and standby altimeters are read back.
+    /// The inbox is applied within a frame and the export rides the 1 Hz batch, so this spans two
+    /// deliveries with margin — the same reasoning as the minimums read-back.
+    /// </summary>
+    public const int VerifyAfterMs = 2500;
 
     public const double MinInHg = 26.00;
     public const double MaxInHg = 32.00;
@@ -211,10 +218,44 @@ public static class Md11Fcp
     /// </summary>
     public static double BaroToDisplayUnit(double typed, double displayValue)
     {
+        // A typed standard pressure lands on the exact standard value in the display's unit, so
+        // "1013" on an inches display writes 29.92 — which the read-back then calls "standard" —
+        // rather than the 29.91 the raw conversion gives, one hundredth off and spoken as a QNH.
+        if (IsStandard(typed)) return StandardFor(displayValue);
+
         var displayIsHpa = IsHpa(displayValue);
         var typedIsHpa = LooksLikeHpa(typed);
         if (displayIsHpa == typedIsHpa) return typed;
         return displayIsHpa ? InHgToHpa(typed) : HpaToInHg(typed);
+    }
+
+    /// <summary>
+    /// A written setting and its read-back describe the same pressure. The export follows the
+    /// display's own resolution — whole hectopascals (1013 for a written 1013.25; 1010.84 may show
+    /// as 1011 or 1010) or two-decimal inches — so the tolerance is one display step of the
+    /// coarser unit plus a hair: 1.01 hPa, or 0.011 inHg when both sides are inches. A value that
+    /// did not take at all is normally many steps away; a one-step miss is deliberately let
+    /// through, since a false "not set" would teach a pilot to distrust the real one.
+    /// </summary>
+    public static bool AltimeterAgrees(double written, double readBack)
+    {
+        if (!IsHpa(written) && !IsHpa(readBack)) return Math.Abs(readBack - written) < 0.011;
+        var w = IsHpa(written) ? written : InHgToHpa(written);
+        var r = IsHpa(readBack) ? readBack : InHgToHpa(readBack);
+        return Math.Abs(r - w) < 1.01;
+    }
+
+    /// <summary>
+    /// After Ctrl+B, the sentence for an altimeter that did NOT take its value — "Standby
+    /// altimeter not set, reads 1012, 29.88" — or null when it did, or when nothing has been read
+    /// back yet (an export that never arrived is no evidence either way). Only a disagreement is
+    /// ever spoken: the entry itself was already announced by the screen reader and the captain's
+    /// setting confirms itself through <see cref="Md11AltimeterAnnouncer"/>.
+    /// </summary>
+    public static string? DescribeAltimeterShortfall(string side, double written, double? readBack)
+    {
+        if (readBack is not double r || AltimeterAgrees(written, r)) return null;
+        return $"{side} altimeter not set, reads {DescribeAltimeter(r)}";
     }
 
     /// <summary>Heading/track is a compass value; 360 is spoken as 360 but written as 0.</summary>

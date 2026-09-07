@@ -169,19 +169,31 @@ public sealed class Md11EventBus : IDisposable
 
     /// <summary>
     /// Holds a momentary control: DOWN now, UP after <paramref name="holdMs"/>. Both ids ride the
-    /// same paced queue, so the release can never overtake the press, and the hold is measured
-    /// from the moment the DOWN is queued — with the queue otherwise idle, that is within one
-    /// pacing gap of when it lands. For the hold-to-test buttons (see Md11TestButtons), whose
-    /// lights are only on while the button is down.
+    /// same paced queue, so the release can never overtake the press — and the hold is measured
+    /// from when the DOWN will be WRITTEN, not from when it is queued: the queue's backlog at
+    /// that moment (<see cref="Pending"/> × <see cref="MinGapMs"/>, the same stamp the walker
+    /// gives a click) is added to the wait, so a press queued behind a guard lift or a burst of
+    /// walker clicks is still held for the full time once it lands. With the queue idle the
+    /// backlog is zero and the hold is within one pacing gap of exact. For the hold-to-test
+    /// buttons (see Md11TestButtons), whose lights are only on while the button is down.
     /// </summary>
     public async Task PressAndHoldAsync(Md11Control control, int holdMs)
     {
         var down = control.Event("LEFT_BUTTON_DOWN");
         var up = control.Event("LEFT_BUTTON_UP");
+        var backlogMs = Pending * MinGapMs;   // sampled before the DOWN joins the queue
         if (down is > 0) Fire(down.Value);
-        await Task.Delay(Math.Max(holdMs, MinGapMs)).ConfigureAwait(false);
+        await Task.Delay(HoldDelayMs(holdMs, backlogMs)).ConfigureAwait(false);
         if (up is > 0) Fire(up.Value);
     }
+
+    /// <summary>
+    /// How long to wait between queuing the DOWN and queuing the UP so the button is down for
+    /// <paramref name="holdMs"/> from the time the DOWN is written: the hold itself (never less
+    /// than one pacing gap, or the UP could be written in the same pump tick) plus the backlog
+    /// the DOWN has to wait behind.
+    /// </summary>
+    internal static int HoldDelayMs(int holdMs, int backlogMs) => Math.Max(holdMs, MinGapMs) + Math.Max(backlogMs, 0);
 
     /// <summary>
     /// Writes one <c>MD11_EXTCTL_*</c> variable — the sanctioned direct-write family, and the only

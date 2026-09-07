@@ -175,6 +175,61 @@ public class Md11FcpTests
     }
 
     /// <summary>
+    /// A typed standard pressure lands EXACTLY on the standard value of the display's unit. The
+    /// raw conversion of 1013 to inches is 29.91, one hundredth off standard, which the read-back
+    /// would then speak as a QNH ("Altimeter: 1013, 29.91") instead of "Altimeter standard".
+    /// </summary>
+    [Theory]
+    [InlineData(1013, 29.92, 29.92)]
+    [InlineData(1013.25, 29.92, 29.92)]
+    [InlineData(29.92, 1013, 1013.25)]
+    [InlineData(1013, 1013, 1013.25)]
+    [InlineData(1014, 29.92, 29.94)]       // one hectopascal above standard is a real QNH, converted as before
+    public void BaroToDisplayUnit_SnapsATypedStandardOntoTheExactStandardValue(double typed, double display, double expected)
+    {
+        Assert.Equal(expected, Md11Fcp.BaroToDisplayUnit(typed, display), precision: 2);
+    }
+
+    /// <summary>
+    /// The read-back after Ctrl+B compares what was written with what the export shows, at one
+    /// display step of the coarser unit: the export shows whole hectopascals (a written 1013.25
+    /// reads 1013; a written 1010.84 may read 1011 or 1010) and two-decimal inches. A one-step
+    /// miss is let through on purpose — a false "not set" is the worse failure.
+    /// </summary>
+    [Theory]
+    [InlineData(1013.25, 1013, true)]
+    [InlineData(1010.84, 1011, true)]
+    [InlineData(1010.84, 1010, true)]
+    [InlineData(1013.25, 1011, false)]
+    [InlineData(29.85, 29.85, true)]
+    [InlineData(29.678, 29.68, true)]
+    [InlineData(29.678, 29.67, true)]
+    [InlineData(29.85, 29.92, false)]
+    [InlineData(29.92, 1013, true)]        // a display whose unit was unknown at write time: compared across units
+    [InlineData(29.92, 1005, false)]
+    public void AltimeterAgrees_IsOneDisplayStepOfTheCoarserUnit(double written, double readBack, bool expected)
+    {
+        Assert.Equal(expected, Md11Fcp.AltimeterAgrees(written, readBack));
+    }
+
+    [Fact]
+    public void AltimeterShortfall_SpeaksOnlyADisagreement_InTheBKeysWords()
+    {
+        Assert.Null(Md11Fcp.DescribeAltimeterShortfall("Standby", 29.85, 29.85));
+        Assert.Null(Md11Fcp.DescribeAltimeterShortfall("Standby", 29.85, null));   // never read back: no evidence
+        Assert.Equal("Standby altimeter not set, reads 1012, 29.88",
+            Md11Fcp.DescribeAltimeterShortfall("Standby", 1020, 1012));
+        Assert.Equal("First officer altimeter not set, reads standard",
+            Md11Fcp.DescribeAltimeterShortfall("First officer", 30.12, 29.92));
+    }
+
+    [Fact]
+    public void AltimeterReadBack_WaitsOutTwoBatchDeliveries()
+    {
+        Assert.InRange(Md11Fcp.VerifyAfterMs, 2000, 4000);
+    }
+
+    /// <summary>
     /// All three altimeters take a typed value through their own inbox, proven live 2026-09-06:
     /// MD11_EXTCTL_FO_BARO ← 29.85 put 29.85 in MD11_FO_ALTIMETER, MD11_EXTCTL_STBY_BARO ← 29.80
     /// put 29.8 in MD11_STBY_ALTIMETER, both inboxes back to -1. Ctrl+B writes all three from one
@@ -185,9 +240,9 @@ public class Md11FcpTests
     {
         Assert.Equal(new[]
         {
-            ("MD11_CAP_ALTIMETER", "MD11_EXTCTL_CAP_BARO"),
-            ("MD11_FO_ALTIMETER", "MD11_EXTCTL_FO_BARO"),
-            ("MD11_STBY_ALTIMETER", "MD11_EXTCTL_STBY_BARO"),
+            ("Captain", "MD11_CAP_ALTIMETER", "MD11_EXTCTL_CAP_BARO"),
+            ("First officer", "MD11_FO_ALTIMETER", "MD11_EXTCTL_FO_BARO"),
+            ("Standby", "MD11_STBY_ALTIMETER", "MD11_EXTCTL_STBY_BARO"),
         }, Md11Fcp.Altimeters);
         Assert.Equal("MD11_FO_ALTIMETER", Md11Fcp.ReadFoBaro);
         Assert.Equal("MD11_EXTCTL_STBY_BARO", Md11Fcp.WriteStandbyBaro);

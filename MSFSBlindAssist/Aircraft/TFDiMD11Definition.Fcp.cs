@@ -3,6 +3,7 @@ using MSFSBlindAssist.Accessibility;
 using MSFSBlindAssist.Aircraft.MD11;
 using MSFSBlindAssist.Forms;
 using MSFSBlindAssist.SimConnect;
+using MSFSBlindAssist.Utils.Logging;
 
 namespace MSFSBlindAssist.Aircraft;
 
@@ -241,7 +242,7 @@ public partial class TFDiMD11Definition
 
         var toggles = new List<ToggleButtonDef>
         {
-            new("&Standard, all three", () => "", () => SetAllAltimeters(sim, typed: null)),
+            new("&Standard, all three", () => "", () => SetAllAltimeters(sim, announcer, typed: null)),
         };
 
         var dialog = new ValueInputForm(
@@ -263,7 +264,7 @@ public partial class TFDiMD11Definition
             input =>
             {
                 if (!double.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) return;
-                SetAllAltimeters(sim, v);
+                SetAllAltimeters(sim, announcer, v);
             });
 
         dialog.ShowCancelButton = false;
@@ -274,15 +275,65 @@ public partial class TFDiMD11Definition
     /// Writes <paramref name="typed"/> (or standard pressure when null) to every altimeter, each in
     /// the unit its own display currently shows. A display whose reading is not cached yet is
     /// assumed to be in the typed value's unit (or inHg for Standard) — the inbox is one-shot, so
-    /// a wrong-unit write would simply be corrected by the next entry.
+    /// a wrong-unit write would simply be corrected by the next entry. The first officer's and
+    /// standby settings are then read back (<see cref="VerifyAltimetersAsync"/>); the captain's
+    /// confirms itself through the settle announcement.
     /// </summary>
-    private void SetAllAltimeters(SimConnectManager sim, double? typed)
+    private void SetAllAltimeters(SimConnectManager sim, ScreenReaderAnnouncer announcer, double? typed)
     {
-        foreach (var (read, write) in Md11Fcp.Altimeters)
+        var written = new List<(string Side, string Read, double Value)>();
+        bool allWritten = true;
+        foreach (var (side, read, write) in Md11Fcp.Altimeters)
         {
             var display = sim.GetCachedVariableValue(read) ?? typed ?? Md11Fcp.StandardInHg;
             var value = typed is double t ? Md11Fcp.BaroToDisplayUnit(t, display) : Md11Fcp.StandardFor(display);
-            SetFcpValue(write, value, sim);
+            allWritten &= SetFcpValue(write, value, sim);
+            written.Add((side, read, value));
+        }
+        if (allWritten) _ = VerifyAltimetersAsync(sim, announcer, written);
+    }
+
+    /// <summary>
+    /// The three inboxes are proven, but a write that silently did not take would leave a pilot
+    /// flying an altimeter they believe they set — and only the captain's has a confirmation of
+    /// its own. So once the exports have had time to ride the 1 Hz batch, the first officer's and
+    /// standby readings are compared with what was written for each (its own unit, its own value)
+    /// and ONLY a disagreement is spoken, as one utterance: "First officer altimeter not set,
+    /// reads 1012, 29.88". Agreement stays silent — the screen reader announced the entry and the
+    /// captain's sentence confirms the set. Not gated on Ctrl+M: this is the read-back of the
+    /// pilot's own entry, an error condition, not a background change. Same shape as the
+    /// minimums read-back and the altimeter settle: the UI-thread tail carries its own catch.
+    /// </summary>
+    private async Task VerifyAltimetersAsync(SimConnectManager sim, ScreenReaderAnnouncer announcer,
+        List<(string Side, string Read, double Value)> written)
+    {
+        int generation = _announceGeneration;
+        try
+        {
+            await Task.Delay(Md11Fcp.VerifyAfterMs).ConfigureAwait(false);
+            OnUiThread(() =>
+            {
+                try
+                {
+                    if (generation != _announceGeneration) return;   // aircraft switch / reconnect
+                    var shortfalls = new List<string>();
+                    foreach (var (side, read, value) in written)
+                    {
+                        if (read == Md11Fcp.ReadCaptainBaro) continue;   // the settle announcement covers it
+                        var text = Md11Fcp.DescribeAltimeterShortfall(side, value, sim.GetCachedVariableValue(read));
+                        if (text != null) shortfalls.Add(text);
+                    }
+                    if (shortfalls.Count > 0) announcer.Announce(string.Join(". ", shortfalls));
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug("MD11", $"Altimeter read-back (UI-thread tail) threw: {ex.Message}");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("MD11", $"Altimeter read-back threw: {ex.Message}");
         }
     }
 

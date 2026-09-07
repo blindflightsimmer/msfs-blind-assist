@@ -271,8 +271,8 @@ public class Md11DefinitionStateTests
     /// protocol that can call a real move "did not move". Two keys, one Name, only one batched.
     /// </summary>
     [Theory]
-    [InlineData("MD11_LECP_MINIMUMS_KB", "MD11_CAP_MINIMUMS_MODE", "Captain minimums mode")]
-    [InlineData("MD11_RECP_MINIMUMS_KB", "MD11_FO_MINIMUMS_MODE", "First Officer minimums mode")]
+    [InlineData("MD11_LECP_MINIMUMS_KB", "MD11_CAP_MINIMUMS_MODE", "Captain minimums mode (mirror)")]
+    [InlineData("MD11_RECP_MINIMUMS_KB", "MD11_FO_MINIMUMS_MODE", "First Officer minimums mode (mirror)")]
     public void MinimumsModeSwitch_StaysOnRequest_AndItsMirrorRidesTheBatch(string switchKey, string mirrorKey, string mirrorName)
     {
         var sw = Vars[switchKey];

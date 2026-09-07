@@ -148,6 +148,12 @@ public partial class TFDiMD11Definition
     /// So the state is re-composed here, on the UI thread (the gate and the announcer are
     /// UI-thread objects), and <see cref="Md11AnnouncementGate.SpeakDarkTransition"/> decides.
     /// LIT transitions are unaffected and still speak at once — a light coming on is news.
+    ///
+    /// Ctrl+M is re-checked HERE, by the lamp's own key, because this tail runs from a timer
+    /// outside ProcessSimVarUpdate and therefore outside MainForm's Suppressed wrap — the wrap
+    /// that mutes the lit edge cannot reach a sentence spoken 1.5 s later. The gate still runs
+    /// for a muted lamp so its dedup state stays what it would be unmuted; only the speech is
+    /// dropped. Same reasoning as the altimeter settle announcement.
     /// </summary>
     private async Task DeferDarkTransitionAsync(Md11Control lamp, ScreenReaderAnnouncer announcer)
     {
@@ -163,6 +169,7 @@ public partial class TFDiMD11Definition
 
                     long now = Environment.TickCount64;
                     bool powered = IsDcPowered();
+                    bool muted = Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet.Contains(lamp.NodeId);
 
                     if (_lampOwners.TryGetValue(lamp.NodeId, out var owners))
                     {
@@ -170,7 +177,7 @@ public partial class TFDiMD11Definition
                         {
                             var text = _gate.SpeakDarkTransition(owner.NodeId,
                                 Md11ControlState.Compose(owner.State, ReadStateVar, powered), powered, now);
-                            if (text != null) announcer.Announce($"{owner.DisplayLabel}: {text}");
+                            if (text != null && !muted) announcer.Announce($"{owner.DisplayLabel}: {text}");
                         }
                         return;
                     }
@@ -178,7 +185,7 @@ public partial class TFDiMD11Definition
                     // Standalone: whatever the lamp reads now, which may be lit again.
                     bool litNow = _lampLastVal.TryGetValue(lamp.NodeId, out var v) && v > Md11ControlState.LitThreshold;
                     var word = _gate.SpeakDarkTransition(lamp.NodeId, StandaloneWord(lamp, litNow), powered, now);
-                    if (word != null) announcer.Announce($"{lamp.DisplayLabel}: {word}");
+                    if (word != null && !muted) announcer.Announce($"{lamp.DisplayLabel}: {word}");
                 }
                 catch (Exception ex)
                 {

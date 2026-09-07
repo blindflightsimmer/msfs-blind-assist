@@ -203,7 +203,7 @@ public partial class TFDiMD11Definition
             v[side.ModeKey] = new SimVarDefinition
             {
                 Name = side.ModeSwitch,
-                DisplayName = $"{side.Name} minimums mode",
+                DisplayName = $"{side.Name} minimums mode (mirror)",   // never spoken; distinct from the switch's own label in logs
                 Type = SimVarType.LVar,
                 UpdateFrequency = UpdateFrequency.Continuous,
                 IsAnnounced = true,                  // batch-covered; consumed silently (no ValueDescriptions)
