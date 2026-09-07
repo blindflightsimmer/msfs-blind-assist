@@ -38,6 +38,28 @@ class ParenthesisTests(unittest.TestCase):
                          g.strip_outer_parens("High Intensity Lights (Strobes)"))
 
 
+class StrayPercentTests(unittest.TestCase):
+    """The aircraft ships one tooltip with a '%' directly before a branch literal — a typo, not
+    syntax (the directives are '%(', '%{', '%!' and the literal '%%'). Left unparsed it gave the
+    Auxiliary IRS selector no positions, and MSFSBA rendered the third IRS switch read-only."""
+
+    def test_a_stray_percent_before_a_branch_literal_is_dropped(self):
+        label, var, value_map = g.parse_tooltip(
+            "Auxiliary IRS (%((L:MD11_OVHD_IRS_3_KB))%{if}%Nav%{else}Off%{end})")
+        self.assertEqual("Auxiliary IRS", label)
+        self.assertEqual("MD11_OVHD_IRS_3_KB", var)
+        self.assertEqual({"1": "Nav", "0": "Off"}, value_map)
+
+    def test_a_literal_percent_sign_is_still_dropped_as_live_data_not_as_a_typo(self):
+        # '%%' is a real percent sign after a number ('%!d!%%'); the brightness knobs use it.
+        # Their tooltips carry no positions before or after the fix.
+        label, var, value_map = g.parse_tooltip(
+            "DU1 Brightness (%((L:MD11_PED_DU1_BRT_KB) 10 *)%!d!%%)")
+        self.assertEqual("DU1 Brightness", label)
+        self.assertEqual("MD11_PED_DU1_BRT_KB", var)
+        self.assertEqual({}, value_map)
+
+
 class FinalizeTests(unittest.TestCase):
     def test_guard_is_named_after_the_control_it_covers(self):
         out = g.finalize_controls([

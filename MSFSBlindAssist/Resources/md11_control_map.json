@@ -22192,7 +22192,10 @@
    "label": "Auxiliary IRS",
    "label_source": "tooltip",
    "state_var": "MD11_OVHD_IRS_3_KB",
-   "value_map": {},
+   "value_map": {
+    "1": "Nav",
+    "0": "Off"
+   },
    "num_states": 2,
    "events": {
     "LEFT_BUTTON_DOWN": 90116
