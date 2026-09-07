@@ -1689,9 +1689,9 @@ public partial class IFly737MAXDefinition : BaseAircraftDefinition
     private readonly Dictionary<string, double> _lastVSpeed = new();
 
     // Takeoff roll "V1"/"Rotate"/"V2" callout state machine (pure; see
-    // IFly737TakeoffCallouts). Fed here from IFLY_IAS samples + the cached
+    // TakeoffVSpeedCallouts). Fed here from IFLY_IAS samples + the cached
     // SIM_ON_GROUND state; V-speed targets from the IFLY_V1/VR/V2 handlers.
-    private readonly IFly737TakeoffCallouts _takeoffCallouts = new();
+    private readonly TakeoffVSpeedCallouts _takeoffCallouts = new();
     private bool _calloutOnGround = true; // last SIM_ON_GROUND sample (ramp default)
 
     // Speedbrake lever announce state (PR #163, minor 9). null initial means the

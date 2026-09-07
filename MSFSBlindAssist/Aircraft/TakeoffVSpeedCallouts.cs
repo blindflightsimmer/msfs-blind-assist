@@ -1,14 +1,17 @@
 namespace MSFSBlindAssist.Aircraft;
 
 /// <summary>
-/// Pure state machine for the iFly 737 MAX8 takeoff V-speed callouts ("V1",
-/// "Rotate", "V2") — the spoken equivalent of the aural callouts other addons
-/// (PMDG) play natively and the iFly does not. Fed from the definition's
-/// ProcessSimVarUpdate: V-speed targets from the iFly WASM's plain L:vars
-/// (IFLY_V1/VR/V2), airspeed samples from the high-frequency AIRSPEED INDICATED
-/// subscription (IFLY_IAS), air/ground from the base SIM_ON_GROUND var.
+/// Pure state machine for the takeoff V-speed callouts ("V1", "Rotate", "V2") —
+/// the spoken equivalent of the aural callouts the PMDGs play natively and the
+/// iFly 737 MAX8 and the TFDi MD-11 do not. Each definition feeds it from its
+/// ProcessSimVarUpdate: V-speed targets from the aircraft's own vars
+/// (IFLY_V1/VR/V2, MD11_V1/VR/V2), airspeed samples from a high-frequency
+/// AIRSPEED INDICATED subscription (IFLY_IAS, MD11_IAS — a per-var SIM_FRAME
+/// subscription; the 1 Hz batch would call "Rotate" up to a second late),
+/// air/ground from the base SIM_ON_GROUND var. Born as IFly737TakeoffCallouts
+/// (2026-07-24) and generalized unchanged for the MD-11 (2026-09-07).
 ///
-/// Behavior contract (pinned by IFly737TakeoffCalloutsTests):
+/// Behavior contract (pinned by TakeoffVSpeedCalloutsTests):
 /// - ARMS only on the ground below <see cref="ArmBelowKnots"/> with V1 and VR
 ///   both set — so connecting mid-roll or mid-flight stays silent, and a landing
 ///   rollout can never fire (the aircraft reaches the ground already fast, and
@@ -23,7 +26,7 @@ namespace MSFSBlindAssist.Aircraft;
 ///   are 90+ kt; a sub-40 "threshold" could re-fire inside the arm band).
 /// - Clearing V1 or VR (FMC route wipe) disarms immediately and silently.
 /// </summary>
-public sealed class IFly737TakeoffCallouts
+public sealed class TakeoffVSpeedCallouts
 {
     /// <summary>Arm/re-arm ceiling: the machine arms only on the ground below this
     /// IAS. Well above taxi jitter, well below any real V-speed.</summary>
@@ -39,8 +42,8 @@ public sealed class IFly737TakeoffCallouts
     private bool _firedV1, _firedVR, _firedV2;
 
     // The iFly WASM publishes -1 for a V-speed the FMC hasn't computed
-    // (live-verified 2026-07-24); Sanitize folds that — and any other sub-40
-    // garbage — to "unset".
+    // (live-verified 2026-07-24) and TFDi's MD-11 exports read 0 before the FMS
+    // has them; Sanitize folds both — and any other sub-40 garbage — to "unset".
     public void SetV1(double knots) => _v1 = Sanitize(knots);
     public void SetVR(double knots) => _vr = Sanitize(knots);
     public void SetV2(double knots) => _v2 = Sanitize(knots);

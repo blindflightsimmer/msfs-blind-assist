@@ -1,6 +1,7 @@
-// Characterization tests for the iFly 737 MAX8 takeoff V-speed callout state
-// machine (Aircraft/IFly737TakeoffCallouts.cs) — the spoken "V1" / "Rotate" /
-// "V2" calls fed from the high-frequency AIRSPEED INDICATED subscription.
+// Characterization tests for the takeoff V-speed callout state machine
+// (Aircraft/TakeoffVSpeedCallouts.cs, shared by the iFly 737 MAX8 and the TFDi
+// MD-11) — the spoken "V1" / "Rotate" / "V2" calls fed from a high-frequency
+// AIRSPEED INDICATED subscription.
 //
 // The safety-shaped contracts pinned here:
 // - arming requires ground + slow (< 40 kt) + V1 and VR set, so a mid-roll or
@@ -13,11 +14,11 @@ using MSFSBlindAssist.Aircraft;
 
 namespace MSFSBlindAssist.Tests;
 
-public class IFly737TakeoffCalloutsTests
+public class TakeoffVSpeedCalloutsTests
 {
-    private static IFly737TakeoffCallouts NewArmed(double v1 = 140, double vr = 144, double v2 = 150)
+    private static TakeoffVSpeedCallouts NewArmed(double v1 = 140, double vr = 144, double v2 = 150)
     {
-        var t = new IFly737TakeoffCallouts();
+        var t = new TakeoffVSpeedCallouts();
         t.SetV1(v1);
         t.SetVR(vr);
         t.SetV2(v2);
@@ -25,7 +26,7 @@ public class IFly737TakeoffCalloutsTests
         return t;
     }
 
-    private static List<string> Roll(IFly737TakeoffCallouts t, bool onGround, params double[] samples)
+    private static List<string> Roll(TakeoffVSpeedCallouts t, bool onGround, params double[] samples)
     {
         var all = new List<string>();
         foreach (double ias in samples)
@@ -71,7 +72,7 @@ public class IFly737TakeoffCalloutsTests
     [Fact]
     public void Never_armed_at_speed_so_landing_rollout_stays_silent()
     {
-        var t = new IFly737TakeoffCallouts();
+        var t = new TakeoffVSpeedCallouts();
         t.SetV1(140);
         t.SetVR(144);
         t.SetV2(150);
@@ -88,7 +89,7 @@ public class IFly737TakeoffCalloutsTests
     [Fact]
     public void Connect_mid_roll_stays_silent_for_that_departure()
     {
-        var t = new IFly737TakeoffCallouts();
+        var t = new TakeoffVSpeedCallouts();
         t.SetV1(140);
         t.SetVR(144);
         t.SetV2(150);
@@ -135,7 +136,7 @@ public class IFly737TakeoffCalloutsTests
     [Fact]
     public void Unset_speeds_never_arm_and_clearing_speeds_mid_roll_disarms()
     {
-        var t = new IFly737TakeoffCallouts();
+        var t = new TakeoffVSpeedCallouts();
         Assert.Empty(Roll(t, onGround: true, 0, 100, 150, 200));
 
         var u = NewArmed(v1: 140, vr: 144, v2: 150);
@@ -158,7 +159,7 @@ public class IFly737TakeoffCalloutsTests
     [Fact]
     public void Speeds_below_the_arm_threshold_are_treated_as_unset()
     {
-        var t = new IFly737TakeoffCallouts();
+        var t = new TakeoffVSpeedCallouts();
         t.SetV1(20);   // garbage — below the 40 kt arm band
         t.SetVR(25);
         t.SetV2(30);
@@ -170,7 +171,7 @@ public class IFly737TakeoffCalloutsTests
     {
         // The iFly WASM publishes -1 (not 0) for a V-speed the FMC hasn't
         // computed — live-verified 2026-07-24 on a loaded MAX8.
-        var t = new IFly737TakeoffCallouts();
+        var t = new TakeoffVSpeedCallouts();
         t.SetV1(-1);
         t.SetVR(-1);
         t.SetV2(-1);

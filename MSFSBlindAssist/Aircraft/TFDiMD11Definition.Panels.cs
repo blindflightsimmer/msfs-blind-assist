@@ -62,6 +62,30 @@ public partial class TFDiMD11Definition
         v["MD11_VSR"] = Export("MD11_VSR", "Slat retraction speed");
         v["MD11_VFR"] = Export("MD11_VFR", "Flap retraction speed");
 
+        // ---- Take-off roll callouts --------------------------------------------------
+        // Indicated airspeed fed per SIM_FRAME to TakeoffVSpeedCallouts ("V1" / "Rotate" / "V2"
+        // as the FMS speeds are reached — the calls the PMDGs play natively; TFDi plays none).
+        // G_FORCE's registration pattern: IsAnnounced to be monitored at all, ExcludeFromBatch +
+        // HighFrequency for a per-var SIM_FRAME subscription — the 1 Hz batch would call "Rotate"
+        // up to a second (~5 kt) late, useless as an action cue. Never spoken itself and hidden
+        // from Ctrl+M; the callouts are muted through the V1 / Rotate speed / V2 rows instead,
+        // which is why those three exports keep a Ctrl+M row (ExcludeFromMonitorManager means
+        // "muted by plumbing" and must never sit on a var whose row silences something).
+        v[Md11TakeoffCallouts.IasKey] = new SimVarDefinition
+        {
+            Name = "AIRSPEED INDICATED",
+            DisplayName = "Indicated airspeed",
+            Type = SimVarType.SimVar,
+            Units = "knots",
+            UpdateFrequency = UpdateFrequency.Continuous,
+            IsAnnounced = true,
+            ExcludeFromBatch = true,
+            HighFrequency = true,
+            ExcludeFromMonitorManager = true,
+        };
+        foreach (var row in Md11TakeoffCallouts.MuteRows)
+            v[row].ExcludeFromMonitorManager = false;
+
         // ---- Minimums / altimeters ---------------------------------------------------
         v["MD11_CAP_MINIMUMS"] = Export("MD11_CAP_MINIMUMS", "Captain minimums");
         v["MD11_FO_MINIMUMS"] = Export("MD11_FO_MINIMUMS", "First officer minimums");

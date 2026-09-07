@@ -178,6 +178,17 @@ The Read-outs section has an Engines panel with N1 for all three engines ("Engin
 percent"), between Autoflight Status and APU Status.
 
 
+TAKE-OFF ROLL
+
+"V1", "Rotate" and "V2" are called as the FMS speeds are reached, the way the PMDG Boeings do
+it (TFDi's MD-11 plays no callouts of its own). They need V1 and VR set in the FMS - the
+Read-outs section's V-Speeds panel shows what it has - and they arm only on the ground below 40
+knots, so a rejected take-off re-arms for the next attempt and a landing can never fire them.
+"N1 70 percent" is called on the first engine to reach it, where the autothrottle takes over.
+Takeoff Assist (Ctrl+T) adds "80 knots" and "100 knots". Mute any of the three V-speed calls in
+Ctrl+M under V1, Rotate speed and V2.
+
+
 MINIMUMS
 
 The EFIS Captain and EFIS First Officer panels each have a Minimums field next to the minimums

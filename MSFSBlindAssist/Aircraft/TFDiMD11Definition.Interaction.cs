@@ -725,8 +725,32 @@ public partial class TFDiMD11Definition
     /// true consumes the update; MainForm's global echo wrap keeps a combo set from
     /// double-speaking.
     /// </summary>
+    /// <summary>Take-off roll "V1" / "Rotate" / "V2" — see <see cref="Md11TakeoffCallouts"/>.</summary>
+    private readonly TakeoffVSpeedCallouts _takeoffCallouts = new();
+    private bool _calloutOnGround;
+
     public override bool ProcessSimVarUpdate(string varName, double value, ScreenReaderAnnouncer announcer)
     {
+        // Take-off roll V-speed callouts, fed per SIM_FRAME (hot path — first branch). The
+        // contract is TakeoffVSpeedCallouts': arms on the ground below 40 kt with V1 and VR set,
+        // upward crossings only, once per roll, a rejected take-off re-arms. AnnounceImmediate,
+        // deliberately: "V1" and "Rotate" are action cues whose value IS the timing, and a queued
+        // announce would wait out an in-progress "100 knots". That bypasses MainForm's Suppressed
+        // wrap AND the Ctrl+M mute, so both are re-applied here — per speed, keyed on the listed
+        // V1 / Rotate speed / V2 rows, the way the iFly does it.
+        if (varName == Md11TakeoffCallouts.IasKey)
+        {
+            var callouts = _takeoffCallouts.ProcessSample(value, _calloutOnGround);
+            if (callouts.Count > 0 && !announcer.Suppressed)
+            {
+                var muted = Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet;
+                foreach (var callout in callouts)
+                    if (!muted.Contains(Md11TakeoffCallouts.MuteKeyFor(callout)))
+                        announcer.AnnounceImmediate(callout);
+            }
+            return true;
+        }
+
         switch (varName)
         {
             case Md11FlapSystem.LeverKey:
@@ -803,6 +827,7 @@ public partial class TFDiMD11Definition
         // The single exception is the take-off cue: engine N1 first reaching 70% (ATS takeover).
         if (_silentReadouts.Contains(varName))
         {
+            Md11TakeoffCallouts.Feed(_takeoffCallouts, varName, value);   // V1 / VR / V2 arm the roll callouts, silently
             HandleN1Callout(varName, value, announcer);
             return true;
         }
@@ -817,6 +842,10 @@ public partial class TFDiMD11Definition
             HandleLampUpdate(ctrl, varName, value, announcer);
             return true;
         }
+
+        // Air/ground for the roll callouts, peeked from the base SIM_ON_GROUND var — it must fall
+        // through so the base still speaks "On ground" / "Airborne".
+        if (varName == "SIM_ON_GROUND") _calloutOnGround = value >= 0.5;
 
         return base.ProcessSimVarUpdate(varName, value, announcer);
     }
