@@ -138,7 +138,7 @@ public static class Md11Fcp
     };
 
     /// <summary>
-    /// How long after Ctrl+B's writes the first officer's and standby altimeters are read back.
+    /// How long after Ctrl+B's writes all three altimeters are read back.
     /// The inbox is applied within a frame and the export rides the 1 Hz batch, so this spans two
     /// deliveries with margin — the same reasoning as the minimums read-back.
     /// </summary>
@@ -253,8 +253,8 @@ public static class Md11Fcp
     /// altimeter not set, reads 1012, 29.88" — or null when it did, or when nothing has been read
     /// back (an export that never arrived, or one reading 0 — a nonexistent L:var reads a flat 0,
     /// and "reads 0, 0.00" is neither true nor actionable — is no evidence either way). Only a
-    /// disagreement is ever spoken: the entry itself was already announced by the screen reader
-    /// and the captain's setting confirms itself through <see cref="Md11AltimeterAnnouncer"/>.
+    /// disagreement is ever spoken: the entry itself was already announced by the screen reader,
+    /// and a captain's setting that CHANGED is confirmed by <see cref="Md11AltimeterAnnouncer"/>.
     /// </summary>
     public static string? DescribeAltimeterShortfall(string side, double written, double? readBack)
     {

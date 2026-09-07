@@ -274,10 +274,11 @@ public partial class TFDiMD11Definition
 
     /// <summary>
     /// Writes <paramref name="typed"/> (or standard pressure when null) to every altimeter, each in
-    /// the unit its own display currently shows. A display whose reading is not cached yet is
-    /// assumed to be in the typed value's unit (or inHg for Standard) — the inbox is one-shot, so
-    /// a wrong-unit write would simply be corrected by the next entry. All three settings are
-    /// then read back (<see cref="VerifyAltimetersAsync"/>).
+    /// the unit its own display currently shows. A display whose reading is not cached yet, or
+    /// reads 0 (cold and dark, or an export not yet populated — the read-back treats 0 the same
+    /// way), is assumed to be in the typed value's unit (or inHg for Standard) — the inbox is
+    /// one-shot, so a wrong-unit write would simply be corrected by the next entry. All three
+    /// settings are then read back (<see cref="VerifyAltimetersAsync"/>).
     /// </summary>
     private void SetAllAltimeters(SimConnectManager sim, ScreenReaderAnnouncer announcer, double? typed)
     {
@@ -285,7 +286,7 @@ public partial class TFDiMD11Definition
         bool allWritten = true;
         foreach (var (side, read, write) in Md11Fcp.Altimeters)
         {
-            var display = sim.GetCachedVariableValue(read) ?? typed ?? Md11Fcp.StandardInHg;
+            var display = sim.GetCachedVariableValue(read) is double d and > 0 ? d : (typed ?? Md11Fcp.StandardInHg);
             var value = typed is double t ? Md11Fcp.BaroToDisplayUnit(t, display) : Md11Fcp.StandardFor(display);
             allWritten &= SetFcpValue(write, value, sim);
             written.Add((side, read, value));
