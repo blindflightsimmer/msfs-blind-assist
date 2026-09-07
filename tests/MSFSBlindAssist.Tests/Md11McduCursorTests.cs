@@ -205,6 +205,11 @@ public class Md11McduCursorTests
     [InlineData("ACT F-PLN 10/12", "ACT F-PLN")]
     [InlineData("MENU", "MENU")]
     [InlineData("F-PLN INIT", "F-PLN INIT")]
+    [InlineData("TAKEOFF 2/3", "TAKEOFF")]
+    [InlineData("RTE 1", "RTE 1")]             // a number that is not a counter
+    [InlineData("DIR/INTC", "DIR/INTC")]       // a slash that is not a counter
+    [InlineData("RWY 09/27", "RWY")]           // accepted residual: a trailing digit pair reads as a counter,
+                                               // which can only KEEP a cursor on its row, never throw it
     [InlineData("", "")]
     public void PageName_strips_only_a_trailing_counter(string title, string expected)
     {
@@ -224,6 +229,21 @@ public class Md11McduCursorTests
     {
         Assert.False(Md11McduTitle.SamePage("ACT F-PLN     1/2", "SEC F-PLN     1/2"));
         Assert.False(Md11McduTitle.SamePage("ACT F-PLN     1/2", "F-PLN INIT"));
+    }
+
+    /// <summary>
+    /// Entering a waypoint retitles ACT F-PLN as MOD F-PLN — the same page, the same lines, a
+    /// modification pending. The cursor stays on the line being edited; the new title is still
+    /// announced by the form. SEC F-PLN is another flight plan and stays a page change.
+    /// </summary>
+    [Fact]
+    public void A_pending_modification_is_the_same_page()
+    {
+        Assert.True(Md11McduTitle.SamePage("ACT F-PLN     1/2", "MOD F-PLN     1/2"));
+        Assert.True(Md11McduTitle.SamePage("MOD F-PLN     2/2", "ACT F-PLN     1/2"));
+        Assert.Equal("F-PLN", Md11McduTitle.Identity("      ACT F-PLN     1/2"));
+        Assert.Equal("SEC F-PLN", Md11McduTitle.Identity("SEC F-PLN 1/2"));
+        Assert.False(Md11McduTitle.SamePage("ACT F-PLN     1/2", "SEC F-PLN     1/2"));
     }
 
     [Fact]

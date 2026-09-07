@@ -30,10 +30,26 @@ public static class Md11McduTitle
         string.IsNullOrEmpty(title) ? string.Empty : TrailingCounter.Replace(title, string.Empty).Trim();
 
     /// <summary>
-    /// True when the two titles name the same page — a counter ticking over is the same page.
-    /// Announcing a changed title is a separate decision from moving the cursor; this answers
-    /// only the second.
+    /// The Honeywell FMS retitles a page while a modification is pending — ACT F-PLN becomes
+    /// MOD F-PLN the moment a waypoint is entered — and it is the same page with the same lines
+    /// under the cursor; SEC F-PLN is a different flight plan and stays distinct.
+    /// </summary>
+    private static readonly string[] PendingPrefixes = { "ACT ", "MOD " };
+
+    /// <summary>The page name with a pending-modification prefix folded away: what the cursor follows.</summary>
+    public static string Identity(string? title)
+    {
+        var name = PageName(title);
+        foreach (var prefix in PendingPrefixes)
+            if (name.StartsWith(prefix, StringComparison.Ordinal)) return name.Substring(prefix.Length).Trim();
+        return name;
+    }
+
+    /// <summary>
+    /// True when the two titles name the same page — a counter ticking over is the same page,
+    /// and so is a flight plan going from ACT to MOD as an entry is made. Announcing a changed
+    /// title is a separate decision from moving the cursor; this answers only the second.
     /// </summary>
     public static bool SamePage(string? previousTitle, string? title) =>
-        string.Equals(PageName(previousTitle), PageName(title), StringComparison.Ordinal);
+        string.Equals(Identity(previousTitle), Identity(title), StringComparison.Ordinal);
 }

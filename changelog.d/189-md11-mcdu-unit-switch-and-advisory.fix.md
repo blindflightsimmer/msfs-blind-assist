@@ -1,0 +1,1 @@
+MD-11 MCDU window: switching units no longer reads the new page title over the unit's own name, the "no data" advisory sits under your cursor as soon as it appears, and a flight plan going from ACT to MOD as you enter a waypoint keeps your cursor on its line.

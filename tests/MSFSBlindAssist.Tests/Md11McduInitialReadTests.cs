@@ -57,5 +57,9 @@ public class Md11McduInitialReadTests
         // MobiFlight's ids must fall through, not decode as an MCDU.
         Assert.Null(Md11McduDataManager.UnitForRequest(0));
         Assert.Null(Md11McduDataManager.UnitForRequest(0x504D4400));
+        // The real neighbours on the connection: PMDG 777 (50000-50003), NG3 (51000-51002),
+        // MobiFlight (3000-3003).
+        foreach (var id in new uint[] { 50000, 50003, 51000, 51002, 3000, 3003 })
+            Assert.Null(Md11McduDataManager.UnitForRequest(id));
     }
 }

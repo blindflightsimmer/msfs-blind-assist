@@ -215,7 +215,10 @@ public sealed class Md11McduDataManager : IDisposable
                 var prev = _screens[(int)unit.Value];
                 firstEver = prev == null;
                 changed = prev == null || !SameContent(prev, screen);
-                _screens[(int)unit.Value] = screen;
+                // An identical repeat — the start-up snapshot echoing what the subscription just
+                // delivered — keeps the OLD object, so the form's reference shortcut skips it
+                // instead of re-rendering a page that did not change.
+                if (changed) _screens[(int)unit.Value] = screen;
             }
 
             // First delivery per unit is logged: on a fresh (unverified) install this line is the

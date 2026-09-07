@@ -72,6 +72,13 @@ public class Md11McduForm : Form
     /// </summary>
     private IReadOnlyList<Md11McduRow>? _rows;
 
+    /// <summary>
+    /// The row the cursor was on when the list last went over to an advisory (a blank, or no
+    /// data), so a return to the SAME page puts the pilot back on the line they were reading —
+    /// the advisory replaces <see cref="_rows"/>, and without this the return landed on "Title:".
+    /// </summary>
+    private Md11McduRow? _cursorBeforeAdvisory;
+
     public Md11McduForm(TFDiMD11Definition definition, SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
         _definition = definition;
@@ -212,6 +219,10 @@ public class Md11McduForm : Form
             // Suppress the title announce: the screen reader already spoke the combo change, and
             // re-announcing the page title on top of it is exactly the double-announce the panel
             // rules forbid. Adopt the new title silently so a LATER genuine page change still fires.
+            // _screen is the PREVIOUS unit's page: left in place, Render drew it under the new
+            // unit's name and the next poll then announced the new unit's title on top of the
+            // combo — the double-announce this handler exists to prevent.
+            _screen = null;
             _lastRendered = null;
             Render(silentTitle: true);
         };
@@ -501,13 +512,14 @@ public class Md11McduForm : Form
         // back on that row below — never by index, which handed a pilot reading line 6 the
         // scratchpad after a few slews.
         var rows = Md11McduRows.Build(screen);
-        var cursor = CursorRow();
+        var cursor = CursorRow() ?? _cursorBeforeAdvisory;   // content back after an advisory: the row from before it
 
         // Shared in-place reconcile. Its content-based restore cannot follow an LSK line (the
         // number is part of the text, so a slewed line is a different string); this form's own
         // row restore runs below and overrides it.
         Forms.DisplayList.UpdateInPlace(mcduDisplay, rows.Select(r => r.Text).ToList());
         _rows = rows;
+        _cursorBeforeAdvisory = null;
 
         UpdateStatus(screen);
 
@@ -575,8 +587,14 @@ public class Md11McduForm : Form
                 withContent.Add(u);
 
         var advisory = Md11McduPresence.Describe(_unit, presence, withContent).ToList();
+        if (_rows != null) _cursorBeforeAdvisory = CursorRow();   // only on the way OVER, never on a later tick
         Forms.DisplayList.UpdateInPlace(mcduDisplay, advisory);
         _rows = null;
+
+        // The advisory must be UNDER the cursor, not one Down-press away: a list populated with
+        // nothing selected makes the screen reader announce an empty list, and the one row that
+        // explains the situation stays unheard until the pilot presses Down.
+        if (mcduDisplay.SelectedIndex < 0 && mcduDisplay.Items.Count > 0) mcduDisplay.SelectedIndex = 0;
 
         // UpdateStatus owns the MSG/FAIL announcement and WRITES statusLabel, so it runs
         // BEFORE the label is set here — reversed, it would overwrite "blank" with
