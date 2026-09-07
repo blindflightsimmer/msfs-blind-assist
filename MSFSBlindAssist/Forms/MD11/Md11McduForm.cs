@@ -65,10 +65,12 @@ public class Md11McduForm : Form
     private string _lastAnnouncedScratchpad = "";
     private string _lastAnnouncedFlags = "";
 
-    /// <summary>The MD-11's MCDU is a 14-row grid: title, six label/value pairs, scratchpad.</summary>
-    private const int TitleRow = 0;
-    private const int ScratchpadRow = Md11McduLayout.Rows - 1;   // 13
-    private const int LskRows = 6;
+    /// <summary>
+    /// What each item of the list currently stands for (title / label n / line n / scratchpad),
+    /// or null while the list shows an advisory. This — not the item index — is how the cursor
+    /// is put back after a redraw: see <see cref="Md11McduRows.Restore"/>.
+    /// </summary>
+    private IReadOnlyList<Md11McduRow>? _rows;
 
     public Md11McduForm(TFDiMD11Definition definition, SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
@@ -438,7 +440,12 @@ public class Md11McduForm : Form
         var screen = manager.GetScreen(_unit);
         if (screen == null)
         {
-            statusLabel.Text = "MCDU: waiting for data";
+            // Nothing has ever been delivered for this unit. Show the no-data advisory rather
+            // than an EMPTY list: Md11McduPresence has always had a row for this state, but this
+            // early return used to skip Render and leave the pilot arrowing through nothing —
+            // which is what an in-flight start looked like before the manager's start-up
+            // snapshot, and what a feed that is genuinely absent still looks like.
+            RenderAdvisory(Md11McduPresenceState.NoData, screen: null);
             return;
         }
 
@@ -482,76 +489,52 @@ public class Md11McduForm : Form
         var presence = Md11McduPresence.Classify(screen);
         if (presence != Md11McduPresenceState.Content)
         {
-            // Reached only for a SETTLED blank or a unit that has never delivered — Poll holds
-            // every transient repaint before it gets here.
-            var withContent = new List<Md11McduUnit>(3);
-            foreach (var u in new[] { Md11McduUnit.Left, Md11McduUnit.Center, Md11McduUnit.Right })
-                if (Md11McduPresence.Classify(manager?.GetScreen(u)) == Md11McduPresenceState.Content)
-                    withContent.Add(u);
-
-            var advisory = Md11McduPresence.Describe(_unit, presence, withContent).ToList();
-            Forms.DisplayList.UpdateInPlace(mcduDisplay, advisory);
-
-            // UpdateStatus owns the MSG/FAIL announcement and WRITES statusLabel, so it runs
-            // BEFORE the label is set here — reversed, it would overwrite "blank" with
-            // "connected", which is the exact false reassurance this branch exists to remove.
-            UpdateStatus(screen);
-            statusLabel.Text = presence == Md11McduPresenceState.Blank
-                ? $"MCDU: {_unit} blank"
-                : $"MCDU: {_unit} no data";
-
-            // NOTHING is spoken here, deliberately. The advisory is a LIST ROW: the screen reader
-            // reads it when the pilot's focus is on the display, which is the same channel the
-            // monitor manager uses for its filter state. Speaking it instead put "MCDU is blank"
-            // over the cockpit on every repaint.
-            //
-            // The title latch is deliberately NOT cleared either. Clearing it made the page title
-            // re-announce every time content came back — the "then something there" half of the
-            // spam. Left alone, a CDU that goes dark and returns to the SAME page stays silent
-            // (nothing changed for the pilot) while a return to a DIFFERENT page announces itself
-            // through the ordinary title-change path.
+            // Reached only for a SETTLED blank — Poll holds every transient repaint before it
+            // gets here, and shows the never-delivered case itself.
+            RenderAdvisory(presence, screen);
             return;
         }
 
-        var lines = new List<string>(Md11McduLayout.Rows + 2)
-        {
-            $"Title: {screen.Lines[TitleRow].Trim()}"
-        };
+        // The rows are built with their identities (Md11McduRows), because the list is not
+        // positionally stable: blank label rows are dropped, so "6:" is a different item on the
+        // F-PLN page than on the MENU page. The cursor is remembered as the ROW it was on and put
+        // back on that row below — never by index, which handed a pilot reading line 6 the
+        // scratchpad after a few slews.
+        var rows = Md11McduRows.Build(screen);
+        var cursor = CursorRow();
 
-        // Six label/value pairs. The label row is unnumbered and sits above its value; the value
-        // row carries the LSK number, so "3:" is what Ctrl+3 / Alt+3 acts on. Blank label rows are
-        // dropped — a run of empty lines is noise to arrow through — but a blank VALUE row is kept,
-        // because an empty LSK row is a real, selectable state on a CDU.
-        for (int i = 0; i < LskRows; i++)
-        {
-            var label = screen.Lines[1 + 2 * i].TrimEnd();
-            var value = screen.Lines[2 + 2 * i].TrimEnd();
-
-            if (!string.IsNullOrWhiteSpace(label)) lines.Add("   " + label);
-            lines.Add($"{i + 1}: {value}");
-        }
-
-        lines.Add($"Scratchpad: {screen.Lines[ScratchpadRow].Trim()}");
-
-        int savedIndex = mcduDisplay.SelectedIndex;
-        // Shared in-place reconcile. This form's selection semantics run below and override the
-        // helper's content-based restore: a CDU screen is positional (LSK rows), so index restore
-        // and the page force-select win.
-        Forms.DisplayList.UpdateInPlace(mcduDisplay, lines);
+        // Shared in-place reconcile. Its content-based restore cannot follow an LSK line (the
+        // number is part of the text, so a slewed line is a different string); this form's own
+        // row restore runs below and overrides it.
+        Forms.DisplayList.UpdateInPlace(mcduDisplay, rows.Select(r => r.Text).ToList());
+        _rows = rows;
 
         UpdateStatus(screen);
 
-        var title = screen.Lines[TitleRow].Trim();
+        var title = screen.Title.Trim();
         bool titleChanged = !string.IsNullOrEmpty(title) && title != _lastAnnouncedTitle;
         if (titleChanged)
         {
+            // Two decisions, not one. A changed title is ANNOUNCED — the pilot cannot see that
+            // the key worked. But the cursor goes to line 1 only when the PAGE changed: MD-11
+            // titles carry their page counter ("ACT F-PLN     1/2"), and a slew across a page
+            // boundary changes the text while the pilot is still reading the same page.
+            bool pageChanged = !Md11McduTitle.SamePage(_lastAnnouncedTitle, title);
             _lastAnnouncedTitle = title;
             if (!silentTitle) _announcer.Announce(title);
-            if (mcduDisplay.Items.Count > 1) mcduDisplay.SelectedIndex = 1;
+
+            if (pageChanged)
+            {
+                if (mcduDisplay.Items.Count > 1) mcduDisplay.SelectedIndex = 1;
+            }
+            else
+            {
+                RestoreCursor(cursor);
+            }
         }
-        else if (savedIndex >= 0 && savedIndex < mcduDisplay.Items.Count && mcduDisplay.SelectedIndex != savedIndex)
+        else
         {
-            mcduDisplay.SelectedIndex = savedIndex;
+            RestoreCursor(cursor);
         }
 
         if (screen.Scratchpad.Trim() != _lastAnnouncedScratchpad)
@@ -559,6 +542,60 @@ public class Md11McduForm : Form
             _scratchpadDebounceTimer?.Stop();
             _scratchpadDebounceTimer?.Start();
         }
+    }
+
+    /// <summary>The row the cursor is on, or null when the list shows an advisory or nothing is selected.</summary>
+    private Md11McduRow? CursorRow()
+    {
+        int i = mcduDisplay.SelectedIndex;
+        return _rows != null && i >= 0 && i < _rows.Count ? _rows[i] : null;
+    }
+
+    /// <summary>Puts the cursor back on the row it was on before the redraw, if that row still exists.</summary>
+    private void RestoreCursor(Md11McduRow? previous)
+    {
+        if (_rows == null) return;
+        int index = Md11McduRows.Restore(_rows, previous);
+        if (index >= 0 && index < mcduDisplay.Items.Count && mcduDisplay.SelectedIndex != index)
+            mcduDisplay.SelectedIndex = index;
+    }
+
+    /// <summary>
+    /// Replaces the page with the blank / no-data advisory rows.
+    ///
+    /// <paramref name="screen"/> is null only for <see cref="Md11McduPresenceState.NoData"/> —
+    /// nothing has been delivered, so there are no annunciator flags to show either.
+    /// </summary>
+    private void RenderAdvisory(Md11McduPresenceState presence, Md11McduScreen? screen)
+    {
+        var manager = _sim.Md11McduDataManager;
+        var withContent = new List<Md11McduUnit>(3);
+        foreach (var u in new[] { Md11McduUnit.Left, Md11McduUnit.Center, Md11McduUnit.Right })
+            if (Md11McduPresence.Classify(manager?.GetScreen(u)) == Md11McduPresenceState.Content)
+                withContent.Add(u);
+
+        var advisory = Md11McduPresence.Describe(_unit, presence, withContent).ToList();
+        Forms.DisplayList.UpdateInPlace(mcduDisplay, advisory);
+        _rows = null;
+
+        // UpdateStatus owns the MSG/FAIL announcement and WRITES statusLabel, so it runs
+        // BEFORE the label is set here — reversed, it would overwrite "blank" with
+        // "connected", which is the exact false reassurance this branch exists to remove.
+        if (screen != null) UpdateStatus(screen);
+        statusLabel.Text = presence == Md11McduPresenceState.Blank
+            ? $"MCDU: {_unit} blank"
+            : $"MCDU: {_unit} no data";
+
+        // NOTHING is spoken here, deliberately. The advisory is a LIST ROW: the screen reader
+        // reads it when the pilot's focus is on the display, which is the same channel the
+        // monitor manager uses for its filter state. Speaking it instead put "MCDU is blank"
+        // over the cockpit on every repaint.
+        //
+        // The title latch is deliberately NOT cleared either. Clearing it made the page title
+        // re-announce every time content came back — the "then something there" half of the
+        // spam. Left alone, a CDU that goes dark and returns to the SAME page stays silent
+        // (nothing changed for the pilot) while a return to a DIFFERENT page announces itself
+        // through the ordinary title-change path.
     }
 
     /// <summary>
