@@ -21,13 +21,22 @@ public static class Md11TakeoffCallouts
     /// <summary>The Ctrl+M rows that mute the callouts: V1, Rotate speed, V2 — the same rows a pilot reads the speeds from.</summary>
     public static readonly string[] MuteRows = { V1Key, VrKey, V2Key };
 
-    /// <summary>The Ctrl+M key whose mute silences <paramref name="callout"/> ("V1", "Rotate" or "V2").</summary>
+    /// <summary>
+    /// The Ctrl+M key whose mute silences <paramref name="callout"/> ("V1", "Rotate" or "V2"). A
+    /// callout this table does not know maps to NO row and is therefore never muted — fail open:
+    /// a new call the machine grows one day is spoken until someone gives it a row, never
+    /// silently swallowed by the V2 checkbox.
+    /// </summary>
     public static string MuteKeyFor(string callout) => callout switch
     {
         "V1" => V1Key,
         "Rotate" => VrKey,
-        _ => V2Key,
+        "V2" => V2Key,
+        _ => "",
     };
+
+    /// <summary>True for the three FMS V-speed exports that arm the machine.</summary>
+    public static bool IsVSpeedKey(string varName) => varName is V1Key or VrKey or V2Key;
 
     /// <summary>Hands a delivered V-speed export to the machine; anything else is ignored.</summary>
     public static void Feed(TakeoffVSpeedCallouts machine, string varName, double value)

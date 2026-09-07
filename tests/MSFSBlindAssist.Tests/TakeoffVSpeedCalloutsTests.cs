@@ -187,4 +187,21 @@ public class TakeoffVSpeedCalloutsTests
         // The NaN/negative samples must not have corrupted the last-sample edge.
         Assert.Equal(new[] { "V1" }, Roll(t, onGround: true, 120, 141));
     }
+    /// <summary>
+    /// A SimConnect reconnect resets the machine. An arm from before the drop must not survive
+    /// into a later landing: after Reset the speeds are gone, so nothing can fire until they are
+    /// fed again AND a fresh arm happens on the ground below 40 kt — a roll straight from the
+    /// speeds, without that arming sample, stays silent.
+    /// </summary>
+    [Fact]
+    public void Reset_DisarmsAndForgetsTheSpeeds_UntilAFreshArm()
+    {
+        var t = NewArmed();
+        t.Reset();
+        Assert.Empty(Roll(t, onGround: true, 100, 141, 145, 151));   // no speeds: nothing can fire
+        t.SetV1(140); t.SetVR(144); t.SetV2(150);
+        Assert.Empty(Roll(t, onGround: true, 100, 141, 145, 151));   // speeds back, not armed
+        Assert.Empty(t.ProcessSample(5, onGround: true));            // the fresh arm
+        Assert.Equal(new[] { "V1", "Rotate", "V2" }, Roll(t, onGround: true, 100, 141, 145, 151));
+    }
 }

@@ -42,10 +42,23 @@ public class Md11TakeoffCalloutsTests
     public void EachCallout_IsMutedByItsVSpeedRow(string callout, string key, string rowName)
     {
         Assert.Equal(key, Md11TakeoffCallouts.MuteKeyFor(callout));
+        Assert.True(Md11TakeoffCallouts.IsVSpeedKey(key));
         var row = Vars[key];
         Assert.Equal(rowName, row.DisplayName);
-        Assert.True(row.IsAnnounced);
+        Assert.Equal(UpdateFrequency.Continuous, row.UpdateFrequency);   // delivered in the background at all
+        Assert.True(row.IsAnnounced);                                     // monitored at all
         Assert.False(row.ExcludeFromMonitorManager);
+    }
+
+    /// <summary>
+    /// A callout the mute table does not know maps to no row, so it is spoken rather than
+    /// silently swallowed by the V2 checkbox — fail open for a safety cue.
+    /// </summary>
+    [Fact]
+    public void AnUnknownCallout_IsNeverMuted()
+    {
+        Assert.DoesNotContain(Md11TakeoffCallouts.MuteKeyFor("Vfs"), Md11TakeoffCallouts.MuteRows);
+        Assert.False(Md11TakeoffCallouts.IsVSpeedKey("MD11_ENG1_N1"));
     }
 
     /// <summary>
@@ -59,18 +72,20 @@ public class Md11TakeoffCalloutsTests
         var m = new TakeoffVSpeedCallouts();
         Md11TakeoffCallouts.Feed(m, "MD11_V1", 0);
         Md11TakeoffCallouts.Feed(m, "MD11_VR", 0);
-        Md11TakeoffCallouts.Feed(m, "MD11_ENG1_N1", 95);   // not a V-speed: ignored
         Assert.Empty(m.ProcessSample(0, onGround: true));
         Assert.Empty(m.ProcessSample(160, onGround: true));   // no speeds yet: silent
 
         Md11TakeoffCallouts.Feed(m, "MD11_V1", 145);
         Md11TakeoffCallouts.Feed(m, "MD11_VR", 150);
         Md11TakeoffCallouts.Feed(m, "MD11_V2", 158);
+        Md11TakeoffCallouts.Feed(m, "MD11_ENG1_N1", 95);     // not a V-speed: must change no speed below
         Assert.Empty(m.ProcessSample(10, onGround: true));    // arms below 40 kt on the ground
-        var spoken = new List<string>();
-        foreach (var ias in new[] { 60.0, 100, 140, 146, 151, 157 })
-            spoken.AddRange(m.ProcessSample(ias, onGround: true));
-        spoken.AddRange(m.ProcessSample(160, onGround: false));
-        Assert.Equal(new[] { "V1", "Rotate", "V2" }, spoken);
+        Assert.Empty(m.ProcessSample(60, onGround: true));
+        Assert.Empty(m.ProcessSample(100, onGround: true));   // a V-speed of 95 from the N1 feed would fire here
+        Assert.Empty(m.ProcessSample(140, onGround: true));
+        Assert.Equal(new[] { "V1" }, m.ProcessSample(146, onGround: true));
+        Assert.Equal(new[] { "Rotate" }, m.ProcessSample(151, onGround: true));
+        Assert.Empty(m.ProcessSample(157, onGround: true));
+        Assert.Equal(new[] { "V2" }, m.ProcessSample(160, onGround: false));
     }
 }

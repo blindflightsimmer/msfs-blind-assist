@@ -1694,6 +1694,18 @@ public partial class IFly737MAXDefinition : BaseAircraftDefinition
     private readonly TakeoffVSpeedCallouts _takeoffCallouts = new();
     private bool _calloutOnGround = true; // last SIM_ON_GROUND sample (ramp default)
 
+    /// <summary>
+    /// A SimConnect reconnect resets the roll-callout machine: an arm from before the drop must
+    /// not survive into a later landing rollout (found in the MD-11's review, 2026-09-07; the
+    /// speeds are redelivered with the first batch, and a fresh arm needs a ground sample below
+    /// 40 kt again).
+    /// </summary>
+    public override void ResetAnnouncementBaselines()
+    {
+        base.ResetAnnouncementBaselines();
+        _takeoffCallouts.Reset();
+    }
+
     // Speedbrake lever announce state (PR #163, minor 9). null initial means the
     // first post-launch event announces (announceInitialChange semantics for this
     // aircraft — the initial snapshot sweep never reaches ProcessSimVarUpdate, so

@@ -719,16 +719,22 @@ public partial class TFDiMD11Definition
     // State → speech
     // =================================================================================
 
+    /// <summary>Take-off roll "V1" / "Rotate" / "V2" — see <see cref="Md11TakeoffCallouts"/>. Reset on a reconnect.</summary>
+    private readonly TakeoffVSpeedCallouts _takeoffCallouts = new();
+
+    /// <summary>
+    /// The last SIM_ON_GROUND sample. Starts true: a ramp start is the norm, and an airborne start
+    /// is harmless either way, because the machine arms only on a sample below 40 kt, which the
+    /// air never delivers (the iFly's choice, and MainForm's for its own _lastOnGround).
+    /// </summary>
+    private bool _calloutOnGround = true;
+
     /// <summary>
     /// The flap handle and thumbwheel are two vars describing ONE fact ("what flap setting am I
     /// taking off on?"), so they are composed here rather than announced separately. Returning
     /// true consumes the update; MainForm's global echo wrap keeps a combo set from
     /// double-speaking.
     /// </summary>
-    /// <summary>Take-off roll "V1" / "Rotate" / "V2" — see <see cref="Md11TakeoffCallouts"/>.</summary>
-    private readonly TakeoffVSpeedCallouts _takeoffCallouts = new();
-    private bool _calloutOnGround;
-
     public override bool ProcessSimVarUpdate(string varName, double value, ScreenReaderAnnouncer announcer)
     {
         // Take-off roll V-speed callouts, fed per SIM_FRAME (hot path — first branch). The
@@ -750,6 +756,17 @@ public partial class TFDiMD11Definition
             }
             return true;
         }
+
+        // Air/ground for the roll callouts, peeked from the base SIM_ON_GROUND var and never
+        // consumed — it falls through to base.ProcessSimVarUpdate, which speaks "On ground" /
+        // "Airborne". Up here, ahead of every consuming branch, so none can swallow it later.
+        if (varName == "SIM_ON_GROUND") _calloutOnGround = value >= 0.5;
+
+        // The FMS V-speed exports arm the roll callouts. Explicit and ahead of the silent read-out
+        // branch that consumes them, so the feed does not hinge on those exports' registration
+        // shape — an export given ValueDescriptions one day would leave the silent set, and the
+        // callouts would go quietly dead with every test still green.
+        if (Md11TakeoffCallouts.IsVSpeedKey(varName)) Md11TakeoffCallouts.Feed(_takeoffCallouts, varName, value);
 
         switch (varName)
         {
@@ -827,7 +844,6 @@ public partial class TFDiMD11Definition
         // The single exception is the take-off cue: engine N1 first reaching 70% (ATS takeover).
         if (_silentReadouts.Contains(varName))
         {
-            Md11TakeoffCallouts.Feed(_takeoffCallouts, varName, value);   // V1 / VR / V2 arm the roll callouts, silently
             HandleN1Callout(varName, value, announcer);
             return true;
         }
@@ -842,10 +858,6 @@ public partial class TFDiMD11Definition
             HandleLampUpdate(ctrl, varName, value, announcer);
             return true;
         }
-
-        // Air/ground for the roll callouts, peeked from the base SIM_ON_GROUND var — it must fall
-        // through so the base still speaks "On ground" / "Airborne".
-        if (varName == "SIM_ON_GROUND") _calloutOnGround = value >= 0.5;
 
         return base.ProcessSimVarUpdate(varName, value, announcer);
     }

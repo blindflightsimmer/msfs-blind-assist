@@ -22,9 +22,14 @@ namespace MSFSBlindAssist.Aircraft;
 /// - Each callout fires once per roll. Decelerating back below the arm threshold
 ///   on the ground (a rejected takeoff) re-arms with fresh flags for the next
 ///   attempt.
-/// - V-speeds below the arm threshold are treated as unset (real 737 V-speeds
-///   are 90+ kt; a sub-40 "threshold" could re-fire inside the arm band).
+/// - V-speeds below the arm threshold are treated as unset (real airliner
+///   V-speeds run 90+ kt on a 737 and ~130-170 kt on the MD-11; a sub-40
+///   "threshold" could re-fire inside the arm band).
 /// - Clearing V1 or VR (FMC route wipe) disarms immediately and silently.
+/// - <see cref="Reset"/> disarms and forgets the speeds and the last sample.
+///   The definitions call it on a SimConnect reconnect: the "a landing can
+///   never fire" guarantee above holds for a fresh or reset machine, and an arm
+///   from before the drop would otherwise survive into a later landing rollout.
 /// </summary>
 public sealed class TakeoffVSpeedCallouts
 {
@@ -42,11 +47,26 @@ public sealed class TakeoffVSpeedCallouts
     private bool _firedV1, _firedVR, _firedV2;
 
     // The iFly WASM publishes -1 for a V-speed the FMC hasn't computed
-    // (live-verified 2026-07-24) and TFDi's MD-11 exports read 0 before the FMS
-    // has them; Sanitize folds both — and any other sub-40 garbage — to "unset".
+    // (live-verified 2026-07-24); the MD-11's exports read 0 or TFDi's -999
+    // "dashed" sentinel before the FMS has them (which of the two is unmeasured).
+    // Sanitize folds all of those — and any other sub-40 garbage — to "unset".
     public void SetV1(double knots) => _v1 = Sanitize(knots);
     public void SetVR(double knots) => _vr = Sanitize(knots);
     public void SetV2(double knots) => _v2 = Sanitize(knots);
+
+    /// <summary>
+    /// Forget everything: speeds, the last sample, the arm and the fired flags. For a SimConnect
+    /// reconnect — the speeds are redelivered with the first batch, and a fresh arm needs a
+    /// ground sample below <see cref="ArmBelowKnots"/> again, so nothing armed before the drop can
+    /// fire on a later landing.
+    /// </summary>
+    public void Reset()
+    {
+        _v1 = _vr = _v2 = 0;
+        _lastIas = double.NaN;
+        _armed = false;
+        _firedV1 = _firedVR = _firedV2 = false;
+    }
 
     private static double Sanitize(double knots) =>
         double.IsNaN(knots) || knots < ArmBelowKnots ? 0 : knots;
