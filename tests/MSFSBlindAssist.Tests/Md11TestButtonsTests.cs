@@ -12,7 +12,6 @@ public class Md11TestButtonsTests
     [Theory]
     [InlineData("MD11_AOVHD_FIRETEST_BT")]
     [InlineData("MD11_AOVHD_CRGSMK_TEST_BT")]
-    [InlineData("MD11_OVHD_ANNUNLT_TEST_BT")]
     [InlineData("MD11_OVHD_HYD_HYD_TEST_BT")]
     [InlineData("MD11_OVHD_FUEL_QTY_TEST_BT")]
     [InlineData("MD11_OVHD_LTS_EMER_TEST_BT")]
@@ -33,6 +32,9 @@ public class Md11TestButtonsTests
     {
         Assert.False(Md11TestButtons.IsHoldToTest("MD11_OVHD_ELEC_BATT_BT"));
         Assert.False(Md11TestButtons.IsHoldToTest("MD11_CGS_NAV_BT"));
+        // The annunciator light test stays a tap: held, it lights all ~488 lamps and the lamp
+        // announcer would speak a sentence for each, lit and again dark.
+        Assert.False(Md11TestButtons.IsHoldToTest("MD11_OVHD_ANNUNLT_TEST_BT"));
     }
 
     [Fact]

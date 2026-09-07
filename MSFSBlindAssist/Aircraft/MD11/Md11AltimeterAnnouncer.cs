@@ -8,9 +8,12 @@ namespace MSFSBlindAssist.Aircraft.MD11;
 /// second) and a pilot wants the FINAL setting, not "29.93, 29.94, 29.95…". So a new value only
 /// arms a pending sentence, and <see cref="Due"/> releases it once nothing new has arrived for
 /// <see cref="SettleMs"/>. Baseline-first — the first value seen after connecting or a reset is
-/// remembered, never spoken — and deduplicated on the sentence, so a re-delivered unchanged
-/// value stays quiet. The words are the B key's (<see cref="Md11Fcp.DescribeAltimeter"/>), so a
-/// pilot hears one phrasing whether they asked or were told.
+/// remembered, never spoken. What keeps a re-delivered UNCHANGED value quiet is the last-seen
+/// guard in <see cref="OnUpdate"/>, which drops it before it can arm or re-stamp anything; the
+/// sentence dedup in <see cref="Due"/> is a second net, and it alone would not do — an ignored
+/// redelivery must not restart the settle clock, which is a question about arming, not about
+/// words. The words are the B key's (<see cref="Md11Fcp.DescribeAltimeter"/>), so a pilot hears
+/// one phrasing whether they asked or were told.
 /// </summary>
 public sealed class Md11AltimeterAnnouncer
 {

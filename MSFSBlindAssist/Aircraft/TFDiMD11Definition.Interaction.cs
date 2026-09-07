@@ -732,7 +732,10 @@ public partial class TFDiMD11Definition
         {
             _uiContext ??= SynchronizationContext.Current;
             _altimeter.OnUpdate(value, Environment.TickCount64);
-            _ = AnnounceAltimeterWhenSettledAsync(announcer);
+            // Only a value that actually armed a settle needs a check. An unchanged redelivery
+            // (the panel's per-second force-read) is ignored by OnUpdate, so spawning a check for
+            // it would queue a Task per second for the life of an open panel with nothing to say.
+            if (_altimeter.HasPending) _ = AnnounceAltimeterWhenSettledAsync(announcer);
             return true;
         }
 
@@ -768,6 +771,13 @@ public partial class TFDiMD11Definition
     /// last one speaks), if no reconnect/aircraft switch intervened, and if the pilot has not
     /// muted the altimeter in Ctrl+M. That last check is here, not in MainForm's Suppressed
     /// wrap, because this runs from a timer outside ProcessSimVarUpdate.
+    ///
+    /// A check that finds a value still pending fired marginally early — Task.Delay may return a
+    /// hair under its interval, and TickCount64 is a ~15 ms-granularity clock — so it re-arms
+    /// itself once rather than drop the sentence. The tail runs on the UI thread through
+    /// OnUiThread, i.e. outside this method's try, so it carries its own catch: the same shape as
+    /// DeferDarkTransitionAsync (TFDiMD11Definition.State.cs). An announcement must never be the
+    /// thing that takes the message pump down.
     /// </summary>
     private async Task AnnounceAltimeterWhenSettledAsync(ScreenReaderAnnouncer announcer)
     {
@@ -777,11 +787,24 @@ public partial class TFDiMD11Definition
             await Task.Delay(Md11AltimeterAnnouncer.SettleMs + 50).ConfigureAwait(false);
             OnUiThread(() =>
             {
-                if (generation != _announceGeneration) return;
-                var sentence = _altimeter.Due(Environment.TickCount64);
-                if (sentence == null) return;
-                if (Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet.Contains(Md11Fcp.ReadCaptainBaro)) return;
-                announcer.Announce(sentence);
+                try
+                {
+                    if (generation != _announceGeneration) return;
+                    var sentence = _altimeter.Due(Environment.TickCount64);
+                    if (sentence == null)
+                    {
+                        // Checked early: the value is still armed and nothing else will look at
+                        // it (each update arms one check). One more round, then it is spoken.
+                        if (_altimeter.HasPending) _ = AnnounceAltimeterWhenSettledAsync(announcer);
+                        return;
+                    }
+                    if (Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet.Contains(Md11Fcp.ReadCaptainBaro)) return;
+                    announcer.Announce(sentence);
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug("MD11", $"Altimeter announcement (UI-thread tail) threw: {ex.Message}");
+                }
             });
         }
         catch (Exception ex)

@@ -103,6 +103,31 @@ public class Md11PanelLayoutTests
         }
     }
 
+    /// <summary>
+    /// The same uniqueness rule as <see cref="NoTwoRowsInOnePanel_ShareASpokenName"/>, but read
+    /// off the DEFINITION rather than off <see cref="Md11PanelLayout.Place"/>. The two are not the
+    /// same set of rows: the definition adds rows the table knows nothing about — the "_SET" text
+    /// boxes, the Radios panel, Ground spoilers, and the whole Read-outs section — so the table-
+    /// based test never sees them and a duplicate among them would ship unnoticed.
+    /// </summary>
+    [Fact]
+    public void DefinitionRows_ControlsAndDisplaysTogether_ShareNoSpokenNameInAPanel()
+    {
+        var def = new TFDiMD11Definition();
+        var vars = def.GetVariables();
+        var controls = def.GetPanelControls();
+        var displays = def.GetPanelDisplayVariables();
+
+        foreach (var panel in controls.Keys.Concat(displays.Keys).Distinct(StringComparer.Ordinal))
+        {
+            var keys = (controls.TryGetValue(panel, out var c) ? c : new List<string>())
+                .Concat(displays.TryGetValue(panel, out var d) ? d : new List<string>());
+            var names = keys.Where(vars.ContainsKey).Select(k => vars[k].DisplayName).ToList();
+            var dupes = names.GroupBy(n => n, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+            Assert.True(dupes.Count == 0, $"{panel}: duplicate spoken names {string.Join(", ", dupes)}");
+        }
+    }
+
     [Fact]
     public void PanelNames_AreUniqueAcrossSections()
     {

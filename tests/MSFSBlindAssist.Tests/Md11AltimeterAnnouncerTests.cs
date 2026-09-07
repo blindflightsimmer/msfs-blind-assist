@@ -60,6 +60,29 @@ public class Md11AltimeterAnnouncerTests
         Assert.Equal("Altimeter: 1014, 29.95", a.Due(2600));   // 1600 ms after the CHANGE, not 600 after the redelivery
     }
 
+    /// <summary>
+    /// The two properties the definition's settle check leans on. It arms a check only when a
+    /// value actually armed a settle, so an ignored redelivery with nothing pending must leave
+    /// HasPending false (no check is spawned for it); and a check that fires marginally early
+    /// finds nothing due but must still see HasPending, which is what tells it to re-arm once
+    /// more rather than lose the sentence.
+    /// </summary>
+    [Fact]
+    public void AnIgnoredRedelivery_ArmsNothing_AndAnEarlyDue_LeavesThePendingValueArmed()
+    {
+        var a = new Md11AltimeterAnnouncer();
+        a.OnUpdate(29.92, 0);                       // baseline
+        a.OnUpdate(29.92, 5000);                    // unchanged: ignored outright, nothing to wait for
+        Assert.False(a.HasPending);
+
+        var b = new Md11AltimeterAnnouncer();
+        b.OnUpdate(29.92, 0);                       // baseline
+        b.OnUpdate(29.95, 1000);                    // the change
+        Assert.Null(b.Due(1200));                   // checked 200 ms in: not settled
+        Assert.True(b.HasPending);                  // still armed — the caller must check again
+        Assert.Equal("Altimeter: 1014, 29.95", b.Due(2600));
+    }
+
     [Fact]
     public void StandardPressure_IsSpokenAsStandard_InEitherUnit()
     {
