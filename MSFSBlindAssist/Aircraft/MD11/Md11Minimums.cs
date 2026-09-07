@@ -40,7 +40,13 @@ public static class Md11Minimums
     /// <summary>The inbox's idle value — how "no command pending" reads on these two vars.</summary>
     public const double IdleSentinel = -9999;
 
-    public const string EmptyMessage = "Type the minimums in feet first.";
+    /// <summary>
+    /// Names the range rather than saying "first": MainForm hands the definition 0 for BOTH an
+    /// empty box and a typed "0" — the box pre-fills from the export, which reads 0 when the
+    /// aircraft has no minimums set — so "type it first" was wrong half the time, telling a pilot
+    /// who had just typed something that they had typed nothing. The range is true either way.
+    /// </summary>
+    public const string EmptyMessage = "Type the minimums in feet, 1 to 15000.";
     public const string RangeMessage = "Minimums must be between 1 and 15000 feet.";
     public const string WholeFeetMessage = "Minimums must be whole feet.";
 
@@ -100,7 +106,11 @@ public static class Md11Minimums
         string shown = Feet(readBack.Value);
         return modeIsBaro switch
         {
-            true => $"{side.Name} minimums did not change, still {shown} feet.",
+            // Not "did not change, still N feet": the read-back cannot say the display is
+            // unchanged — the aircraft may have taken a DIFFERENT value than the one typed. It
+            // reports what the display shows, in the squawk entry's words ("…did not take, the
+            // transponder reads …"), so the two typed-entry read-backs read alike.
+            true => $"{side.Name} minimums did not take, the display shows {shown} feet.",
             false => $"{side.Name} baro minimums set to {req} feet. Minimums mode is Radio, showing {shown} feet.",
             null => $"{side.Name} baro minimums set to {req} feet. The minimums display shows {shown} feet.",
         };

@@ -50,12 +50,30 @@ public class Md11MinimumsTests
         Assert.Equal(error, message);
     }
 
+    /// <summary>
+    /// The refusal wording. MainForm hands the definition 0 for BOTH an empty box and a typed
+    /// "0" — the box pre-fills from the export, which reads 0 when no minimums are set — so a
+    /// refusal saying "type it FIRST" was wrong half the time, telling a pilot who had just typed
+    /// something that they had typed nothing. It states the range instead, which is true either way.
+    /// </summary>
+    [Fact]
+    public void TheRefusals_SayWhatIsWrong_WithoutAssumingAnEmptyBox()
+    {
+        Assert.Equal("Type the minimums in feet, 1 to 15000.", Md11Minimums.EmptyMessage);
+        Assert.Equal("Minimums must be between 1 and 15000 feet.", Md11Minimums.RangeMessage);
+        Assert.Equal("Minimums must be whole feet.", Md11Minimums.WholeFeetMessage);
+    }
+
     [Fact]
     public void Confirmation_SaysWhatTheDisplayShows()
     {
         var cap = Md11Minimums.Captain;
         Assert.Equal("Captain minimums 500 feet.", Md11Minimums.Confirmation(cap, 500, 500, modeIsBaro: true));
-        Assert.Equal("Captain minimums did not change, still 200 feet.", Md11Minimums.Confirmation(cap, 500, 200, modeIsBaro: true));
+        // "did not change" claims to know the display still reads what it read before, which the
+        // read-back cannot say: the aircraft may have taken a DIFFERENT value. Report what the
+        // display shows, in the squawk entry's words.
+        Assert.Equal("Captain minimums did not take, the display shows 200 feet.",
+                     Md11Minimums.Confirmation(cap, 500, 200, modeIsBaro: true));
         Assert.Equal("Captain baro minimums set to 500 feet. Minimums mode is Radio, showing 200 feet.",
                      Md11Minimums.Confirmation(cap, 500, 200, modeIsBaro: false));
         // Mode unknown (its switch has never been read): trust a matching read-back, explain a mismatch.
