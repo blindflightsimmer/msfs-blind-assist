@@ -36,6 +36,12 @@ public class ScreenshotService
     private static extern bool BitBlt(IntPtr hdcDest, int nXDest, int nYDest, int nWidth, int nHeight,
         IntPtr hdcSrc, int nXSrc, int nYSrc, int dwRop);
 
+    [DllImport("user32.dll")]
+    private static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+
+    /// <summary>Ask DWM for the window's full composed content, not just what is on screen.</summary>
+    private const uint PW_RENDERFULLCONTENT = 0x00000002;
+
     [DllImport("gdi32.dll")]
     private static extern bool DeleteDC(IntPtr hdc);
 
@@ -56,9 +62,14 @@ public class ScreenshotService
     #endregion
 
     /// <summary>
-    /// Captures a screenshot of the MSFS window.
+    /// Captures the MSFS window as PNG bytes, or null if the window is not found.
+    ///
+    /// PrintWindow with full-content rendering first: it asks the compositor for the window's own
+    /// pixels, so a window sitting on top of the simulator — one of this app's, typically — does
+    /// not end up in the picture (live-verified 2026-09-08 with the sim fully hidden behind
+    /// another app). Some fullscreen setups hand back a black frame instead; that falls through
+    /// to the screen copy this method always used, so nothing is worse than before.
     /// </summary>
-    /// <returns>Byte array containing the screenshot as PNG, or null if MSFS window not found.</returns>
     public async Task<byte[]?> CaptureAsync()
     {
         return await Task.Run(() =>
@@ -69,7 +80,6 @@ public class ScreenshotService
                 return null;
             }
 
-            // Get window dimensions
             if (!GetWindowRect(hwnd, out RECT rect))
             {
                 return null;
@@ -83,73 +93,121 @@ public class ScreenshotService
                 return null;
             }
 
-            // Get device context of the screen
-            IntPtr hdcScreen = GetDC(IntPtr.Zero);
-            if (hdcScreen == IntPtr.Zero)
+            return CaptureByPrintWindow(hwnd, width, height) ?? CaptureByScreenCopy(rect, width, height);
+        });
+    }
+
+    /// <summary>The window's composed content via PrintWindow; null when it fails or comes back blank.</summary>
+    private static byte[]? CaptureByPrintWindow(IntPtr hwnd, int width, int height)
+    {
+        try
+        {
+            using var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+            using (var graphics = Graphics.FromImage(bitmap))
+            {
+                IntPtr hdc = graphics.GetHdc();
+                bool rendered;
+                try
+                {
+                    rendered = PrintWindow(hwnd, hdc, PW_RENDERFULLCONTENT);
+                }
+                finally
+                {
+                    graphics.ReleaseHdc(hdc);
+                }
+                if (!rendered)
+                {
+                    Log.Debug("Services", "PrintWindow returned false; falling back to the screen copy");
+                    return null;
+                }
+            }
+
+            if (ScreenshotFrame.LooksBlank(bitmap))
+            {
+                Log.Debug("Services", "PrintWindow frame is blank; falling back to the screen copy");
+                return null;
+            }
+
+            using var memoryStream = new MemoryStream();
+            bitmap.Save(memoryStream, ImageFormat.Png);
+            return memoryStream.ToArray();
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("Services", $"PrintWindow capture failed; falling back to the screen copy: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>The screen area under the window, as this service captured it before 2026-09.</summary>
+    private static byte[]? CaptureByScreenCopy(RECT rect, int width, int height)
+    {
+        // Get device context of the screen
+        IntPtr hdcScreen = GetDC(IntPtr.Zero);
+        if (hdcScreen == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            // Create compatible device context
+            IntPtr hdcMemory = CreateCompatibleDC(hdcScreen);
+            if (hdcMemory == IntPtr.Zero)
             {
                 return null;
             }
 
             try
             {
-                // Create compatible device context
-                IntPtr hdcMemory = CreateCompatibleDC(hdcScreen);
-                if (hdcMemory == IntPtr.Zero)
+                // Create compatible bitmap
+                IntPtr hBitmap = CreateCompatibleBitmap(hdcScreen, width, height);
+                if (hBitmap == IntPtr.Zero)
                 {
                     return null;
                 }
 
                 try
                 {
-                    // Create compatible bitmap
-                    IntPtr hBitmap = CreateCompatibleBitmap(hdcScreen, width, height);
-                    if (hBitmap == IntPtr.Zero)
+                    // Select bitmap into memory DC
+                    IntPtr hOldBitmap = SelectObject(hdcMemory, hBitmap);
+
+                    // Copy from screen to memory DC using screen coordinates
+                    bool success = BitBlt(hdcMemory, 0, 0, width, height,
+                                        hdcScreen, rect.Left, rect.Top, SRCCOPY);
+
+                    if (!success)
                     {
                         return null;
                     }
 
-                    try
+                    // Select old bitmap back
+                    SelectObject(hdcMemory, hOldBitmap);
+
+                    // Convert HBITMAP to Bitmap and then to PNG byte array
+                    using (var bitmap = Image.FromHbitmap(hBitmap))
                     {
-                        // Select bitmap into memory DC
-                        IntPtr hOldBitmap = SelectObject(hdcMemory, hBitmap);
-
-                        // Copy from screen to memory DC using screen coordinates
-                        bool success = BitBlt(hdcMemory, 0, 0, width, height,
-                                            hdcScreen, rect.Left, rect.Top, SRCCOPY);
-
-                        if (!success)
+                        using (var memoryStream = new MemoryStream())
                         {
-                            return null;
+                            bitmap.Save(memoryStream, ImageFormat.Png);
+                            return memoryStream.ToArray();
                         }
-
-                        // Select old bitmap back
-                        SelectObject(hdcMemory, hOldBitmap);
-
-                        // Convert HBITMAP to Bitmap and then to PNG byte array
-                        using (var bitmap = Image.FromHbitmap(hBitmap))
-                        {
-                            using (var memoryStream = new MemoryStream())
-                            {
-                                bitmap.Save(memoryStream, ImageFormat.Png);
-                                return memoryStream.ToArray();
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        DeleteObject(hBitmap);
                     }
                 }
                 finally
                 {
-                    DeleteDC(hdcMemory);
+                    DeleteObject(hBitmap);
                 }
             }
             finally
             {
-                ReleaseDC(IntPtr.Zero, hdcScreen);
+                DeleteDC(hdcMemory);
             }
-        });
+        }
+        finally
+        {
+            ReleaseDC(IntPtr.Zero, hdcScreen);
+        }
     }
 
     /// <summary>
