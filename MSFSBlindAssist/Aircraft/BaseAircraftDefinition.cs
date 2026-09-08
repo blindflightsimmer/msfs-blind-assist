@@ -770,13 +770,19 @@ public abstract class BaseAircraftDefinition : IAircraftDefinition
     public virtual bool HasOwnIcingAnnouncer => false;
 
     /// <summary>
-    /// Captures an MSFS window screenshot and analyzes the indicated cockpit display via Gemini AI.
-    /// Shared by all aircraft definitions that support Gemini display capture.
+    /// Captures an MSFS window screenshot and analyzes the indicated cockpit display via the
+    /// selected AI provider. Shared by all aircraft definitions that support display capture.
+    ///
+    /// With <paramref name="instrumentView"/>, the simulator camera is first moved to that
+    /// instrument view (0-based index into the aircraft's cameras.cfg instrument cameras) and put
+    /// back right after the capture — the pilot presses nothing in the sim. Without it the flow is
+    /// exactly what it always was: the current view is captured.
     /// </summary>
     protected async void ReadDisplay(Services.GeminiService.DisplayType displayType,
                                       string displayName,
                                       ScreenReaderAnnouncer announcer,
-                                      System.Windows.Forms.Form parentForm)
+                                      System.Windows.Forms.Form parentForm,
+                                      Services.InstrumentViewRequest? instrumentView = null)
     {
         try
         {
@@ -791,7 +797,33 @@ public abstract class BaseAircraftDefinition : IAircraftDefinition
                 return;
             }
 
-            byte[]? screenshot = await screenshotService.CaptureAsync();
+            Services.InstrumentViewSession? view = null;
+            if (instrumentView != null)
+            {
+                view = await new Services.InstrumentViewSwitcher(instrumentView.Camera).EnterAsync(instrumentView.ViewIndex);
+                if (view.Outcome == Services.InstrumentViewOutcome.NotInCockpit)
+                {
+                    announcer.Announce("Switch to a cockpit view first.");
+                    return;
+                }
+                if (!view.Verified)
+                {
+                    announcer.Announce("Could not switch the cockpit view, reading the current view.");
+                }
+            }
+
+            byte[]? screenshot;
+            try
+            {
+                screenshot = await screenshotService.CaptureAsync();
+            }
+            finally
+            {
+                // Before the AI request, not after it: the pilot's view is disturbed for the
+                // capture only, never for the seconds a vision call takes.
+                view?.Restore();
+            }
+
             if (screenshot == null || screenshot.Length == 0)
             {
                 announcer.Announce($"Failed to capture {displayName} screenshot.");
