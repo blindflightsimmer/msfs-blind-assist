@@ -308,15 +308,32 @@ public partial class TFDiMD11Definition
         _lastSpoilerSpoken = string.Empty;
         _announceGeneration++;                  // nothing scheduled before the drop may speak after it
         _seedGate.Arm();                        // SeedFromCache runs when the deliveries say the cache is current and settled
+        PrimeSeedGate();
+    }
+
+    /// <summary>
+    /// Tells the gate what the cache holds for every seedable var at the arm, so a redelivery of
+    /// the same value is not a change. A flight load leaves the cache full (the pre-load values);
+    /// a disconnect has cleared it on the way down, so this primes nothing and every re-fire is
+    /// a change, as it should be.
+    /// </summary>
+    private void PrimeSeedGate()
+    {
+        var sim = _sim;
+        if (sim == null) return;
+        foreach (var c in _byNodeId.Values)
+            if (c.Kind == Md11Kinds.Annunciator && sim.GetCachedVariableValue(c.NodeId) is double lamp) _seedGate.Prime(c.NodeId, lamp);
+        foreach (var key in SeededScalarKeys)
+            if (sim.GetCachedVariableValue(key) is double value) _seedGate.Prime(key, value);
     }
 
     /// <summary>
     /// WHEN the still-empty trackers are seeded after a context reset: on the batch deliveries'
-    /// evidence — every active batch delivered since the reset, at least one seedable value
+    /// evidence — every active batch delivered since the reset, one of the aircraft's own values
     /// changed since it (stillness alone is ambiguous: a loaded MD-11 publishes seconds after
-    /// AircraftLoaded), then every batch delivered <see cref="Md11SeedGate.QuietCycles"/> times
-    /// with nothing seedable moving, with a ceiling for a cockpit that never settles or never
-    /// changes. A 3 s wall clock stood here first and was unsound: on a load slower than that it
+    /// AircraftLoaded, and the stock radios are the sim core's), then every batch delivered
+    /// <see cref="Md11SeedGate.QuietCycles"/> times with nothing seedable moving, with a ceiling
+    /// for a cockpit that never settles or never changes. A 3 s wall clock stood here first and was unsound: on a load slower than that it
     /// froze the PRE-load cache as the baselines, and every lamp that then came up spoke (review,
     /// 2026-09-08). Fed by <see cref="OnContinuousBatchDelivered"/> and, per seedable delivery,
     /// from ProcessSimVarUpdate; disarmed by <see cref="Dispose"/>.
@@ -370,6 +387,14 @@ public partial class TFDiMD11Definition
         || (_byNodeId.TryGetValue(varName, out var control) && control.Kind == Md11Kinds.Annunciator);
 
     /// <summary>
+    /// A var the aircraft's own module writes (an L:var), as opposed to one the sim core writes
+    /// from the flight file before that module has published — the stock COM frequencies and
+    /// the transponder code. Only the former is evidence that the aircraft has published.
+    /// </summary>
+    internal bool IsAircraftOwned(string varName) =>
+        GetVariables().TryGetValue(varName, out var def) && def.Type == SimVarType.LVar;
+
+    /// <summary>
     /// Seeds every tracker that still has no baseline from the cache, silently. A tracker that a
     /// delivery already re-seeded is skipped; a var the cache does not hold is skipped. Not
     /// gated on <see cref="_announceGeneration"/>: the Connected branch bumps that on the very
@@ -393,11 +418,11 @@ public partial class TFDiMD11Definition
         }
 
         Log.Debug("MD11", $"Context reset: {seeded} baselines seeded from the cache after {_seedGate.Deliveries} batch deliveries "
-            + $"({trigger}: {_seedGate.QuietDeliveries} quiet, a change seen: {_seedGate.SawChange}).");
+            + $"({trigger}: {_seedGate.QuietDeliveries} quiet; the aircraft's own change seen: {_seedGate.SawChange}).");
     }
 
     /// <summary>Seeds one listed scalar into its tracker when that tracker is still empty; true when it did.</summary>
-    private bool SeedScalar(string key, double value)
+    internal bool SeedScalar(string key, double value)
     {
         switch (key)
         {

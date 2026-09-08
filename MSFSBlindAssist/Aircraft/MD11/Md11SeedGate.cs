@@ -9,10 +9,10 @@ public enum Md11SeedTrigger
     /// <summary>Not yet: keep counting deliveries.</summary>
     None,
 
-    /// <summary>A seedable value changed since the arm, and since the last change every active batch has been delivered <see cref="Md11SeedGate.QuietCycles"/> times with nothing seedable moving.</summary>
+    /// <summary>One of the aircraft's own values changed since the arm, and since the last change every active batch has been delivered <see cref="Md11SeedGate.QuietCycles"/> times with nothing seedable moving.</summary>
     Quiet,
 
-    /// <summary><see cref="Md11SeedGate.CeilingMs"/> after the first full cycle: either something seedable never stopped moving, or nothing seedable ever moved and stillness alone was not trusted.</summary>
+    /// <summary><see cref="Md11SeedGate.CeilingMs"/> after the first full cycle: either something seedable never stopped moving, or nothing of the aircraft's own ever moved and stillness alone was not trusted.</summary>
     Ceiling,
 }
 
@@ -31,21 +31,29 @@ public enum Md11SeedTrigger
 /// cache on EVERY delivery, changed or not, so one full cycle makes it current for every
 /// batch-covered var (the speedbrake lever streams per frame on its own subscription and
 /// re-seeds on its own change);
-/// (2) at least one seedable value has CHANGED since the arm — stillness alone is the ambiguous
-/// signal, meaning either "the load changed nothing" or "the aircraft has not published yet",
-/// and the gate cannot tell them apart: a loaded MD-11's client-data channel first delivered
-/// 8.47 s after AircraftLoaded (debug.log, review), and a stream that merely repeats the
-/// pre-load values is quiet for all of it. A cockpit in which nothing seedable changes waits for
-/// the ceiling instead, where seeding from a cache nothing has moved is trivially right and
-/// nothing was swallowed on the way;
-/// (3) since the last change, every active batch has been delivered <see cref="QuietCycles"/>
-/// times with nothing seedable moving — per batch, so one unchanged sample of a batch that came
-/// late cannot pass on the strength of the others. The first sight of a var since the arm counts
-/// as a change; a forced redelivery of the same value (the panel auto-refresh) does not.
+/// (2) at least one value the AIRCRAFT OWNS has changed since the arm — stillness alone is the
+/// ambiguous signal, meaning either "the load changed nothing" or "the aircraft has not
+/// published yet", and the gate cannot tell them apart: a loaded MD-11's client-data channel
+/// first delivered 8.47 s after AircraftLoaded (debug.log, review), and a stream that merely
+/// repeats the pre-load values is quiet for all of it. Only the aircraft's own L:vars count
+/// here: the stock COM and transponder SimVars are written by the sim core from the flight file
+/// before the aircraft's module has published anything, so they say nothing about it (a change
+/// of theirs still restarts the quiet count). A cockpit in which nothing of the aircraft's own
+/// changes waits for the ceiling instead, where seeding from a cache nothing has moved is
+/// trivially right and nothing was swallowed on the way;
+/// (3) since the last change of anything seedable, every active batch has been delivered
+/// <see cref="QuietCycles"/> times with nothing seedable moving — per batch, so one unchanged
+/// sample of a batch that came late cannot pass on the strength of the others.
+///
+/// A change is a value that differs from the last one KNOWN for the key: the arm primes the
+/// gate from the cache (a flight load: the pre-load value is known, so a forced redelivery of
+/// it — the panel auto-refresh — is nothing; a reconnect: the cache was cleared on the way
+/// down, so every re-fire is a change), and after that the last value delivered.
 ///
 /// A lamp that never stops changing would hold every other tracker empty forever, so
 /// <see cref="CeilingMs"/> after the first full cycle the pass runs regardless. Fires once per
-/// arm.
+/// arm. An empty batch set (mid re-registration) counts nothing and releases nothing; a batch
+/// that leaves the active set leaves stale counts behind, which nothing consults.
 ///
 /// Known residual: a load that settles in two bursts more than the quiet window apart seeds
 /// between them, and the second burst's vars speak. The in-sim check is a flight load with the
@@ -70,7 +78,7 @@ public sealed class Md11SeedGate
     /// <summary>A seed pass is pending.</summary>
     public bool Armed => _armed;
 
-    /// <summary>A seedable value has changed since the arm.</summary>
+    /// <summary>One of the aircraft's own values has changed since the arm.</summary>
     public bool SawChange { get; private set; }
 
     /// <summary>Batch deliveries counted since the arm.</summary>
@@ -97,28 +105,35 @@ public sealed class Md11SeedGate
     /// <summary>The pass is no longer wanted (the definition is going away).</summary>
     public void Disarm() => _armed = false;
 
+    /// <summary>The value the cache held for a seedable key at the arm: a redelivery of it is not a change.</summary>
+    public void Prime(string key, double value)
+    {
+        if (_armed) _lastSeen[key] = value;
+    }
+
     /// <summary>
-    /// A seedable var was delivered. A change — the first sight of the key since the arm, or a
-    /// value that differs from the last one delivered — restarts every batch's quiet count at
-    /// the delivery that carried it; an unchanged redelivery is not evidence of anything.
+    /// A seedable var was delivered. A change — a value that differs from the last one known
+    /// for the key, or the first sight of a key nothing primed — restarts every batch's quiet
+    /// count at the delivery that carried it, and counts as the aircraft having published when
+    /// the key is the aircraft's own; an unchanged redelivery is not evidence of anything.
     /// </summary>
-    public void NoteValue(string key, double value)
+    public void NoteValue(string key, double value, bool ownedByAircraft)
     {
         if (!_armed) return;
         if (_lastSeen.TryGetValue(key, out var previous) && previous.Equals(value)) return;
         _lastSeen[key] = value;
         _changedSinceDelivery = true;
-        SawChange = true;
+        if (ownedByAircraft) SawChange = true;
     }
 
     /// <summary>
     /// A batch has finished dispatching. <paramref name="activeBatches"/> is the set of batch
-    /// numbers currently registered; an empty set releases nothing. Returns what released the
+    /// numbers currently registered; an empty set is not counted. Returns what released the
     /// pass, or None. A release disarms the gate.
     /// </summary>
     public Md11SeedTrigger OnBatchDelivered(int batchNum, IReadOnlyCollection<int> activeBatches, long nowMs)
     {
-        if (!_armed) return Md11SeedTrigger.None;
+        if (!_armed || activeBatches.Count == 0) return Md11SeedTrigger.None;
         Deliveries++;
         _delivered.Add(batchNum);
         if (_changedSinceDelivery)
@@ -132,8 +147,6 @@ public sealed class Md11SeedGate
             _quietByBatch[batchNum] = _quietByBatch.GetValueOrDefault(batchNum) + 1;
             QuietDeliveries++;
         }
-
-        if (activeBatches.Count == 0) return Md11SeedTrigger.None;   // nothing registered: neither a cycle nor a threshold
 
         if (!_cycleComplete)
         {

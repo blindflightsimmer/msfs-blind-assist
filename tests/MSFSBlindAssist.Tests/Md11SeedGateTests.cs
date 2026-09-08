@@ -5,8 +5,8 @@ namespace MSFSBlindAssist.Tests;
 
 /// <summary>
 /// WHEN the MD-11 seeds its still-empty trackers from the cache after a context reset: on the
-/// batch deliveries' evidence — a full cycle, a change seen, then every batch quiet — with a
-/// ceiling; never a wall clock.
+/// batch deliveries' evidence — a full cycle, a change of the aircraft's own, then every batch
+/// quiet — with a ceiling; never a wall clock.
 /// </summary>
 public class Md11SeedGateTests
 {
@@ -16,12 +16,12 @@ public class Md11SeedGateTests
     private static Md11SeedTrigger DeliverQuiet(Md11SeedGate gate, int ordinal) =>
         gate.OnBatchDelivered(ordinal % 2 == 1 ? 1 : 2, TwoBatches, ordinal * 500L);
 
-    /// <summary>A gate that has seen a change (the reconnect's re-fire, a load's new values): delivery 1 carried it.</summary>
+    /// <summary>A gate that has seen the aircraft's own change (the reconnect's re-fire, a load's new values): delivery 1 carried it.</summary>
     private static Md11SeedGate ArmedAfterAChange()
     {
         var gate = new Md11SeedGate();
         gate.Arm();
-        gate.NoteValue("MD11_SOME_LT", 1);
+        gate.NoteValue("MD11_SOME_LT", 1, ownedByAircraft: true);
         Assert.Equal(Md11SeedTrigger.None, DeliverQuiet(gate, 1));
         Assert.True(gate.SawChange);
         return gate;
@@ -59,6 +59,48 @@ public class Md11SeedGateTests
     }
 
     [Fact]
+    public void AStockRadioMoving_RestartsTheQuietCount_ButIsNotTheAircraftPublishing()
+    {
+        var gate = new Md11SeedGate();
+        gate.Arm();
+        gate.NoteValue("COM_ACTIVE_FREQUENCY:1", 118_100, ownedByAircraft: false);   // the sim core applied the flight file
+        Assert.False(gate.SawChange);
+        int twiceQuiet = 4 * Md11SeedGate.QuietCycles;
+        for (int d = 1; d <= twiceQuiet; d++)
+            Assert.Equal(Md11SeedTrigger.None, DeliverQuiet(gate, d));                // quiet twice over: no release without the aircraft's own change
+        Assert.Equal(twiceQuiet - 1, gate.QuietDeliveries);                            // delivery 1 carried the radio's change
+
+        gate.NoteValue("MD11_SOME_LT", 1, ownedByAircraft: true);                     // the aircraft's module came up
+        int first = twiceQuiet + 1;
+        Assert.Equal(Md11SeedTrigger.None, DeliverQuiet(gate, first));               // carries the change
+        Assert.Equal(0, gate.QuietDeliveries);
+        int last = first + 2 * Md11SeedGate.QuietCycles;
+        for (int d = first + 1; d <= last; d++)
+            Assert.Equal(d == last ? Md11SeedTrigger.Quiet : Md11SeedTrigger.None, DeliverQuiet(gate, d));
+    }
+
+    [Fact]
+    public void APrimedValue_RedeliveredUnchanged_IsNotAChange_ButAKeyNothingPrimedIs()
+    {
+        var gate = new Md11SeedGate();
+        gate.Arm();
+        gate.Prime("MD11_SOME_LT", 0);                                    // the pre-load cache
+        gate.NoteValue("MD11_SOME_LT", 0, ownedByAircraft: true);         // the panel's forced redelivery of it
+        Assert.False(gate.SawChange);
+        DeliverQuiet(gate, 1);
+        Assert.Equal(1, gate.QuietDeliveries);
+
+        gate.NoteValue("MD11_OTHER_LT", 0, ownedByAircraft: true);        // never cached (a reconnect: the cache was cleared on the way down)
+        Assert.True(gate.SawChange);
+        DeliverQuiet(gate, 2);
+        Assert.Equal(0, gate.QuietDeliveries);
+
+        gate.NoteValue("MD11_SOME_LT", 1, ownedByAircraft: true);         // the primed one moves
+        DeliverQuiet(gate, 3);
+        Assert.Equal(0, gate.QuietDeliveries);
+    }
+
+    [Fact]
     public void AfterAChange_EveryBatchMustDeliverTheQuietCyclesItself_ThenItSeedsOnce()
     {
         var gate = ArmedAfterAChange();                                       // delivery 1 (batch 1) carried the change
@@ -92,16 +134,16 @@ public class Md11SeedGateTests
     {
         var gate = new Md11SeedGate();
         gate.Arm();
-        gate.NoteValue("MD11_SOME_LT", 0);                    // the first sight since the arm is a change
+        gate.NoteValue("MD11_SOME_LT", 0, ownedByAircraft: true);   // the first sight of a key nothing primed is a change
         DeliverQuiet(gate, 1);
         DeliverQuiet(gate, 2);
-        Assert.Equal(1, gate.QuietDeliveries);                // delivery 1 carried the change; delivery 2 was quiet
+        Assert.Equal(1, gate.QuietDeliveries);                       // delivery 1 carried the change; delivery 2 was quiet
 
-        gate.NoteValue("MD11_SOME_LT", 0);                    // a forced redelivery of the same value
+        gate.NoteValue("MD11_SOME_LT", 0, ownedByAircraft: true);   // a forced redelivery of the same value
         DeliverQuiet(gate, 3);
         Assert.Equal(2, gate.QuietDeliveries);
 
-        gate.NoteValue("MD11_SOME_LT", 1);                    // it lit
+        gate.NoteValue("MD11_SOME_LT", 1, ownedByAircraft: true);   // it lit
         DeliverQuiet(gate, 4);
         Assert.Equal(0, gate.QuietDeliveries);
 
@@ -121,7 +163,7 @@ public class Md11SeedGateTests
         var trigger = Md11SeedTrigger.None;
         for (; trigger == Md11SeedTrigger.None; t += 500)
         {
-            gate.NoteValue("MD11_FLASHING_LT", deliveries % 2);                  // never the same value twice running
+            gate.NoteValue("MD11_FLASHING_LT", deliveries % 2, ownedByAircraft: true);   // never the same value twice running
             trigger = gate.OnBatchDelivered(deliveries % 2 == 0 ? 1 : 2, TwoBatches, t);
             deliveries++;
             Assert.True(t < 200_000, "never seeded");
@@ -134,14 +176,15 @@ public class Md11SeedGateTests
     }
 
     [Fact]
-    public void AnEmptyBatchSet_ReleasesNothing_EvenAfterTheCycleCompleted()
+    public void AnEmptyBatchSet_IsNotCounted_AndReleasesNothing_EvenAfterTheCycleCompleted()
     {
         var gate = ArmedAfterAChange();
         for (int d = 2; d <= 2 * Md11SeedGate.QuietCycles; d++) Assert.Equal(Md11SeedTrigger.None, DeliverQuiet(gate, d));
+        int counted = gate.Deliveries;
         Assert.Equal(Md11SeedTrigger.None, gate.OnBatchDelivered(1, Array.Empty<int>(), 20_000));   // mid re-registration
-        Assert.True(gate.Armed);
         Assert.Equal(Md11SeedTrigger.None, gate.OnBatchDelivered(1, Array.Empty<int>(), 60_000));   // no ceiling on nothing either
         Assert.True(gate.Armed);
+        Assert.Equal(counted, gate.Deliveries);
     }
 
     [Fact]
@@ -159,7 +202,7 @@ public class Md11SeedGateTests
         gate.Disarm();
         Assert.False(gate.Armed);
         Assert.Equal(Md11SeedTrigger.None, DeliverQuiet(gate, 2));
-        gate.NoteValue("MD11_SOME_LT", 1);                     // ignored while disarmed
+        gate.NoteValue("MD11_SOME_LT", 1, ownedByAircraft: true);   // ignored while disarmed
         Assert.False(gate.SawChange);
         Assert.Equal(Md11SeedTrigger.None, DeliverQuiet(gate, 3));
     }
@@ -192,5 +235,32 @@ public class Md11SeedGateTests
         Assert.False(def.IsSeededFromCache(Md11TakeoffCallouts.IasKey));
         Assert.False(def.IsSeededFromCache("SIM_ON_GROUND"));
         Assert.False(def.IsSeededFromCache(Md11FlapSystem.LeverKey));       // the flap pair dedups on its spoken text instead
+    }
+
+    [Fact]
+    public void TheAircraftsOwnVars_AreTheOnesThatSayItHasPublished_TheStockRadiosAreNot()
+    {
+        var def = new TFDiMD11Definition();
+        var lamp = Md11ControlMap.Load().Controls.First(c => c.Kind == Md11Kinds.Annunciator).NodeId;
+        Assert.True(def.IsAircraftOwned(lamp), lamp);
+        Assert.True(def.IsAircraftOwned(Md11Fcp.ReadCaptainBaro));
+        Assert.True(def.IsAircraftOwned(Md11SpeedbrakeSystem.ArmKey));
+        Assert.True(def.IsAircraftOwned(Md11SpeedbrakeSystem.LeverKey));
+        foreach (var key in Md11VSpeeds.Keys) Assert.True(def.IsAircraftOwned(key), key);
+
+        Assert.False(def.IsAircraftOwned(Md11Squawk.CodeKey));                 // TRANSPONDER CODE:1, the sim core's
+        foreach (var key in Md11Radios.Keys) Assert.False(def.IsAircraftOwned(key), key);
+    }
+
+    [Fact]
+    public void EveryListedScalar_ReachesATrackerThatSeedsOnce_AndNeverOverwritesABaseline()
+    {
+        var def = new TFDiMD11Definition();
+        foreach (var key in TFDiMD11Definition.SeededScalarKeys)
+        {
+            double value = key == Md11SpeedbrakeSystem.LeverKey ? 0 : 145;    // the lever seeds only at a detent
+            Assert.True(def.SeedScalar(key, value), key);
+            Assert.False(def.SeedScalar(key, value + 1), key);
+        }
     }
 }

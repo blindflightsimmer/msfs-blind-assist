@@ -362,7 +362,8 @@ public interface IAircraftDefinition
     /// re-seeds on delivery; a flight load clears nothing and the batch fires only on a CHANGED
     /// value, so a tracker wiped for it must be re-seeded from the cache once the values have
     /// settled (the MD-11's SeedFromCache, released by its Md11SeedGate on the batch deliveries'
-    /// evidence — a full cycle, then quiet — through <see cref="OnContinuousBatchDelivered"/>;
+    /// evidence — a full cycle, a change of the aircraft's own, then quiet — through
+    /// <see cref="OnContinuousBatchDelivered"/>;
     /// never a wall clock) or the wipe eats its first change.
     ///
     /// ⚠️ Both halves of that ordering are shared code, so the finding APPLIES to the FBW and
