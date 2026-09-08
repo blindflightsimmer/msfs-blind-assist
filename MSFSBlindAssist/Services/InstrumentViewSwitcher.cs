@@ -70,7 +70,9 @@ public sealed class InstrumentViewSession
 /// Moves the simulator camera to an instrument view for an AI display read: read, plan
 /// (<see cref="InstrumentViewPlan"/>), write, verify by read-back, settle for a rendered frame.
 /// Live-measured on MSFS 2024 (2026-09-08): the cut is instantaneous, so the read-back normally
-/// matches on its first poll and the whole entry costs one settle.
+/// matches on its first poll and the whole entry costs one settle. The verify cap is elapsed
+/// wall-clock time, including the read timeouts it spends polling — not a count of poll steps —
+/// so a sim that never answers costs about a second, not the cap times the read timeout.
 /// </summary>
 public sealed class InstrumentViewSwitcher
 {
@@ -81,15 +83,18 @@ public sealed class InstrumentViewSwitcher
 
     private readonly ICameraViewIo _io;
     private readonly Func<int, Task> _delay;
+    private readonly Func<long> _now;
     private readonly int _readTimeoutMs;
     private readonly int _pollStepMs;
     private readonly int _verifyCapMs;
     private readonly int _settleMs;
 
     /// <param name="delay">Task.Delay in production; tests pass a recorder that completes at once.</param>
+    /// <param name="now">Monotonic milliseconds — Environment.TickCount64 in production; tests pass a virtual clock the delay advances.</param>
     public InstrumentViewSwitcher(
         ICameraViewIo io,
         Func<int, Task>? delay = null,
+        Func<long>? now = null,
         int readTimeoutMs = DefaultReadTimeoutMs,
         int pollStepMs = DefaultPollStepMs,
         int verifyCapMs = DefaultVerifyCapMs,
@@ -97,6 +102,7 @@ public sealed class InstrumentViewSwitcher
     {
         _io = io;
         _delay = delay ?? (ms => Task.Delay(ms));
+        _now = now ?? (() => Environment.TickCount64);
         _readTimeoutMs = readTimeoutMs;
         _pollStepMs = pollStepMs;
         _verifyCapMs = verifyCapMs;
@@ -110,7 +116,11 @@ public sealed class InstrumentViewSwitcher
     /// </summary>
     public async Task<InstrumentViewSession> EnterAsync(int wantedIndex)
     {
-        var plan = InstrumentViewPlan.For(await TryReadAsync(), wantedIndex);
+        var current = await TryReadAsync();
+        // A transient miss must not become a silent, unrestored move: a second read is cheap on
+        // a path that is already degraded, and turns most Unknowns into a Switch with a way back.
+        current ??= await TryReadAsync();
+        var plan = InstrumentViewPlan.For(current, wantedIndex);
         if (plan.Writes is not { } writes)
             return new InstrumentViewSession(_io, plan.Outcome, plan.Outcome == InstrumentViewOutcome.AlreadyThere, null);
 
@@ -124,7 +134,8 @@ public sealed class InstrumentViewSwitcher
         }
 
         bool verified = false;
-        for (int waitedMs = 0; ; waitedMs += _pollStepMs)
+        long started = _now();
+        while (true)
         {
             var now = await TryReadAsync();
             if (now is { } reading && InstrumentViewPlan.IsOn(reading, wantedIndex))
@@ -132,7 +143,9 @@ public sealed class InstrumentViewSwitcher
                 verified = true;
                 break;
             }
-            if (waitedMs >= _verifyCapMs) break;
+            // Elapsed time, not poll steps: a read that waits out its own timeout counts against
+            // the budget too, so a sim that never answers costs about a second, not seven.
+            if (_now() - started >= _verifyCapMs) break;
             await _delay(_pollStepMs);
         }
 

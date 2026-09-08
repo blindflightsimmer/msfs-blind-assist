@@ -30,6 +30,7 @@ public class DisplayPromptTests
     public void ThePfdPrompt_LeadsWithTheFlightModeAnnunciator()
     {
         string prompt = GeminiService.GetPromptForDisplay(GeminiService.DisplayType.PFDMd11);
+        Assert.Contains("flight mode annunciator", prompt, StringComparison.OrdinalIgnoreCase);
         Assert.True(prompt.IndexOf("flight mode annunciator", StringComparison.OrdinalIgnoreCase)
                     < prompt.IndexOf("airspeed", StringComparison.OrdinalIgnoreCase));
     }
@@ -48,5 +49,7 @@ public class DisplayPromptTests
         string prompt = GeminiService.GetPromptForDisplay(GeminiService.DisplayType.SDMd11);
         Assert.Contains("CONSEQ", prompt);
         Assert.Contains("page name", prompt, StringComparison.OrdinalIgnoreCase);
+        Assert.True(prompt.IndexOf("page name", StringComparison.OrdinalIgnoreCase)
+                    < prompt.IndexOf("Then report", StringComparison.Ordinal));
     }
 }

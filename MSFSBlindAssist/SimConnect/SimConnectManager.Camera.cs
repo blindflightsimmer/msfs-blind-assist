@@ -26,8 +26,9 @@ public partial class SimConnectManager : ICameraViewIo
     }
 
     // One waiter shared by concurrent readers, completed on the dispatch of REQUEST_CAMERA_VIEW
-    // and released with null on disconnect / aircraft switch (FailCameraViewRead). A waiter left
-    // behind by a timeout is completed by the late delivery and cleared with it.
+    // and released with null on disconnect / aircraft switch (FailCameraViewRead). A waiter
+    // abandoned by a timeout or a failed request is released at once (ReleaseCameraViewWaiter),
+    // so its late delivery lands on nobody.
     private readonly object _cameraReadLock = new();
     private TaskCompletionSource<CameraViewReading?>? _cameraRead;
 
@@ -80,6 +81,7 @@ public partial class SimConnectManager : ICameraViewIo
         catch (Exception ex)
         {
             Log.Debug("SimConnect", $"Camera view request failed: {ex.Message}");
+            ReleaseCameraViewWaiter(tcs);
             return Task.FromResult<CameraViewReading?>(null);
         }
 
@@ -88,7 +90,7 @@ public partial class SimConnectManager : ICameraViewIo
 
     // No ConfigureAwait(false): the caller (an AI display read on the UI thread) writes SimVars
     // right after this returns, and SimConnect calls stay on the UI thread in this app.
-    private static async Task<CameraViewReading?> AwaitCameraViewAsync(TaskCompletionSource<CameraViewReading?> tcs, int timeoutMs)
+    private async Task<CameraViewReading?> AwaitCameraViewAsync(TaskCompletionSource<CameraViewReading?> tcs, int timeoutMs)
     {
         try
         {
@@ -96,7 +98,22 @@ public partial class SimConnectManager : ICameraViewIo
         }
         catch (TimeoutException)
         {
+            // A timed-out request is abandoned: its late delivery must not answer the next read.
+            ReleaseCameraViewWaiter(tcs);
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Forgets <paramref name="tcs"/> if it is still the registered waiter, so a late delivery
+    /// for an abandoned request lands on nobody instead of answering a newer read with the
+    /// camera as it was before an earlier restore.
+    /// </summary>
+    private void ReleaseCameraViewWaiter(TaskCompletionSource<CameraViewReading?> tcs)
+    {
+        lock (_cameraReadLock)
+        {
+            if (ReferenceEquals(_cameraRead, tcs)) _cameraRead = null;
         }
     }
 

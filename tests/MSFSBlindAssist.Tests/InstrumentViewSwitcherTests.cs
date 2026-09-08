@@ -14,10 +14,22 @@ public class InstrumentViewSwitcherTests
         public bool HonoursWrites = true;
         public bool ThrowOnSet;
         public bool ThrowOnRead;
+        public long Clock;
+        public int ReadCostMs;
+        public int MissReads;
         public readonly List<(int Type, int Index)> Writes = new();
 
-        public Task<CameraViewReading?> ReadAsync(int timeoutMs) =>
-            ThrowOnRead ? throw new InvalidOperationException("SimConnect down") : Task.FromResult(Current);
+        public Task<CameraViewReading?> ReadAsync(int timeoutMs)
+        {
+            if (ThrowOnRead) throw new InvalidOperationException("SimConnect down");
+            Clock += ReadCostMs;
+            if (MissReads > 0)
+            {
+                MissReads--;
+                return Task.FromResult<CameraViewReading?>(null);
+            }
+            return Task.FromResult(Current);
+        }
 
         public void Set(int viewType, int viewIndex)
         {
@@ -28,18 +40,22 @@ public class InstrumentViewSwitcherTests
         }
     }
 
-    private static (InstrumentViewSwitcher Switcher, List<int> Delays) Make(FakeCamera camera)
+    private static (InstrumentViewSwitcher Switcher, List<int> Delays, FakeCamera Camera) Make(FakeCamera camera)
     {
         var delays = new List<int>();
-        var switcher = new InstrumentViewSwitcher(camera, ms => { delays.Add(ms); return Task.CompletedTask; });
-        return (switcher, delays);
+        camera.Clock = 0;
+        var switcher = new InstrumentViewSwitcher(
+            camera,
+            delay: ms => { delays.Add(ms); camera.Clock += ms; return Task.CompletedTask; },
+            now: () => camera.Clock);
+        return (switcher, delays, camera);
     }
 
     [Fact]
     public async Task AlreadyOnTheView_WritesNothing_AndRestoreIsANoOp()
     {
         var camera = new FakeCamera { Current = new CameraViewReading(2, 2, 2) };
-        var (switcher, delays) = Make(camera);
+        var (switcher, delays, _) = Make(camera);
 
         var session = await switcher.EnterAsync(2);
         session.Restore();
@@ -55,7 +71,7 @@ public class InstrumentViewSwitcherTests
     public async Task FromThePilotView_Switches_VerifiesOnTheFirstRead_SettlesOnce_AndRestoresOnce()
     {
         var camera = new FakeCamera { Current = new CameraViewReading(2, 1, 0) };
-        var (switcher, delays) = Make(camera);
+        var (switcher, delays, _) = Make(camera);
 
         var session = await switcher.EnterAsync(2);
 
@@ -75,7 +91,7 @@ public class InstrumentViewSwitcherTests
     public async Task AWriteTheSimIgnores_GivesUpAfterTheCap_ReportsUnverified_AndStillRestores()
     {
         var camera = new FakeCamera { Current = new CameraViewReading(2, 1, 0), HonoursWrites = false };
-        var (switcher, delays) = Make(camera);
+        var (switcher, delays, _) = Make(camera);
 
         var session = await switcher.EnterAsync(2);
 
@@ -90,10 +106,22 @@ public class InstrumentViewSwitcherTests
     }
 
     [Fact]
+    public async Task AReadThatWaitsOutItsTimeout_CountsAgainstTheCap()
+    {
+        var camera = new FakeCamera { Current = new CameraViewReading(2, 1, 0), HonoursWrites = false, ReadCostMs = 500 };
+        var (switcher, delays, _) = Make(camera);
+
+        var session = await switcher.EnterAsync(2);
+
+        Assert.False(session.Verified);
+        Assert.Equal(new[] { 100 }, delays);   // read 500 → delay 100 → read 500: 1100 ms, budget spent
+    }
+
+    [Fact]
     public async Task AnExternalCamera_IsNotInCockpit_AndWritesNothing()
     {
         var camera = new FakeCamera { Current = new CameraViewReading(3, 0, 0) };
-        var (switcher, delays) = Make(camera);
+        var (switcher, delays, _) = Make(camera);
 
         var session = await switcher.EnterAsync(2);
         session.Restore();
@@ -108,7 +136,7 @@ public class InstrumentViewSwitcherTests
     public async Task AnUnreadableCamera_WritesTheView_ReportsUnverified_AndHasNothingToRestore()
     {
         var camera = new FakeCamera { Current = null };
-        var (switcher, _) = Make(camera);
+        var (switcher, _, _) = Make(camera);
 
         var session = await switcher.EnterAsync(3);
         session.Restore();
@@ -120,10 +148,25 @@ public class InstrumentViewSwitcherTests
     }
 
     [Fact]
+    public async Task ATransientFirstMiss_IsRetried_SoTheViewCanBeRestored()
+    {
+        var camera = new FakeCamera { Current = new CameraViewReading(2, 1, 0), MissReads = 1 };
+        var (switcher, _, _) = Make(camera);
+
+        var session = await switcher.EnterAsync(2);
+        session.Restore();
+
+        Assert.Equal(InstrumentViewOutcome.Switch, session.Outcome);
+        Assert.True(session.Verified);
+        Assert.Equal((1, 0), session.RestoreTo);
+        Assert.Equal(new[] { (2, 2), (1, 0) }, camera.Writes);
+    }
+
+    [Fact]
     public async Task AThrowingWrite_DoesNotEscape_OnEntryOrOnRestore()
     {
         var camera = new FakeCamera { Current = new CameraViewReading(2, 1, 0), ThrowOnSet = true };
-        var (switcher, _) = Make(camera);
+        var (switcher, _, _) = Make(camera);
 
         var session = await switcher.EnterAsync(2);
         var restore = Record.Exception(session.Restore);
@@ -137,7 +180,7 @@ public class InstrumentViewSwitcherTests
     public async Task AThrowingRead_DoesNotEscape_AndLeavesNothingToRestore()
     {
         var camera = new FakeCamera { Current = new CameraViewReading(2, 1, 0), ThrowOnRead = true };
-        var (switcher, _) = Make(camera);
+        var (switcher, _, _) = Make(camera);
 
         var session = await switcher.EnterAsync(2);
         var restore = Record.Exception(session.Restore);

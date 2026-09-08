@@ -769,6 +769,10 @@ public abstract class BaseAircraftDefinition : IAircraftDefinition
 
     public virtual bool HasOwnIcingAnnouncer => false;
 
+    // One display read at a time: two overlapping reads would each move the camera and the
+    // second would restore to the first one's instrument view, parking the pilot there silently.
+    private static int _displayReadInFlight;
+
     /// <summary>
     /// Captures an MSFS window screenshot and analyzes the indicated cockpit display via the
     /// selected AI provider. Shared by all aircraft definitions that support display capture.
@@ -784,80 +788,92 @@ public abstract class BaseAircraftDefinition : IAircraftDefinition
                                       System.Windows.Forms.Form parentForm,
                                       Services.InstrumentViewRequest? instrumentView = null)
     {
+        if (Interlocked.CompareExchange(ref _displayReadInFlight, 1, 0) != 0)
+        {
+            announcer.Announce("A display read is already in progress.");
+            return;
+        }
         try
         {
-            announcer.Announce($"Capturing {displayName}...");
-
-            var screenshotService = new Services.ScreenshotService();
-            var aiProvider = Services.AiProviderFactory.Create();
-
-            if (!screenshotService.IsMsfsWindowAvailable())
-            {
-                announcer.Announce("Microsoft Flight Simulator window not found. Make sure the simulator is running.");
-                return;
-            }
-
-            Services.InstrumentViewSession? view = null;
-            if (instrumentView != null)
-            {
-                view = await new Services.InstrumentViewSwitcher(instrumentView.Camera).EnterAsync(instrumentView.ViewIndex);
-                if (view.Outcome == Services.InstrumentViewOutcome.NotInCockpit)
-                {
-                    announcer.Announce("Switch to a cockpit view first.");
-                    return;
-                }
-                if (!view.Verified)
-                {
-                    announcer.Announce("Could not switch the cockpit view, reading the current view.");
-                }
-            }
-
-            byte[]? screenshot;
             try
             {
-                screenshot = await screenshotService.CaptureAsync();
+                announcer.Announce($"Capturing {displayName}...");
+
+                var screenshotService = new Services.ScreenshotService();
+                var aiProvider = Services.AiProviderFactory.Create();
+
+                if (!screenshotService.IsMsfsWindowAvailable())
+                {
+                    announcer.Announce("Microsoft Flight Simulator window not found. Make sure the simulator is running.");
+                    return;
+                }
+
+                Services.InstrumentViewSession? view = null;
+                if (instrumentView != null)
+                {
+                    view = await new Services.InstrumentViewSwitcher(instrumentView.Camera).EnterAsync(instrumentView.ViewIndex);
+                    if (view.Outcome == Services.InstrumentViewOutcome.NotInCockpit)
+                    {
+                        announcer.Announce("Switch to a cockpit view first.");
+                        return;
+                    }
+                    if (!view.Verified)
+                    {
+                        announcer.Announce("Could not switch the cockpit view, reading the current view.");
+                    }
+                }
+
+                byte[]? screenshot;
+                try
+                {
+                    screenshot = await screenshotService.CaptureAsync();
+                }
+                finally
+                {
+                    // Before the AI request, not after it: the pilot's view is disturbed for the
+                    // capture only, never for the seconds a vision call takes.
+                    view?.Restore();
+                }
+
+                if (screenshot == null || screenshot.Length == 0)
+                {
+                    announcer.Announce($"Failed to capture {displayName} screenshot.");
+                    return;
+                }
+
+                string analysis = await aiProvider.AnalyzeDisplayAsync(screenshot, displayType);
+
+                var resultForm = new Forms.DisplayReadingResultForm(displayName, analysis);
+                resultForm.ShowForm();
+
+                announcer.Announce($"{displayName} analysis ready.");
             }
-            finally
+            catch (InvalidOperationException ex) when (ex.Message.Contains("API key"))
             {
-                // Before the AI request, not after it: the pilot's view is disturbed for the
-                // capture only, never for the seconds a vision call takes.
-                view?.Restore();
+                announcer.Announce("AI provider API key not configured. Please go to File menu, Settings, AI tab.");
+                System.Windows.Forms.MessageBox.Show(
+                    parentForm,
+                    "AI provider API key is not configured.\n\n" +
+                    "Please choose a provider (Gemini or Claude) and configure its API key in:\n" +
+                    "File > Settings > AI tab",
+                    "API Key Required",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Warning);
             }
-
-            if (screenshot == null || screenshot.Length == 0)
+            catch (Exception ex)
             {
-                announcer.Announce($"Failed to capture {displayName} screenshot.");
-                return;
+                announcer.Announce($"Error analyzing {displayName}: {ex.Message}");
+                System.Windows.Forms.MessageBox.Show(
+                    parentForm,
+                    $"Error analyzing {displayName}:\n\n{ex.Message}",
+                    "Error",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Error);
             }
-
-            string analysis = await aiProvider.AnalyzeDisplayAsync(screenshot, displayType);
-
-            var resultForm = new Forms.DisplayReadingResultForm(displayName, analysis);
-            resultForm.ShowForm();
-
-            announcer.Announce($"{displayName} analysis ready.");
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("API key"))
+        finally
         {
-            announcer.Announce("AI provider API key not configured. Please go to File menu, Settings, AI tab.");
-            System.Windows.Forms.MessageBox.Show(
-                parentForm,
-                "AI provider API key is not configured.\n\n" +
-                "Please choose a provider (Gemini or Claude) and configure its API key in:\n" +
-                "File > Settings > AI tab",
-                "API Key Required",
-                System.Windows.Forms.MessageBoxButtons.OK,
-                System.Windows.Forms.MessageBoxIcon.Warning);
-        }
-        catch (Exception ex)
-        {
-            announcer.Announce($"Error analyzing {displayName}: {ex.Message}");
-            System.Windows.Forms.MessageBox.Show(
-                parentForm,
-                $"Error analyzing {displayName}:\n\n{ex.Message}",
-                "Error",
-                System.Windows.Forms.MessageBoxButtons.OK,
-                System.Windows.Forms.MessageBoxIcon.Error);
+            Interlocked.Exchange(ref _displayReadInFlight, 0);
         }
     }
 
