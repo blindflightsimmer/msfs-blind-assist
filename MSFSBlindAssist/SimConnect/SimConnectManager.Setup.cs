@@ -327,6 +327,11 @@ public partial class SimConnectManager
         // registration failure must not take the bulk registration below down with it.
         RegisterGsxCouatlStartedDefinition();
 
+        // The simulator camera — one fixed def, read one-shot by AI display reads that move the
+        // camera to an instrument view (SimConnectManager.Camera.cs). Universal, so it registers
+        // here with the fixed defs, in its own try/catch like the GSX one above.
+        RegisterCameraViewDefinition();
+
         // Bulk per-aircraft variable registration runs LAST — see the resilience note at the
         // top of this method. Everything above (detection, position, AI, VG, weather, nav) is
         // now guaranteed registered before the heavy var set can approach the SimConnect ceiling.
@@ -773,6 +778,7 @@ public partial class SimConnectManager
         lastVariableValues.Clear();
         lock (forceUpdateVariables) { forceUpdateVariables.Clear(); }
         _freshReads.FailAll();
+        FailCameraViewRead();
 
         // Reset ID counter to avoid accumulating stale ID ranges over multiple switches
         nextDataDefinitionId = 1000;

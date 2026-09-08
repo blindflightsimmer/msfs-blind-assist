@@ -473,6 +473,9 @@ public partial class SimConnectManager
         REQUEST_ZULU_TIME = 339,
         // GSX's L:FSDT_GSX_COUATL_STARTED, periodic (SECOND, every second) — see GsxCouatlStartedLVar.
         REQUEST_GSX_COUATL_STARTED = 340,
+        // The simulator camera (CAMERA STATE + CAMERA VIEW TYPE AND INDEX:0/:1), one-shot —
+        // see SimConnectManager.Camera.cs. Backs the instrument-view switch of AI display reads.
+        REQUEST_CAMERA_VIEW = 341,
         REQUEST_AI_TRAFFIC = 500,
         // Aircraft-specific InputEvent (B:) catalog enumeration.
         REQUEST_ENUMERATE_INPUT_EVENTS = 700,
@@ -533,6 +536,7 @@ public partial class SimConnectManager
         DEF_SQUAWK_CODE = 329,
         // 330-337 hardcoded V-speed definitions, 338/339 time-of-day (see DATA_REQUESTS).
         DEF_GSX_COUATL_STARTED = 340,
+        DEF_CAMERA_VIEW = 341,
         DEF_AI_TRAFFIC = 500,
         // Individual variable definitions start from 1000
         INDIVIDUAL_VARIABLE_BASE = 1000
@@ -1253,6 +1257,7 @@ public partial class SimConnectManager
         eventIds.Clear();
         lock (forceUpdateVariables) { forceUpdateVariables.Clear(); }
         _freshReads.FailAll();
+        FailCameraViewRead();
         ecamStringData.Clear();
         ecamAnnouncementData.Clear();
         previousECAMMessages.Clear();

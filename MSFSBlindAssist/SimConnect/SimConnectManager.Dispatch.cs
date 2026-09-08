@@ -311,6 +311,10 @@ public partial class SimConnectManager
                 GsxCouatlStartedLVar = ((SingleValue)data.dwData[0]).value != 0;
                 break;
 
+            case DATA_REQUESTS.REQUEST_CAMERA_VIEW:
+                CompleteCameraViewRead((CameraViewData)data.dwData[0]);
+                break;
+
             case DATA_REQUESTS.REQUEST_SQUAWK_CODE:
                 SingleValue squawkData = (SingleValue)data.dwData[0];
                 int bcd = (int)squawkData.value;
