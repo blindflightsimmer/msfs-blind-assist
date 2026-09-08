@@ -1111,14 +1111,24 @@ public partial class TFDiMD11Definition
     // =================================================================================
 
     /// <summary>
-    /// On this aircraft the read-outs are not a convenience — the DUs are WASM-rendered and
-    /// unreadable, so these exported L:vars are the only way a blind pilot gets the numbers a
-    /// sighted one reads off the glass.
+    /// On this aircraft the read-outs are not a convenience — the DUs are WASM-rendered, so the
+    /// exported L:vars are the only way a blind pilot gets the numbers a sighted one reads off the
+    /// glass, and the five AI display reads are the only way to read the glass itself.
     /// </summary>
     public override bool HandleHotkeyAction(HotkeyAction action, SimConnectManager simConnect,
         ScreenReaderAnnouncer announcer, System.Windows.Forms.Form parentForm, HotkeyManager hotkeyManager)
     {
         Attach(simConnect);
+
+        // AI display reads (Alt+P / Alt+N / Alt+E / Alt+S / Alt+I in output mode). The DUs have
+        // no text behind them, so these are read from a capture of the sim, after the camera has
+        // been moved to the instrument view that frames the display — and put back.
+        if (Md11DisplayReads.TryGet(action, out var displayRead))
+        {
+            ReadDisplay(displayRead.DisplayType, displayRead.SpokenName, announcer, parentForm,
+                new Services.InstrumentViewRequest(simConnect, displayRead.InstrumentViewIndex));
+            return true;
+        }
 
         switch (action)
         {
