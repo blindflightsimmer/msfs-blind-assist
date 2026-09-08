@@ -184,6 +184,9 @@ AI Display Reading (needs an AI provider and its key in File > Settings > AI tab
   frames the display (view 1 for the PFD, ND and EAD, view 3 for the SD, view 4 for the
   standby), captures, and puts your view back, all within a second. If the simulator is in an
   external or drone camera the app says "Switch to a cockpit view first" and does nothing.
+  If the view could not be switched (the simulator is paused or on a menu) the app says "Could
+  not switch the cockpit view, reading the current view" and reads whatever is on screen. One
+  read runs at a time: a second key while one is in progress is refused out loud.
 
 
 INDICATOR LIGHTS ON THE PANELS
