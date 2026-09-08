@@ -110,7 +110,7 @@ public sealed class InstrumentViewSwitcher
     /// </summary>
     public async Task<InstrumentViewSession> EnterAsync(int wantedIndex)
     {
-        var plan = InstrumentViewPlan.For(await _io.ReadAsync(_readTimeoutMs), wantedIndex);
+        var plan = InstrumentViewPlan.For(await TryReadAsync(), wantedIndex);
         if (plan.Writes is not { } writes)
             return new InstrumentViewSession(_io, plan.Outcome, plan.Outcome == InstrumentViewOutcome.AlreadyThere, null);
 
@@ -126,7 +126,7 @@ public sealed class InstrumentViewSwitcher
         bool verified = false;
         for (int waitedMs = 0; ; waitedMs += _pollStepMs)
         {
-            var now = await _io.ReadAsync(_readTimeoutMs);
+            var now = await TryReadAsync();
             if (now is { } reading && InstrumentViewPlan.IsOn(reading, wantedIndex))
             {
                 verified = true;
@@ -140,5 +140,19 @@ public sealed class InstrumentViewSwitcher
         else Log.Debug("Camera", $"Instrument view {wantedIndex} did not verify within {_verifyCapMs} ms (outcome {plan.Outcome})");
 
         return new InstrumentViewSession(_io, plan.Outcome, verified, plan.Restore);
+    }
+
+    /// <summary>A read that throws is a read that returned nothing: the caller must always get its session, or the camera is never restored.</summary>
+    private async Task<CameraViewReading?> TryReadAsync()
+    {
+        try
+        {
+            return await _io.ReadAsync(_readTimeoutMs);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("Camera", $"Reading the camera view failed: {ex.Message}");
+            return null;
+        }
     }
 }

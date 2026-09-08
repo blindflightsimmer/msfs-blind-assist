@@ -13,9 +13,11 @@ public class InstrumentViewSwitcherTests
         public CameraViewReading? Current;
         public bool HonoursWrites = true;
         public bool ThrowOnSet;
+        public bool ThrowOnRead;
         public readonly List<(int Type, int Index)> Writes = new();
 
-        public Task<CameraViewReading?> ReadAsync(int timeoutMs) => Task.FromResult(Current);
+        public Task<CameraViewReading?> ReadAsync(int timeoutMs) =>
+            ThrowOnRead ? throw new InvalidOperationException("SimConnect down") : Task.FromResult(Current);
 
         public void Set(int viewType, int viewIndex)
         {
@@ -128,6 +130,22 @@ public class InstrumentViewSwitcherTests
 
         Assert.Equal(InstrumentViewOutcome.Switch, session.Outcome);
         Assert.False(session.Verified);
+        Assert.Null(restore);
+    }
+
+    [Fact]
+    public async Task AThrowingRead_DoesNotEscape_AndLeavesNothingToRestore()
+    {
+        var camera = new FakeCamera { Current = new CameraViewReading(2, 1, 0), ThrowOnRead = true };
+        var (switcher, _) = Make(camera);
+
+        var session = await switcher.EnterAsync(2);
+        var restore = Record.Exception(session.Restore);
+
+        Assert.Equal(InstrumentViewOutcome.Unknown, session.Outcome);
+        Assert.False(session.Verified);
+        Assert.Null(session.RestoreTo);
+        Assert.Equal(new[] { (2, 2) }, camera.Writes);
         Assert.Null(restore);
     }
 
