@@ -107,6 +107,15 @@ public partial class SimConnectManager
     /// </summary>
     public event EventHandler<string>? AircraftLoaded;
 
+    /// <summary>
+    /// The connection is going down — raised on EVERY drop, not only after a completed aircraft
+    /// detection (the "Disconnected from simulator" status is gated on that, so a drop during a
+    /// stalled load raised nothing). MainForm hands it to the definition's OnSimContextReset: the
+    /// values that arrive after a reconnect describe a new situation whether or not detection had
+    /// finished before the drop.
+    /// </summary>
+    public event EventHandler? ConnectionLost;
+
     // Aircraft definition
     private IAircraftDefinition? _currentAircraft;
     public IAircraftDefinition? CurrentAircraft
@@ -841,6 +850,8 @@ public partial class SimConnectManager
             IsConnected = false;
             GsxCouatlStartedLVar = false;
 
+            ConnectionLost?.Invoke(this, EventArgs.Empty);   // every drop, gated on nothing
+
             // Only announce disconnection if we were previously connected
             if (wasConnected)
             {
@@ -1225,6 +1236,8 @@ public partial class SimConnectManager
         IsConnected = false;
         IsFullyConnected = false;
         GsxCouatlStartedLVar = false;
+
+        ConnectionLost?.Invoke(this, EventArgs.Empty);   // every drop, gated on nothing
 
         // Only announce disconnection if we were previously connected
         if (wasConnected)

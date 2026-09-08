@@ -54,6 +54,16 @@ public sealed class Md11AltimeterAnnouncer
         _pendingAtMs = nowMs;
     }
 
+    /// <summary>Seeds the baseline when there is none (a flight load re-delivers only what changed); true when it did.</summary>
+    public bool SeedIfEmpty(double value)
+    {
+        if (_baselined) return false;
+        _baselined = true;
+        _lastSeen = value;
+        _lastSpoken = Sentence(value);
+        return true;
+    }
+
     /// <summary>True while a value is waiting out its settle.</summary>
     public bool HasPending => _hasPending;
 

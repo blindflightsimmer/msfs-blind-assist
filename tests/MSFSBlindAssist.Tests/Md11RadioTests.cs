@@ -155,4 +155,15 @@ public class Md11RadioTests
         Assert.True(Def.TryGetDisplayOverride("COM_ACTIVE_FREQUENCY:1", 135500, out var text));
         Assert.Equal("135.500", text);
     }
+
+    /// <summary>A flight load re-delivers only what changed, so an empty key is seeded from the cache and a seeded one is left alone.</summary>
+    [Fact]
+    public void SeedIfEmpty_SeedsOnlyAKeyWithNoBaseline()
+    {
+        var com = new Md11ComAnnouncer();
+        Assert.True(com.SeedIfEmpty("COM_ACTIVE_FREQUENCY:1", 135500));
+        Assert.False(com.SeedIfEmpty("COM_ACTIVE_FREQUENCY:1", 121500));   // already seeded: untouched
+        Assert.Null(com.OnUpdate("COM_ACTIVE_FREQUENCY:1", 135500));         // unchanged
+        Assert.NotNull(com.OnUpdate("COM_ACTIVE_FREQUENCY:1", 121500));      // the first real change speaks
+    }
 }

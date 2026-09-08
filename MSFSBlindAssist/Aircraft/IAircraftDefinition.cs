@@ -356,7 +356,11 @@ public interface IAircraftDefinition
     /// baseline it has just taken and eats the NEXT real change as its baseline — on the MD-11
     /// that was the first master caution, the first COM tune, the first altimeter wind and the
     /// pilot's first perf entry of every reconnected session (found 2026-09-08). Definitions
-    /// with no such trackers use the default (does nothing).
+    /// with no such trackers use the default (does nothing). ⚠️ The two callers differ: a
+    /// disconnect clears the cache, so the reconnect re-fires EVERY variable and a wiped tracker
+    /// re-seeds on delivery; a flight load clears nothing and the batch fires only on a CHANGED
+    /// value, so a tracker wiped for it must be re-seeded from the cache once the values have
+    /// settled (the MD-11's SeedFromCache, 3 s later) or the wipe eats its first change.
     ///
     /// ⚠️ Both halves of that ordering are shared code, so the finding APPLIES to the FBW and
     /// iFly definitions too: each sentinel they reset in ResetAnnouncementBaselines eats its

@@ -599,6 +599,7 @@ public partial class MainForm : Form
         simConnectManager.TakeoffRunwayReferenceSet += OnTakeoffRunwayReferenceSet;
         simConnectManager.AircraftIcaoTypeDetected += OnAircraftIcaoTypeDetected;
         simConnectManager.AircraftLoaded += OnAircraftLoaded;
+        simConnectManager.ConnectionLost += OnConnectionLost;
 
         // Warm the GSX door-offset map in the background so docking sessions have
         // offsets ready without blocking the UI thread for the ~12 s scan.

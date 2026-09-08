@@ -104,4 +104,17 @@ public class Md11AltimeterAnnouncerTests
         a.OnUpdate(30.05, 10000);
         Assert.Equal("Altimeter: 1018, 30.05", a.Due(12000));
     }
+
+    /// <summary>A flight load re-delivers only what changed, so an empty baseline is seeded from the cache and a present one is left alone.</summary>
+    [Fact]
+    public void SeedIfEmpty_SeedsOnlyWhenThereIsNoBaseline()
+    {
+        var a = new Md11AltimeterAnnouncer();
+        Assert.True(a.SeedIfEmpty(29.92));
+        Assert.False(a.SeedIfEmpty(30.12));                  // already seeded: untouched
+        a.OnUpdate(29.92, 1_000);
+        Assert.False(a.HasPending);                          // unchanged: nothing armed
+        a.OnUpdate(30.12, 2_000);
+        Assert.Equal("Altimeter: 1020, 30.12", a.Due(2_000 + Md11AltimeterAnnouncer.SettleMs));   // the first real change speaks
+    }
 }

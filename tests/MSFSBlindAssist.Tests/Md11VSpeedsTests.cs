@@ -134,4 +134,16 @@ public class Md11VSpeedsTests
             Assert.True(Md11VSpeeds.IsKey(key));
         }
     }
+
+    /// <summary>A flight load re-delivers only what changed, so an empty speed is seeded from the cache and a seeded one is left alone.</summary>
+    [Fact]
+    public void SeedIfEmpty_SeedsOnlyASpeedWithNoBaseline()
+    {
+        var a = new Md11VSpeedAnnouncer();
+        Assert.True(a.SeedIfEmpty("MD11_V1", 145));
+        Assert.False(a.SeedIfEmpty("MD11_V1", 150));                          // already seeded: untouched
+        Assert.False(a.SeedIfEmpty("MD11_ENG1_N1", 95));                      // not a speed
+        Assert.False(a.OnUpdate("MD11_V1", 145, 1_000));                      // unchanged
+        Assert.True(a.OnUpdate("MD11_V1", 150, 2_000));                       // the first real change speaks
+    }
 }

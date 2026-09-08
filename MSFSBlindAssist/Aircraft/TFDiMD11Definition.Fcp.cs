@@ -336,7 +336,7 @@ public partial class TFDiMD11Definition
             {
                 try
                 {
-                    if (generation != _announceGeneration) return;   // aircraft switch / reconnect
+                    if (generation != _announceGeneration) return;   // aircraft switch / reconnect / flight load
                     if (entry != _altimeterEntrySeq) return;         // a newer entry owns the read-back
                     var shortfalls = new List<string>();
                     foreach (var (side, read, value) in written)

@@ -168,7 +168,7 @@ public partial class TFDiMD11Definition
             {
                 try
                 {
-                    if (generation != _announceGeneration) return;   // aircraft switch / reconnect
+                    if (generation != _announceGeneration) return;   // aircraft switch / reconnect / flight load
 
                     long now = Environment.TickCount64;
                     bool powered = IsDcPowered();
@@ -272,7 +272,7 @@ public partial class TFDiMD11Definition
         _takeoffCallouts.Reset();               // drops the arm, keeps the speeds: the batch has just re-fed them
         _n1SeventyAnnounced = false;            // the take-off cue re-arms with the session
         Array.Fill(_n1, double.NaN);
-        _vSpeeds.DropPending();                 // a sentence the re-fire armed dies with its tail below; it must not ride into a later one
+        _vSpeeds.DropPending();                 // a sentence still pending here dies with its tail below; it must not ride into a later one
         _announceGeneration++;                  // drops any dark transition, settle or read-back still waiting
     }
 
@@ -284,6 +284,15 @@ public partial class TFDiMD11Definition
     /// on purpose: it dedups on its last spoken text, so an unchanged lever is silent and a
     /// changed one speaks once, truthfully. An aircraft switch constructs a new definition,
     /// which needs none of this.
+    ///
+    /// The two callers differ in what comes next. A DISCONNECT clears the cache, so the
+    /// reconnect re-fires every var and every tracker re-seeds on delivery. A FLIGHT LOAD clears
+    /// nothing and the batch fires only on a CHANGED value, so a var the load left as it was
+    /// (every lamp of a cold-and-dark load after an app connected at the menu, a squawk, a COM
+    /// frequency) is never delivered again — and a tracker wiped for it would eat its first real
+    /// change. So <see cref="SeedFromCache"/> runs <see cref="SeedAfterMs"/> later and seeds every
+    /// still-empty tracker from the cache, which by then holds exactly the unchanged values; on
+    /// the disconnect path the cache is empty and the pass is a no-op.
     /// </summary>
     public override void OnSimContextReset()
     {
@@ -297,5 +306,78 @@ public partial class TFDiMD11Definition
         _spdbrkHandle = double.NaN;
         _lastSpoilerSpoken = string.Empty;
         _announceGeneration++;                  // nothing scheduled before the drop may speak after it
+        _ = SeedFromCacheAfterAsync(++_seedToken);
+    }
+
+    /// <summary>
+    /// How long after a context reset the still-empty trackers are seeded from the cache: long
+    /// enough for a loaded flight's values to have settled and been delivered (three batches),
+    /// short enough that a lamp lighting during the load's own start-up is still news.
+    /// </summary>
+    private const int SeedAfterMs = 3000;
+
+    /// <summary>Only the latest reset's seed pass runs; a newer reset supersedes an older one's.</summary>
+    private int _seedToken;
+
+    private async Task SeedFromCacheAfterAsync(int token)
+    {
+        try
+        {
+            await Task.Delay(SeedAfterMs).ConfigureAwait(false);
+            OnUiThread(() =>
+            {
+                try
+                {
+                    if (token == _seedToken) SeedFromCache();
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug("MD11", $"Baseline seed (UI-thread tail) threw: {ex.Message}");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("MD11", $"Baseline seed threw: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Seeds every tracker that still has no baseline from the cache, silently. A tracker that a
+    /// delivery already re-seeded is skipped; a var the cache does not hold (the disconnect
+    /// path) is skipped. Not gated on <see cref="_announceGeneration"/>: the Connected branch
+    /// bumps that on the very flight load this pass serves.
+    /// </summary>
+    private void SeedFromCache()
+    {
+        var sim = _sim;
+        if (sim == null) return;
+        int seeded = 0;
+
+        foreach (var c in _byNodeId.Values)
+        {
+            if (c.Kind != Md11Kinds.Annunciator || _lampLastVal.ContainsKey(c.NodeId)) continue;
+            if (sim.GetCachedVariableValue(c.NodeId) is double lamp) { _lampLastVal[c.NodeId] = lamp; seeded++; }
+        }
+        foreach (var key in Md11Radios.Keys)
+            if (sim.GetCachedVariableValue(key) is double khz && _com.SeedIfEmpty(key, khz)) seeded++;
+        if (sim.GetCachedVariableValue(Md11Squawk.CodeKey) is double code && _squawk.SeedIfEmpty(code)) seeded++;
+        if (sim.GetCachedVariableValue(Md11Fcp.ReadCaptainBaro) is double baro && _altimeter.SeedIfEmpty(baro)) seeded++;
+        foreach (var key in Md11VSpeeds.Keys)
+            if (sim.GetCachedVariableValue(key) is double speed && _vSpeeds.SeedIfEmpty(key, speed)) seeded++;
+        if (double.IsNaN(_spdbrkHandle) && sim.GetCachedVariableValue(Md11SpeedbrakeSystem.ArmKey) is double arm)
+        {
+            _spdbrkHandle = arm;
+            seeded++;
+        }
+        if (_lastSpoilerSpoken.Length == 0 && sim.GetCachedVariableValue(Md11SpeedbrakeSystem.LeverKey) is double rng
+            && Md11SpeedbrakeSystem.DescribeTravel(rng) is string detent)
+        {
+            _spdbrkRng = rng;
+            _lastSpoilerSpoken = $"Spoilers {detent.ToLowerInvariant()}";
+            seeded++;
+        }
+
+        Log.Debug("MD11", $"Context reset: {seeded} baselines seeded from the cache.");
     }
 }

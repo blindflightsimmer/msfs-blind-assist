@@ -184,4 +184,15 @@ public class Md11SquawkTests
         Assert.Null(a.OnUpdate(0x5473));            // the baseline after the reset, not a change
         Assert.Equal("Squawk 1200", a.OnUpdate(0x1200));
     }
+
+    /// <summary>A flight load re-delivers only what changed, so an empty baseline is seeded from the cache and a present one is left alone.</summary>
+    [Fact]
+    public void SeedIfEmpty_SeedsOnlyWhenThereIsNoBaseline()
+    {
+        var a = new Md11SquawkAnnouncer();
+        Assert.True(a.SeedIfEmpty(0x1200));
+        Assert.False(a.SeedIfEmpty(0x7000));                 // already seeded: untouched
+        Assert.Null(a.OnUpdate(0x1200));                     // unchanged
+        Assert.Equal("Squawk 7000", a.OnUpdate(0x7000));     // the first real change speaks
+    }
 }

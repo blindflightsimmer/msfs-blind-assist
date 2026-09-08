@@ -129,5 +129,13 @@ public sealed class Md11ComAnnouncer
     /// <summary>The last value seen for a key, if any — what a tuning read-back compares against.</summary>
     public double? Last(string key) => _last.TryGetValue(key, out var v) ? v : null;
 
+    /// <summary>Seeds a key that has no baseline (a flight load re-delivers only what changed); true when it did.</summary>
+    public bool SeedIfEmpty(string key, double khz)
+    {
+        if (_last.ContainsKey(key)) return false;
+        _last[key] = khz;
+        return true;
+    }
+
     public void Reset() => _last.Clear();
 }

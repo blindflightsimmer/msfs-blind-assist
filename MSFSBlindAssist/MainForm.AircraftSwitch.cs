@@ -138,6 +138,21 @@ public partial class MainForm
         currentAircraft?.OnSimContextReset();
     }
 
+    /// <summary>
+    /// The connection is going down — every drop, not only one after a completed detection (the
+    /// Disconnected status below is gated on that). The definition's baseline-first announcers
+    /// are wiped on the way down so the reconnect's re-fire re-seeds them silently.
+    /// </summary>
+    private void OnConnectionLost(object? sender, EventArgs e)
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(new Action(() => OnConnectionLost(sender, e)));
+            return;
+        }
+        currentAircraft?.OnSimContextReset();
+    }
+
     private void OnConnectionStatusChanged(object? sender, string status)
     {
         if (InvokeRequired)
@@ -261,11 +276,11 @@ public partial class MainForm
             // "Altitude armed" arriving after "Disconnected" describes an aircraft that is gone.
             currentAircraft?.CancelDeferredFlush();
 
-            // Baseline-first trackers are wiped NOW, on the way down — never on the Connected
-            // branch above, which runs after the reconnect's first batch has already re-fired
-            // every variable into the definition (IAircraftDefinition.OnSimContextReset; the
-            // AircraftLoaded system event is its other caller).
-            currentAircraft?.OnSimContextReset();
+            // Baseline-first trackers were wiped on the way down by OnConnectionLost (raised on
+            // every drop, where this status is gated on a completed detection) — never on the
+            // Connected branch above, which runs after the reconnect's first batch has already
+            // re-fired every variable into the definition (IAircraftDefinition.OnSimContextReset;
+            // the AircraftLoaded system event is its other caller).
 
             // Stop event batching timer and clear queue
             eventBatchTimer?.Stop();

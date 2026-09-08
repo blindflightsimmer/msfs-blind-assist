@@ -91,7 +91,15 @@ public sealed class Md11VSpeedAnnouncer
     /// <summary>Forgets a sentence still waiting out its settle. The Connected branch calls it: a sentence a re-fire armed with no context reset before it (a monitoring restart) dies with its tail there and must not ride into a later one. Baselines are kept.</summary>
     public void DropPending() => _pending.Clear();
 
-    /// <summary>Forget everything: every speed is a baseline again. For the DISCONNECT — see the class summary for why never the reconnect.</summary>
+    /// <summary>Seeds a speed that has no baseline (a flight load re-delivers only what changed); true when it did.</summary>
+    public bool SeedIfEmpty(string varName, double value)
+    {
+        if (!Md11VSpeeds.IsKey(varName) || _last.ContainsKey(varName)) return false;
+        _last[varName] = value;
+        return true;
+    }
+
+    /// <summary>Forget everything: every speed is a baseline again. For a context reset — see the class summary for why never the reconnect.</summary>
     public void Reset()
     {
         _last.Clear();

@@ -97,6 +97,14 @@ public sealed class Md11SquawkAnnouncer
         if (_entries > 0) _entries--;
     }
 
+    /// <summary>Seeds the baseline when there is none (a flight load re-delivers only what changed); true when it did.</summary>
+    public bool SeedIfEmpty(double bco16)
+    {
+        if (_last >= 0) return false;
+        _last = (int)Math.Round(bco16);
+        return true;
+    }
+
     /// <summary>A code arrived: "Squawk 1234" when it is a change worth speaking, else null.</summary>
     public string? OnUpdate(double bco16)
     {
