@@ -93,6 +93,20 @@ public class Md11VSpeedsTests
         Assert.True(a.OnUpdate("MD11_V2", 160, 7_000));
     }
 
+    /// <summary>The disconnect wipe: the reconnect's first delivery of each speed is a baseline again, and nothing pending survives.</summary>
+    [Fact]
+    public void Reset_MakesEverySpeedABaselineAgain()
+    {
+        var a = new Md11VSpeedAnnouncer();
+        a.OnUpdate("MD11_V1", 145, 0);
+        a.OnUpdate("MD11_V1", 147, 1_000);
+        a.Reset();
+        Assert.False(a.HasPending);
+        Assert.False(a.OnUpdate("MD11_V1", 150, 5_000));                      // re-seeds silently
+        Assert.True(a.OnUpdate("MD11_V1", 152, 6_000));
+        Assert.Equal("V1 152 knots", a.Due(6_000 + Md11VSpeedAnnouncer.SettleMs, NotMuted));
+    }
+
     [Fact]
     public void TheSpeakingOrder_CoversEveryLabelledSpeed_AndNothingElse()
     {

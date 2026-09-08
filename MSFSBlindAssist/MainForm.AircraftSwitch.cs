@@ -244,6 +244,11 @@ public partial class MainForm
             // "Altitude armed" arriving after "Disconnected" describes an aircraft that is gone.
             currentAircraft?.CancelDeferredFlush();
 
+            // Baseline-first trackers are wiped NOW, on the way down — never on the Connected
+            // branch above, which runs after the reconnect's first batch has already re-fired
+            // every variable into the definition (IAircraftDefinition.OnSimDisconnected).
+            currentAircraft?.OnSimDisconnected();
+
             // Stop event batching timer and clear queue
             eventBatchTimer?.Stop();
 

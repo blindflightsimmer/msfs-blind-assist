@@ -255,28 +255,42 @@ public partial class TFDiMD11Definition
         }
     }
 
+    /// <summary>
+    /// The Connected branch. It runs AFTER the reconnect's first batch has re-fired every var into
+    /// ProcessSimVarUpdate, so NOTHING baseline-first may be wiped here — every wipe that used to
+    /// live here swallowed the next real change of its tracker (the first master caution, the
+    /// first COM tune, the first altimeter wind, the pilot's first perf entry of a reconnected
+    /// session; review, 2026-09-08). Those move to <see cref="OnSimDisconnected"/>. What belongs
+    /// here is what must not survive into the new session whatever the ordering: the roll's arm,
+    /// the take-off cue's latch, the pending timers.
+    /// </summary>
     public override void ResetAnnouncementBaselines()
     {
         base.ResetAnnouncementBaselines();
+        _takeoffCallouts.Reset();               // drops the arm, keeps the speeds: the batch has just re-fed them
+        _n1SeventyAnnounced = false;            // the take-off cue re-arms with the session
+        Array.Fill(_n1, double.NaN);
+        _vSpeeds.DropPending();                 // a sentence the re-fire armed dies with its tail below; it must not ride into a later one
+        _announceGeneration++;                  // drops any dark transition, settle or read-back still waiting
+    }
+
+    /// <summary>
+    /// The way DOWN: every baseline-first tracker is wiped here, so the reconnect's first delivery
+    /// of each var re-seeds it silently — connecting must not narrate the cockpit, the radio
+    /// stack, the altimeter or the speeds — and the NEXT change after that speaks. An aircraft
+    /// switch constructs a new definition, which needs none of this.
+    /// </summary>
+    public override void OnSimDisconnected()
+    {
         _lampLastVal.Clear();
         _lampChangeTicks.Clear();
         _gate.Reset();
-        // NOT reset here: the COM radios, the squawk, the captain's altimeter and the take-off
-        // speeds — every single-value announcer. On a reconnect this runs AFTER the first batch
-        // has already delivered them (the cache is cleared at reconnect, so every var re-fires
-        // once), and a reset would throw away the baseline just taken — the next genuine change
-        // would then be eaten as a fresh baseline: the first COM tune, the first altimeter wind,
-        // the pilot's perf entry, all silent. Their baselines carry across the drop instead; a
-        // value that changed during it speaks once, which is true. The LAMPS are still wiped
-        // above, on purpose: a sim restart behind the drop can flip hundreds of them at once, and
-        // a re-baseline there is the difference between silence and a narrated cockpit. An
-        // aircraft switch constructs a new definition, so everything starts fresh there.
-        _vSpeeds.DropPending();                 // an in-flight sentence from before the drop is not news
-        _spdbrkHandle = double.NaN;             // the speedbrake re-baselines on reconnect too
+        _com.Reset();
+        _squawk.Reset();
+        _altimeter.Reset();
+        _vSpeeds.Reset();
+        _spdbrkHandle = double.NaN;
         _lastSpoilerSpoken = string.Empty;
-        _takeoffCallouts.Reset();               // drops the arm, keeps the speeds: the batch delivered them before this runs
-        _n1SeventyAnnounced = false;            // the take-off cue re-arms with the session too
-        Array.Fill(_n1, double.NaN);
-        _announceGeneration++;   // drops any dark transition still waiting out its settle
+        _announceGeneration++;                  // nothing scheduled before the drop may speak after it
     }
 }

@@ -331,12 +331,33 @@ public interface IAircraftDefinition
     ///
     /// ⚠️ A definition that adds a tracker gated on a "not yet seen" sentinel — a -1, a
     /// bool?, a _prev*/_last* consulted before announcing, a ??= latch, an absent-key
-    /// check on a Dictionary — MUST reset it here. This list is maintained BY HAND, not
+    /// check on a Dictionary — MUST reset it. This list is maintained BY HAND, not
     /// generated: two separate review sweeps of FlyByWireA380Definition/
     /// FlyByWireA320Definition have each found it incomplete, so it is only ever as
     /// complete as the last person who remembered to extend it when they added a tracker.
+    /// ⚠️ But reset it in <see cref="OnSimDisconnected"/>, not here: this runs on the Connected
+    /// branch AFTER the reconnect's first batch has re-fired every variable, so a sentinel reset
+    /// here eats the next real change (see OnSimDisconnected). What belongs here is what must not
+    /// survive into the new session whatever the ordering — latches, pending timers, an armed
+    /// state machine.
     /// </summary>
     void ResetAnnouncementBaselines();
+
+    /// <summary>
+    /// The simulator connection has just DROPPED. This — not <see cref="ResetAnnouncementBaselines"/>
+    /// — is where a baseline-first tracker (a "not yet seen" sentinel, a first-sample seed) is
+    /// wiped. Ordering is the whole point: after a reconnect the cache is cleared, so every
+    /// variable re-fires once into ProcessSimVarUpdate, and that first delivery lands BEFORE the
+    /// Connected branch calls ResetAnnouncementBaselines. A tracker wiped there loses the baseline
+    /// it has just taken and eats the NEXT real change as its baseline instead — on the MD-11 that
+    /// was the first master caution, the first COM tune, the first altimeter wind and the pilot's
+    /// first perf entry of every reconnected session (found 2026-09-08). Wiped here, the
+    /// reconnect's first delivery re-seeds silently and the next change speaks. Definitions with
+    /// no such trackers use the default (does nothing). ⚠️ The FBW definitions still reset their
+    /// sentinels in ResetAnnouncementBaselines; that predates this finding and is unreviewed
+    /// against it.
+    /// </summary>
+    void OnSimDisconnected();
 
     /// <summary>
     /// The monitored variable whose continuous-batch delivery completes an announcement this

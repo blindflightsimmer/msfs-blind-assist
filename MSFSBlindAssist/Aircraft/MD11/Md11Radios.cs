@@ -108,7 +108,8 @@ public static class Md11Radios
 /// <summary>
 /// Baseline-first change detector for the COM keys: the first sample of each key seeds silently
 /// (connecting must not read the whole radio stack aloud), and a later change of more than half
-/// a kHz inside the airband is spoken. Reset on reconnect so the first delivery re-seeds.
+/// a kHz inside the airband is spoken. Reset on the DISCONNECT so the reconnect's first delivery
+/// re-seeds (never on the reconnect itself: that first delivery has already landed by then).
 /// </summary>
 public sealed class Md11ComAnnouncer
 {

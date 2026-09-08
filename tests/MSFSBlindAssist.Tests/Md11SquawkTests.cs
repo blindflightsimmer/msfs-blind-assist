@@ -129,8 +129,8 @@ public class Md11SquawkTests
         Assert.Null(a.OnUpdate(0x1200));            // redelivered unchanged
         Assert.Equal("Squawk 5473", a.OnUpdate(0x5473));
         Assert.Null(a.OnUpdate(0x5473));
-        a.Reset();                                  // a fresh start (what a new definition instance gets; not called on a reconnect)
-        Assert.Null(a.OnUpdate(0x7000));            // a baseline again
+        a.Reset();                                  // the disconnect wipe
+        Assert.Null(a.OnUpdate(0x7000));            // the reconnect's first delivery is a baseline again
         Assert.Equal("Squawk 1200", a.OnUpdate(0x1200));
     }
 
@@ -171,7 +171,7 @@ public class Md11SquawkTests
         a.EndEntry();                               // the first entry's finally
         Assert.True(a.EntryInProgress);
         Assert.Null(a.OnUpdate(0x5400));            // the second entry's intermediate code
-        a.Reset();                                  // a reset mid-entry (no production caller today; the contract still holds)
+        a.Reset();                                  // a disconnect mid-entry
         Assert.True(a.EntryInProgress);
         Assert.Null(a.OnUpdate(0x5473));
         a.EndEntry();

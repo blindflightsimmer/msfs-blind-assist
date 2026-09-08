@@ -51,7 +51,7 @@ public class Md11RadioTests
         var com = new Md11ComAnnouncer();
         com.OnUpdate("COM_ACTIVE_FREQUENCY:1", 135500);
         com.Reset();
-        Assert.Null(com.OnUpdate("COM_ACTIVE_FREQUENCY:1", 121500));   // a reconnect must not narrate the stack
+        Assert.Null(com.OnUpdate("COM_ACTIVE_FREQUENCY:1", 121500));   // wiped on the disconnect: the reconnect must not narrate the stack
     }
 
     [Fact]

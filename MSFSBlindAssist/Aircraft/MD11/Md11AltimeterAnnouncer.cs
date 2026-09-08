@@ -68,7 +68,7 @@ public sealed class Md11AltimeterAnnouncer
         return sentence;
     }
 
-    /// <summary>Forget everything: the next value is a baseline again (reconnect, aircraft switch).</summary>
+    /// <summary>Forget everything: the next value is a baseline again (on the disconnect; an aircraft switch builds a fresh instance).</summary>
     public void Reset()
     {
         _baselined = false;

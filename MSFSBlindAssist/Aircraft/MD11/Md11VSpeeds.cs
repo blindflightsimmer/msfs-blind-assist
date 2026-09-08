@@ -48,11 +48,12 @@ public static class Md11VSpeeds
 /// reads 0 or TFDi's dashed sentinel and is remembered but never spoken — "V1 0 knots" is not
 /// information — while the next real value after a clear IS spoken: the speeds came back.
 ///
-/// Deliberately NO Reset for a reconnect: the reconnect's first batch has already delivered the
-/// five (with the cache cleared, every var re-fires once) before the definition's
-/// ResetAnnouncementBaselines runs, so a reset there would throw away the baseline just taken and
-/// the next genuine change — the pilot's perf entry — would be eaten as a fresh baseline. An
-/// aircraft switch constructs a new definition, and with it a fresh announcer.
+/// <see cref="Reset"/> is for the DISCONNECT (the definition's OnSimDisconnected), never for the
+/// reconnect: by the time the Connected branch runs, the first batch has already re-fired the
+/// five (the cache is cleared, so every var re-fires once), and a reset there would throw away
+/// the baseline just taken — the pilot's next perf entry would be eaten as a fresh baseline.
+/// Wiped on the way down, the reconnect's first delivery re-seeds silently and the next change
+/// speaks. An aircraft switch constructs a new definition, and with it a fresh announcer.
 /// </summary>
 public sealed class Md11VSpeedAnnouncer
 {
@@ -87,8 +88,15 @@ public sealed class Md11VSpeedAnnouncer
         return true;
     }
 
-    /// <summary>Forgets a sentence still waiting out its settle (a reconnect: what changed before the drop is not news after it). Baselines are kept.</summary>
+    /// <summary>Forgets a sentence still waiting out its settle (the Connected branch: it dies with its tail and must not ride into a later one). Baselines are kept.</summary>
     public void DropPending() => _pending.Clear();
+
+    /// <summary>Forget everything: every speed is a baseline again. For the DISCONNECT — see the class summary for why never the reconnect.</summary>
+    public void Reset()
+    {
+        _last.Clear();
+        _pending.Clear();
+    }
 
     /// <summary>
     /// The sentence to speak now, or null: nothing pending, not yet settled, or every pending
