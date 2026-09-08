@@ -17,18 +17,20 @@ one can read them, so this is the real screen, live, not a reconstruction.
 The EFB reads too - press left bracket, then Shift+T. All of it: Dispatch, Payload, Perf,
 Charts, Services, State and Options.
 
-The six display units (PFD, ND, EAD, SD) and the standby instrument are a different matter:
-those are drawn from inside the aircraft's own code module with no text behind them, so there
-is no PFD or EICAS readout. This is a property of the MD-11 itself and cannot be fixed from
-this side - it has been checked thoroughly, three separate ways.
+The six display units (PFD, ND, EAD, SD) and the standby instrument are drawn from inside the
+aircraft's own code module with no text behind them, so there is no live PFD or EICAS readout
+the way the Airbus and Boeing have. They ARE readable, though, by AI vision: press Alt+P, Alt+N,
+Alt+E, Alt+S or Alt+I in output mode (see AI Display Reading below). The app moves the
+simulator's camera to the right instrument view for you and puts it back afterwards.
 
-One consequence worth knowing: the flight mode annunciator cannot be read either. What CAN be
-read is what the flight control panel itself shows. The heading window goes to dashes while NAV
-is flying the aircraft, and the speed window goes to dashes while FMS speed is, so NAV and FMS
-Speed are reported as engaged or not engaged from those windows. PROF and Approach/Land have no
-such cue - their state lives only on the annunciator - so they are never reported as engaged.
-The mode buttons themselves only report that they were pressed, which is not the same thing as
-the mode engaging.
+One consequence worth knowing: the flight mode annunciator is on the PFD and nowhere else, so
+Alt+P is the way to hear PROF, LAND ARMED, ALT HOLD and the rest. What the app can read
+directly is what the flight control panel itself shows. The heading window goes to dashes while
+NAV is flying the aircraft, and the speed window goes to dashes while FMS speed is, so NAV and
+FMS Speed are reported as engaged or not engaged from those windows. PROF and Approach/Land have
+no such cue - their state lives only on the annunciator - so the panel never reports them as
+engaged. The mode buttons themselves only report that they were pressed, which is not the same
+thing as the mode engaging.
 
 What replaces the screens: TFDi publish the numbers a sighted pilot would read off the glass as
 separate values, and MSFS Blind Assist reads those instead. That is where your V-speeds,
@@ -135,7 +137,8 @@ Flight control panel - what is SELECTED, with the mode it is in:
   Shift+A    Read selected altitude, in feet or metres
   Shift+V    Read selected vertical speed, or flight path angle. Dashed reads "not engaged".
 
-  PROF cannot be read on this aircraft - see the note above.
+  PROF and Approach/Land show only on the flight mode annunciator - read it with Alt+P (AI
+  Display Reading, below).
 
 Characteristic Speeds:
   Shift+1    Read slat retraction speed (VSR)
@@ -166,6 +169,21 @@ Aircraft state:
              "Altimeter standard"
   W          Read gross weight (pounds)
   Shift+W    Read gross weight (kilograms)
+
+AI Display Reading (needs an AI provider and its key in File > Settings > AI tab):
+  Alt+P      Read the captain's PFD, flight mode annunciator first
+  Alt+N      Read the captain's ND
+  Alt+E      Read the EAD - the engine and alert display, this aircraft's EICAS: engine
+             gauges, thrust limit, flap and slat, and every alert with its colour
+  Alt+S      Read the SD - the system display, whatever page it is showing. To read another
+             page, press its cue button first (Pedestal section, System Display Control Panel)
+  Alt+I      Read the standby instrument on the forward pedestal. It is small in that view, so
+             this one reads best on a high-resolution display
+  Alt+D      Describe the outside scene
+  You press nothing in the simulator: the app switches to the instrument camera view that
+  frames the display (view 1 for the PFD, ND and EAD, view 3 for the SD, view 4 for the
+  standby), captures, and puts your view back, all within a second. If the simulator is in an
+  external or drone camera the app says "Switch to a cockpit view first" and does nothing.
 
 
 INDICATOR LIGHTS ON THE PANELS
