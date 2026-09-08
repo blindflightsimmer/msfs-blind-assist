@@ -290,9 +290,10 @@ public partial class TFDiMD11Definition
     /// nothing and the batch fires only on a CHANGED value, so a var the load left as it was
     /// (every lamp of a cold-and-dark load after an app connected at the menu, a squawk, a COM
     /// frequency) is never delivered again — and a tracker wiped for it would eat its first real
-    /// change. So <see cref="SeedFromCache"/> runs <see cref="SeedAfterMs"/> later and seeds every
-    /// still-empty tracker from the cache, which by then holds exactly the unchanged values; on
-    /// the disconnect path the cache is empty and the pass is a no-op.
+    /// change. So <see cref="SeedFromCache"/> seeds every still-empty tracker from the cache once
+    /// the batch deliveries show the cache current and settled (<see cref="Md11SeedGate"/>), by
+    /// which time it holds exactly the unchanged values; on the disconnect path every var
+    /// re-fires first and the pass finds nothing left to seed.
     /// </summary>
     public override void OnSimContextReset()
     {
@@ -306,49 +307,55 @@ public partial class TFDiMD11Definition
         _spdbrkHandle = double.NaN;
         _lastSpoilerSpoken = string.Empty;
         _announceGeneration++;                  // nothing scheduled before the drop may speak after it
-        _ = SeedFromCacheAfterAsync(++_seedToken);
+        _seedGate.Arm();                        // SeedFromCache runs when the deliveries say the cache is current and settled
     }
 
     /// <summary>
-    /// How long after a context reset the still-empty trackers are seeded from the cache: long
-    /// enough for a loaded flight's values to have settled and been delivered (three batches),
-    /// short enough that a lamp lighting during the load's own start-up is still news.
+    /// WHEN the still-empty trackers are seeded after a context reset: on the batch deliveries'
+    /// evidence — every active batch delivered since the reset, then nothing seedable moving for
+    /// <see cref="Md11SeedGate.QuietCycles"/> cycles, with a ceiling for a lamp that never stops.
+    /// A 3 s wall clock stood here first and was unsound: on a load slower than that it froze
+    /// the PRE-load cache as the baselines, and every lamp that then came up spoke (review,
+    /// 2026-09-08). Fed by <see cref="OnContinuousBatchDelivered"/> and, per seedable delivery,
+    /// from ProcessSimVarUpdate; disarmed by <see cref="Dispose"/>.
     /// </summary>
-    private const int SeedAfterMs = 3000;
+    private readonly Md11SeedGate _seedGate = new();
 
-    /// <summary>Only the latest reset's seed pass runs; a newer reset supersedes an older one's.</summary>
-    private int _seedToken;
+    /// <summary>A context-reset seed pass is still pending (tests).</summary>
+    internal bool SeedPassPending => _seedGate.Armed;
 
-    private async Task SeedFromCacheAfterAsync(int token)
+    /// <inheritdoc />
+    public override void OnContinuousBatchDelivered(int batchNum)
     {
-        try
-        {
-            await Task.Delay(SeedAfterMs).ConfigureAwait(false);
-            OnUiThread(() =>
-            {
-                try
-                {
-                    if (token == _seedToken) SeedFromCache();
-                }
-                catch (Exception ex)
-                {
-                    Log.Debug("MD11", $"Baseline seed (UI-thread tail) threw: {ex.Message}");
-                }
-            });
-        }
-        catch (Exception ex)
-        {
-            Log.Debug("MD11", $"Baseline seed threw: {ex.Message}");
-        }
+        if (!_seedGate.Armed) return;
+        var sim = _sim;
+        if (sim == null) return;
+        var trigger = _seedGate.OnBatchDelivered(batchNum, sim.ActiveContinuousBatches, Environment.TickCount64);
+        if (trigger != Md11SeedTrigger.None) SeedFromCache(trigger);
     }
+
+    /// <summary>
+    /// The vars <see cref="SeedFromCache"/> reads — and so the ones whose deliveries the gate
+    /// weighs as evidence of the cache settling. Keep the two the same: a var seeded but not
+    /// counted could be seeded mid-change; a var counted but never seeded would hold the pass
+    /// for nothing. Pinned by Md11SeedGateTests.
+    /// </summary>
+    internal bool IsSeededFromCache(string varName) =>
+        varName == Md11Squawk.CodeKey
+        || varName == Md11Fcp.ReadCaptainBaro
+        || varName == Md11SpeedbrakeSystem.ArmKey
+        || varName == Md11SpeedbrakeSystem.LeverKey
+        || Md11VSpeeds.IsKey(varName)
+        || Array.IndexOf(Md11Radios.Keys, varName) >= 0
+        || (_byNodeId.TryGetValue(varName, out var control) && control.Kind == Md11Kinds.Annunciator);
 
     /// <summary>
     /// Seeds every tracker that still has no baseline from the cache, silently. A tracker that a
-    /// delivery already re-seeded is skipped; a var the cache does not hold (the disconnect
-    /// path) is skipped. Not gated on <see cref="_announceGeneration"/>: the Connected branch
-    /// bumps that on the very flight load this pass serves.
+    /// delivery already re-seeded is skipped; a var the cache does not hold is skipped. Not
+    /// gated on <see cref="_announceGeneration"/>: the Connected branch bumps that on the very
+    /// flight load this pass serves.
     /// </summary>
-    private void SeedFromCache()
+    private void SeedFromCache(Md11SeedTrigger trigger)
     {
         var sim = _sim;
         if (sim == null) return;
@@ -378,6 +385,7 @@ public partial class TFDiMD11Definition
             seeded++;
         }
 
-        Log.Debug("MD11", $"Context reset: {seeded} baselines seeded from the cache.");
+        Log.Debug("MD11", $"Context reset: {seeded} baselines seeded from the cache after {_seedGate.Deliveries} batch deliveries "
+            + (trigger == Md11SeedTrigger.Quiet ? $"({_seedGate.QuietDeliveries} quiet)." : "(at the ceiling, never quiet)."));
     }
 }

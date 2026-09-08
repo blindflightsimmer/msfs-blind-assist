@@ -345,9 +345,10 @@ public interface IAircraftDefinition
 
     /// <summary>
     /// The values about to arrive describe a DIFFERENT situation from the ones before: the
-    /// simulator connection has just dropped (MainForm's Disconnected branch), or a flight or
-    /// aircraft has just been loaded (the AircraftLoaded system event, which fires before the
-    /// new aircraft's variables settle). This — not <see cref="ResetAnnouncementBaselines"/> — is
+    /// simulator connection has just dropped (SimConnectManager.ConnectionLost, raised on every
+    /// drop — never on a failed connection attempt), or a flight or aircraft has just been
+    /// loaded (the AircraftLoaded system event, which fires before the new aircraft's variables
+    /// settle). This — not <see cref="ResetAnnouncementBaselines"/> — is
     /// where a baseline-first tracker (a "not yet seen" sentinel, a first-sample seed) is wiped,
     /// so the next delivery of each variable re-seeds it silently and the change AFTER that
     /// speaks. Ordering is the whole point: after a reconnect the cache is cleared, so every
@@ -360,7 +361,9 @@ public interface IAircraftDefinition
     /// disconnect clears the cache, so the reconnect re-fires EVERY variable and a wiped tracker
     /// re-seeds on delivery; a flight load clears nothing and the batch fires only on a CHANGED
     /// value, so a tracker wiped for it must be re-seeded from the cache once the values have
-    /// settled (the MD-11's SeedFromCache, 3 s later) or the wipe eats its first change.
+    /// settled (the MD-11's SeedFromCache, released by its Md11SeedGate on the batch deliveries'
+    /// evidence — a full cycle, then quiet — through <see cref="OnContinuousBatchDelivered"/>;
+    /// never a wall clock) or the wipe eats its first change.
     ///
     /// ⚠️ Both halves of that ordering are shared code, so the finding APPLIES to the FBW and
     /// iFly definitions too: each sentinel they reset in ResetAnnouncementBaselines eats its
@@ -368,6 +371,16 @@ public interface IAircraftDefinition
     /// the per-tracker consequences are unreviewed; moving those resets here is the fix.
     /// </summary>
     void OnSimContextReset();
+
+    /// <summary>
+    /// A continuous batch has finished dispatching: every SimVarUpdated it carried has reached
+    /// ProcessSimVarUpdate, whether or not anything in it moved. Raised for EVERY batch, on the
+    /// UI thread, after that batch's updates — the evidence that the cache is current for a
+    /// sample. The MD-11's context-reset seed pass waits on a full cycle of these and on the
+    /// deliveries going quiet (Md11SeedGate); <see cref="DeferredFlushWatchVariable"/> is the
+    /// narrower "the batch carrying THIS variable arrived" form. Default: nothing.
+    /// </summary>
+    void OnContinuousBatchDelivered(int batchNum);
 
     /// <summary>
     /// The monitored variable whose continuous-batch delivery completes an announcement this

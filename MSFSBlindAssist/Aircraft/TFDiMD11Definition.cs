@@ -559,6 +559,7 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     public void Dispose()
     {
         _announceGeneration++;   // a deferred dark transition must not speak for a disposed definition
+        _seedGate.Disarm();      // nor may a pending seed pass run for one
         _bus?.Dispose();
         _bus = null;
         DisposeTrackedWindows();

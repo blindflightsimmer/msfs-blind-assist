@@ -78,6 +78,24 @@ public partial class SimConnectManager
         batchNum = 0;
         return false;
     }
+
+    /// <summary>
+    /// The continuous batches currently registered — the 1-based batch numbers holding at least
+    /// one variable, ascending — so a subscriber of <see cref="ContinuousBatchDelivered"/> can
+    /// tell when it has seen a full cycle. Empty while disconnected and until
+    /// StartContinuousMonitoring has run. Built per call; meant for the occasional check, not a
+    /// per-frame path.
+    /// </summary>
+    public IReadOnlyCollection<int> ActiveContinuousBatches
+    {
+        get
+        {
+            var active = new List<int>(batchVarArrays.Length);
+            for (int batch = 1; batch < batchVarArrays.Length; batch++)
+                if (batchVarArrays[batch].Length > 0) active.Add(batch);
+            return active;
+        }
+    }
     public event EventHandler<AircraftPosition>? AircraftPositionReceived;
     public event EventHandler<AiTrafficDataEventArgs>? AiTrafficReceived;
     // Fired when a RequestAiTrafficData sweep delivers its final entry
@@ -112,7 +130,10 @@ public partial class SimConnectManager
     /// detection (the "Disconnected from simulator" status is gated on that, so a drop during a
     /// stalled load raised nothing). MainForm hands it to the definition's OnSimContextReset: the
     /// values that arrive after a reconnect describe a new situation whether or not detection had
-    /// finished before the drop.
+    /// finished before the drop. A failed connection ATTEMPT is not a drop: the reconnect timer
+    /// retries every 5 s while the sim is down, and raising this on each retry wiped the
+    /// definition's baselines and logged a context reset twelve times a minute for nothing —
+    /// only a handle that existed can be lost.
     /// </summary>
     public event EventHandler? ConnectionLost;
 
@@ -847,10 +868,11 @@ public partial class SimConnectManager
         }
         catch (COMException)
         {
+            bool hadConnection = IsConnected;   // set the instant the handle exists: false means the attempt itself failed
             IsConnected = false;
             GsxCouatlStartedLVar = false;
 
-            ConnectionLost?.Invoke(this, EventArgs.Empty);   // every drop, gated on nothing
+            if (hadConnection) ConnectionLost?.Invoke(this, EventArgs.Empty);   // a drop, not a failed attempt
 
             // Only announce disconnection if we were previously connected
             if (wasConnected)
@@ -1105,6 +1127,8 @@ public partial class SimConnectManager
             Log.Debug("SimConnect", "MobiFlight WASM module disconnected");
         }
 
+        bool hadHandle = simConnect != null;    // a drop or a shutdown of a live connection, as opposed to a shutdown that never connected
+
         if (simConnect != null)
         {
             try
@@ -1237,7 +1261,7 @@ public partial class SimConnectManager
         IsFullyConnected = false;
         GsxCouatlStartedLVar = false;
 
-        ConnectionLost?.Invoke(this, EventArgs.Empty);   // every drop, gated on nothing
+        if (hadHandle) ConnectionLost?.Invoke(this, EventArgs.Empty);   // every drop; nothing to lose otherwise
 
         // Only announce disconnection if we were previously connected
         if (wasConnected)

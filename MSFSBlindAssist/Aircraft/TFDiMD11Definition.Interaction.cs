@@ -802,6 +802,11 @@ public partial class TFDiMD11Definition
             return true;
         }
 
+        // While a context-reset seed pass is pending, every delivery of a var that pass would
+        // seed is evidence for or against the cache having settled (Md11SeedGate). One bool
+        // while nothing is pending, which is nearly always; ahead of every consuming branch.
+        if (_seedGate.Armed && IsSeededFromCache(varName)) _seedGate.NoteValue(varName, value);
+
         // Air/ground for the roll callouts, peeked from the base SIM_ON_GROUND var and never
         // consumed — it falls through to base.ProcessSimVarUpdate, which speaks "On ground" /
         // "Airborne". Up here, ahead of every consuming branch, so none can swallow it later.

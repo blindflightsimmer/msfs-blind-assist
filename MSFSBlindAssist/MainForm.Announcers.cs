@@ -20,7 +20,9 @@ namespace MSFSBlindAssist;
 public partial class MainForm
 {
     /// <summary>
-    /// A continuous batch has finished dispatching. If the current definition is holding an
+    /// A continuous batch has finished dispatching. Every definition hears about every delivery
+    /// (IAircraftDefinition.OnContinuousBatchDelivered — the MD-11 counts them as the evidence
+    /// its context-reset seed pass waits for); then, if the current definition is holding an
     /// announcement that was waiting on a variable in THIS batch, that variable is now current
     /// for this sample, so let the definition speak it.
     ///
@@ -39,7 +41,11 @@ public partial class MainForm
         if (InvokeRequired || Volatile.Read(ref queuedEventCount) > 0) return;
 
         var aircraft = currentAircraft;
-        if (aircraft?.DeferredFlushWatchVariable is not string watchVar) return;
+        if (aircraft == null) return;
+
+        aircraft.OnContinuousBatchDelivered(batchNum);      // every delivery; base no-op
+
+        if (aircraft.DeferredFlushWatchVariable is not string watchVar) return;
         if (simConnectManager == null) return;
 
         if (simConnectManager.TryGetContinuousBatch(watchVar, out int watchBatch))

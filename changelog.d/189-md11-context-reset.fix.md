@@ -1,0 +1,1 @@
+MD-11: after a reconnect or a flight load the app no longer reads out the cockpit as it settles, and the first real change afterwards - a COM tune, an altimeter wind, the take-off speeds, a master caution - is spoken instead of swallowed.

@@ -748,6 +748,9 @@ public abstract class BaseAircraftDefinition : IAircraftDefinition
     public virtual void OnSimContextReset() { }
 
     /// <inheritdoc />
+    public virtual void OnContinuousBatchDelivered(int batchNum) { }
+
+    /// <inheritdoc />
     /// <remarks>Most definitions hold nothing, so the batch hook never fires for them.</remarks>
     public virtual string? DeferredFlushWatchVariable => null;
 
