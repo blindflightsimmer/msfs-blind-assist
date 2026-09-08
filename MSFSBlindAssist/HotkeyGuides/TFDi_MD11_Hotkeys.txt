@@ -191,8 +191,8 @@ Ctrl+M under V1, Rotate speed and V2.
 The speeds themselves are announced as the FMS sets them, the way the PMDG Boeings do it, as
 one sentence: "V1 145, VR 150, V2 158, slat retraction speed 190, flap retraction speed 210
 knots". Starting the app with the speeds already entered says nothing; a change to a speed, or
-the FMS computing a new set, does. Each speed is muted by its own row in Ctrl+M and simply
-drops out of the sentence.
+the FMS computing a new set, does. Each speed is muted by its own row in Ctrl+M - V1, Rotate
+speed, V2, Slat retraction speed, Flap retraction speed - and simply drops out of the sentence.
 
 
 MINIMUMS

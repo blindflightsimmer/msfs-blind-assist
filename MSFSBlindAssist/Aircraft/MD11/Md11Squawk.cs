@@ -108,6 +108,11 @@ public sealed class Md11SquawkAnnouncer
         return $"Squawk {Md11Squawk.Decode(bcd)}";
     }
 
-    /// <summary>The next code is a baseline again. Not called on a reconnect any more (the first batch has already re-fired the code by then, so a reset there ate the next real change — see ResetAnnouncementBaselines); an aircraft switch builds a fresh definition. A running entry keeps its silence until it ends.</summary>
+    /// <summary>
+    /// The next code is a baseline again. No production caller since 2026-09-08: on a reconnect
+    /// the first batch has already re-fired the code before ResetAnnouncementBaselines runs, so a
+    /// reset there ate the next real change; an aircraft switch builds a fresh definition. A
+    /// running entry keeps its silence until it ends.
+    /// </summary>
     public void Reset() => _last = -1;
 }

@@ -18,9 +18,6 @@ public static class Md11TakeoffCallouts
     public const string VrKey = "MD11_VR";
     public const string V2Key = "MD11_V2";
 
-    /// <summary>The Ctrl+M rows that mute the callouts: V1, Rotate speed, V2 — the same rows a pilot reads the speeds from.</summary>
-    public static readonly string[] MuteRows = { V1Key, VrKey, V2Key };
-
     /// <summary>
     /// The Ctrl+M key whose mute silences <paramref name="callout"/> ("V1", "Rotate" or "V2"). A
     /// callout this table does not know maps to NO row and is therefore never muted — fail open:

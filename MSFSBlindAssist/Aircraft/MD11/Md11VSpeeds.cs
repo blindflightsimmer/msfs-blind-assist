@@ -60,7 +60,7 @@ public sealed class Md11VSpeedAnnouncer
     public const int SettleMs = 300;
 
     private readonly Dictionary<string, double> _last = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, double> _pending = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, double> _pending = new(StringComparer.Ordinal);   // keyed by Md11VSpeeds.Keys, which Labels must cover (pinned)
     private long _pendingAtMs;
 
     /// <summary>True while a changed speed is waiting out its settle.</summary>
@@ -77,11 +77,18 @@ public sealed class Md11VSpeedAnnouncer
         _last[varName] = value;
         if (!had) return false;                                  // baseline: connecting is not a change
         if (Math.Abs(value - previous) <= 0.5) return false;     // redelivered unchanged
-        if (value <= 0) return false;                            // cleared: nothing worth saying
+        if (value <= 0)
+        {
+            _pending.Remove(varName);                            // cleared inside the settle: the value it had is not news either
+            return false;
+        }
         _pending[varName] = value;
         _pendingAtMs = nowMs;
         return true;
     }
+
+    /// <summary>Forgets a sentence still waiting out its settle (a reconnect: what changed before the drop is not news after it). Baselines are kept.</summary>
+    public void DropPending() => _pending.Clear();
 
     /// <summary>
     /// The sentence to speak now, or null: nothing pending, not yet settled, or every pending

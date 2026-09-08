@@ -57,7 +57,7 @@ public class Md11TakeoffCalloutsTests
     [Fact]
     public void AnUnknownCallout_IsNeverMuted()
     {
-        Assert.DoesNotContain(Md11TakeoffCallouts.MuteKeyFor("Vfs"), Md11TakeoffCallouts.MuteRows);
+        Assert.DoesNotContain(Md11TakeoffCallouts.MuteKeyFor("Vfs"), Md11VSpeeds.Keys);
         Assert.False(Md11TakeoffCallouts.IsVSpeedKey("MD11_ENG1_N1"));
     }
 

@@ -261,14 +261,17 @@ public partial class TFDiMD11Definition
         _lampLastVal.Clear();
         _lampChangeTicks.Clear();
         _gate.Reset();
-        _com.Reset();
-        // NOT reset here: the squawk and the take-off speeds. On a reconnect this runs AFTER the
-        // first batch has already delivered them (the cache is cleared at reconnect, so every var
-        // re-fires once), and a reset would throw away the baseline just taken — the next genuine
-        // change would then be eaten as a fresh baseline: the pilot's perf entry, silent. Their
-        // baselines carry across the drop instead; a value that changed during it speaks once,
-        // which is true. An aircraft switch constructs a new definition, so both start fresh there.
-        _altimeter.Reset();                     // the next altimeter value is a baseline again
+        // NOT reset here: the COM radios, the squawk, the captain's altimeter and the take-off
+        // speeds — every single-value announcer. On a reconnect this runs AFTER the first batch
+        // has already delivered them (the cache is cleared at reconnect, so every var re-fires
+        // once), and a reset would throw away the baseline just taken — the next genuine change
+        // would then be eaten as a fresh baseline: the first COM tune, the first altimeter wind,
+        // the pilot's perf entry, all silent. Their baselines carry across the drop instead; a
+        // value that changed during it speaks once, which is true. The LAMPS are still wiped
+        // above, on purpose: a sim restart behind the drop can flip hundreds of them at once, and
+        // a re-baseline there is the difference between silence and a narrated cockpit. An
+        // aircraft switch constructs a new definition, so everything starts fresh there.
+        _vSpeeds.DropPending();                 // an in-flight sentence from before the drop is not news
         _spdbrkHandle = double.NaN;             // the speedbrake re-baselines on reconnect too
         _lastSpoilerSpoken = string.Empty;
         _takeoffCallouts.Reset();               // drops the arm, keeps the speeds: the batch delivered them before this runs

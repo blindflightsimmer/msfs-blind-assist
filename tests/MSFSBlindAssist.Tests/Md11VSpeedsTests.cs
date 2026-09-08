@@ -74,6 +74,31 @@ public class Md11VSpeedsTests
         Assert.False(a.HasPending);
     }
 
+    /// <summary>A speed cleared inside the settle window is dropped from the sentence it had armed; a reconnect drops the whole sentence and keeps the baselines.</summary>
+    [Fact]
+    public void AClearInsideTheSettle_CancelsThatSpeed_AndDropPending_CancelsTheSentence()
+    {
+        var a = new Md11VSpeedAnnouncer();
+        foreach (var key in Md11VSpeeds.Keys) a.OnUpdate(key, 0, 0);
+        a.OnUpdate("MD11_V1", 145, 1_000);
+        a.OnUpdate("MD11_VR", 150, 1_000);
+        a.OnUpdate("MD11_V1", 0, 1_100);                                      // the FMS took V1 back
+        Assert.Equal("VR 150 knots", a.Due(1_100 + Md11VSpeedAnnouncer.SettleMs, NotMuted));
+
+        a.OnUpdate("MD11_V2", 158, 5_000);
+        a.DropPending();
+        Assert.False(a.HasPending);
+        Assert.Null(a.Due(5_000 + Md11VSpeedAnnouncer.SettleMs, NotMuted));
+        Assert.False(a.OnUpdate("MD11_V2", 158, 6_000));                      // the baseline survived the drop: unchanged is silent
+        Assert.True(a.OnUpdate("MD11_V2", 160, 7_000));
+    }
+
+    [Fact]
+    public void TheSpeakingOrder_CoversEveryLabelledSpeed_AndNothingElse()
+    {
+        Assert.Equal(Md11VSpeeds.Labels.Keys.OrderBy(k => k), Md11VSpeeds.Keys.OrderBy(k => k));
+    }
+
     [Fact]
     public void AnUnrelatedExport_IsNotASpeed()
     {
