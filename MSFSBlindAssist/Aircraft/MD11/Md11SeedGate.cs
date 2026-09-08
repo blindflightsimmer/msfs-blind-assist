@@ -45,10 +45,11 @@ public enum Md11SeedTrigger
 /// <see cref="QuietCycles"/> times with nothing seedable moving — per batch, so one unchanged
 /// sample of a batch that came late cannot pass on the strength of the others.
 ///
-/// A change is a value that differs from the last one KNOWN for the key: the arm primes the
-/// gate from the cache (a flight load: the pre-load value is known, so a forced redelivery of
-/// it — the panel auto-refresh — is nothing; a reconnect: the cache was cleared on the way
-/// down, so every re-fire is a change), and after that the last value delivered.
+/// A change is a value that differs, by more than the batch's own change tolerance, from the
+/// last one KNOWN for the key: the arm takes what the cache holds (a flight load: the pre-load
+/// value is known, so a forced redelivery of it — the panel auto-refresh — is nothing; a
+/// reconnect: the cache was cleared on the way down, so every re-fire is a change), and after
+/// that the last value delivered.
 ///
 /// A lamp that never stops changing would hold every other tracker empty forever, so
 /// <see cref="CeilingMs"/> after the first full cycle the pass runs regardless. Fires once per
@@ -66,6 +67,9 @@ public sealed class Md11SeedGate
 
     /// <summary>After the first full cycle, seed regardless at this age.</summary>
     public const int CeilingMs = 30_000;
+
+    /// <summary>A value within this of the last known one is the same value — the batch's own change filter (SimConnectManager.VarCache).</summary>
+    public const double ChangeTolerance = 0.001;
 
     private readonly Dictionary<string, double> _lastSeen = new(StringComparer.Ordinal);
     private readonly HashSet<int> _delivered = new();
@@ -87,10 +91,16 @@ public sealed class Md11SeedGate
     /// <summary>Consecutive deliveries, up to the latest, with nothing seedable moving.</summary>
     public int QuietDeliveries { get; private set; }
 
-    /// <summary>A context reset: start counting from nothing.</summary>
-    public void Arm()
+    /// <summary>
+    /// A context reset: start counting from nothing, knowing <paramref name="known"/> — what the
+    /// cache holds for the seedable vars at this moment, so a redelivery of one of those values
+    /// is not a change. Part of arming, not a second step: a gate armed without it counts the
+    /// first forced redelivery of an unchanged row as the aircraft publishing.
+    /// </summary>
+    public void Arm(IEnumerable<KeyValuePair<string, double>> known)
     {
         _lastSeen.Clear();
+        foreach (var (key, value) in known) _lastSeen[key] = value;
         _delivered.Clear();
         _quietByBatch.Clear();
         _cycleComplete = false;
@@ -105,22 +115,16 @@ public sealed class Md11SeedGate
     /// <summary>The pass is no longer wanted (the definition is going away).</summary>
     public void Disarm() => _armed = false;
 
-    /// <summary>The value the cache held for a seedable key at the arm: a redelivery of it is not a change.</summary>
-    public void Prime(string key, double value)
-    {
-        if (_armed) _lastSeen[key] = value;
-    }
-
     /// <summary>
     /// A seedable var was delivered. A change — a value that differs from the last one known
-    /// for the key, or the first sight of a key nothing primed — restarts every batch's quiet
-    /// count at the delivery that carried it, and counts as the aircraft having published when
-    /// the key is the aircraft's own; an unchanged redelivery is not evidence of anything.
+    /// for the key, or the first sight of a key the arm did not know — restarts every batch's
+    /// quiet count at the delivery that carried it, and counts as the aircraft having published
+    /// when the key is the aircraft's own; an unchanged redelivery is not evidence of anything.
     /// </summary>
     public void NoteValue(string key, double value, bool ownedByAircraft)
     {
         if (!_armed) return;
-        if (_lastSeen.TryGetValue(key, out var previous) && previous.Equals(value)) return;
+        if (_lastSeen.TryGetValue(key, out var previous) && IsSame(previous, value)) return;
         _lastSeen[key] = value;
         _changedSinceDelivery = true;
         if (ownedByAircraft) SawChange = true;
@@ -162,6 +166,10 @@ public sealed class Md11SeedGate
         if (trigger != Md11SeedTrigger.None) _armed = false;
         return trigger;
     }
+
+    /// <summary>Equal, or within <see cref="ChangeTolerance"/>; NaN is the same as NaN, so a var that never reads pins nothing open.</summary>
+    private static bool IsSame(double previous, double value) =>
+        previous.Equals(value) || Math.Abs(previous - value) <= ChangeTolerance;
 
     private bool EveryBatchQuiet(IReadOnlyCollection<int> activeBatches)
     {

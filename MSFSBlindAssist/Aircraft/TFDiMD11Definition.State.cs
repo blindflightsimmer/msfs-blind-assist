@@ -307,24 +307,25 @@ public partial class TFDiMD11Definition
         _spdbrkHandle = double.NaN;
         _lastSpoilerSpoken = string.Empty;
         _announceGeneration++;                  // nothing scheduled before the drop may speak after it
-        _seedGate.Arm();                        // SeedFromCache runs when the deliveries say the cache is current and settled
-        PrimeSeedGate();
+        _seedGate.Arm(KnownSeedValues());       // SeedFromCache runs when the deliveries say the cache is current and settled
     }
 
     /// <summary>
-    /// Tells the gate what the cache holds for every seedable var at the arm, so a redelivery of
-    /// the same value is not a change. A flight load leaves the cache full (the pre-load values);
-    /// a disconnect has cleared it on the way down, so this primes nothing and every re-fire is
-    /// a change, as it should be.
+    /// What the cache holds for every seedable var right now, for the gate to arm with, so a
+    /// redelivery of the same value is not a change. A flight load leaves the cache full (the
+    /// pre-load values); a disconnect has cleared it on the way down, so this yields nothing
+    /// and every re-fire is a change, as it should be.
     /// </summary>
-    private void PrimeSeedGate()
+    private IEnumerable<KeyValuePair<string, double>> KnownSeedValues()
     {
         var sim = _sim;
-        if (sim == null) return;
+        if (sim == null) yield break;
         foreach (var c in _byNodeId.Values)
-            if (c.Kind == Md11Kinds.Annunciator && sim.GetCachedVariableValue(c.NodeId) is double lamp) _seedGate.Prime(c.NodeId, lamp);
+            if (c.Kind == Md11Kinds.Annunciator && sim.GetCachedVariableValue(c.NodeId) is double lamp)
+                yield return new KeyValuePair<string, double>(c.NodeId, lamp);
         foreach (var key in SeededScalarKeys)
-            if (sim.GetCachedVariableValue(key) is double value) _seedGate.Prime(key, value);
+            if (sim.GetCachedVariableValue(key) is double value)
+                yield return new KeyValuePair<string, double>(key, value);
     }
 
     /// <summary>

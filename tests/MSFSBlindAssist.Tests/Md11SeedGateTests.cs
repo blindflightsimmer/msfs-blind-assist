@@ -12,6 +12,9 @@ public class Md11SeedGateTests
 {
     private static readonly int[] TwoBatches = { 1, 2 };
 
+    /// <summary>An arm with an empty cache (a reconnect: it was cleared on the way down).</summary>
+    private static readonly KeyValuePair<string, double>[] NothingKnown = Array.Empty<KeyValuePair<string, double>>();
+
     /// <summary>Deliveries 1, 2, 1, 2, … half a second apart; nothing seedable moving.</summary>
     private static Md11SeedTrigger DeliverQuiet(Md11SeedGate gate, int ordinal) =>
         gate.OnBatchDelivered(ordinal % 2 == 1 ? 1 : 2, TwoBatches, ordinal * 500L);
@@ -20,7 +23,7 @@ public class Md11SeedGateTests
     private static Md11SeedGate ArmedAfterAChange()
     {
         var gate = new Md11SeedGate();
-        gate.Arm();
+        gate.Arm(NothingKnown);
         gate.NoteValue("MD11_SOME_LT", 1, ownedByAircraft: true);
         Assert.Equal(Md11SeedTrigger.None, DeliverQuiet(gate, 1));
         Assert.True(gate.SawChange);
@@ -42,7 +45,7 @@ public class Md11SeedGateTests
     {
         // The ambiguous case: a loaded aircraft that has not published yet looks exactly like this.
         var gate = new Md11SeedGate();
-        gate.Arm();
+        gate.Arm(NothingKnown);
         int released = 0;
         for (int d = 1; d <= 80; d++)
         {
@@ -62,7 +65,7 @@ public class Md11SeedGateTests
     public void AStockRadioMoving_RestartsTheQuietCount_ButIsNotTheAircraftPublishing()
     {
         var gate = new Md11SeedGate();
-        gate.Arm();
+        gate.Arm(NothingKnown);
         gate.NoteValue("COM_ACTIVE_FREQUENCY:1", 118_100, ownedByAircraft: false);   // the sim core applied the flight file
         Assert.False(gate.SawChange);
         int twiceQuiet = 4 * Md11SeedGate.QuietCycles;
@@ -80,24 +83,35 @@ public class Md11SeedGateTests
     }
 
     [Fact]
-    public void APrimedValue_RedeliveredUnchanged_IsNotAChange_ButAKeyNothingPrimedIs()
+    public void AKnownValue_RedeliveredUnchanged_IsNotAChange_ButAKeyTheArmDidNotKnowIs()
     {
         var gate = new Md11SeedGate();
-        gate.Arm();
-        gate.Prime("MD11_SOME_LT", 0);                                    // the pre-load cache
-        gate.NoteValue("MD11_SOME_LT", 0, ownedByAircraft: true);         // the panel's forced redelivery of it
+        gate.Arm(new[] { KeyValuePair.Create("MD11_SOME_LT", 0.0), KeyValuePair.Create("MD11_CAP_ALTIMETER", 29.92) });   // the pre-load cache
+        gate.NoteValue("MD11_SOME_LT", 0, ownedByAircraft: true);                    // the panel's forced redelivery of it
+        gate.NoteValue("MD11_CAP_ALTIMETER", 29.9205, ownedByAircraft: true);        // within the batch's own change tolerance
         Assert.False(gate.SawChange);
         DeliverQuiet(gate, 1);
         Assert.Equal(1, gate.QuietDeliveries);
 
-        gate.NoteValue("MD11_OTHER_LT", 0, ownedByAircraft: true);        // never cached (a reconnect: the cache was cleared on the way down)
+        gate.NoteValue("MD11_OTHER_LT", 0, ownedByAircraft: true);                   // unknown to the arm (a reconnect: the cache was cleared on the way down)
         Assert.True(gate.SawChange);
         DeliverQuiet(gate, 2);
         Assert.Equal(0, gate.QuietDeliveries);
 
-        gate.NoteValue("MD11_SOME_LT", 1, ownedByAircraft: true);         // the primed one moves
+        gate.NoteValue("MD11_SOME_LT", 1, ownedByAircraft: true);                    // the known one moves
         DeliverQuiet(gate, 3);
         Assert.Equal(0, gate.QuietDeliveries);
+    }
+
+    [Fact]
+    public void AVarThatNeverReads_CannotPinTheGateOpen()
+    {
+        var gate = new Md11SeedGate();
+        gate.Arm(new[] { KeyValuePair.Create("MD11_BROKEN", double.NaN) });
+        gate.NoteValue("MD11_BROKEN", double.NaN, ownedByAircraft: true);
+        Assert.False(gate.SawChange);
+        DeliverQuiet(gate, 1);
+        Assert.Equal(1, gate.QuietDeliveries);
     }
 
     [Fact]
@@ -133,8 +147,8 @@ public class Md11SeedGateTests
     public void AChange_RestartsTheQuietCount_AnUnchangedRedeliveryDoesNot()
     {
         var gate = new Md11SeedGate();
-        gate.Arm();
-        gate.NoteValue("MD11_SOME_LT", 0, ownedByAircraft: true);   // the first sight of a key nothing primed is a change
+        gate.Arm(NothingKnown);
+        gate.NoteValue("MD11_SOME_LT", 0, ownedByAircraft: true);   // the first sight of a key the arm did not know is a change
         DeliverQuiet(gate, 1);
         DeliverQuiet(gate, 2);
         Assert.Equal(1, gate.QuietDeliveries);                       // delivery 1 carried the change; delivery 2 was quiet
@@ -156,7 +170,7 @@ public class Md11SeedGateTests
     public void ARestlessCockpit_SeedsAtTheCeiling_MeasuredFromTheFirstFullCycle_NotTheReset()
     {
         var gate = new Md11SeedGate();
-        gate.Arm();
+        gate.Arm(NothingKnown);
         // A loading screen that delivers nothing for 40 s: the ceiling cannot start.
         long t = 40_000;
         int deliveries = 0;
@@ -194,7 +208,7 @@ public class Md11SeedGateTests
         for (int d = 2; d <= 2 * Md11SeedGate.QuietCycles; d++) DeliverQuiet(gate, d);   // one short of the release
         Assert.True(gate.Armed);
 
-        gate.Arm();                                            // a second reset before the first pass ran
+        gate.Arm(NothingKnown);                                // a second reset before the first pass ran
         Assert.Equal(0, gate.Deliveries);
         Assert.False(gate.SawChange);
         Assert.Equal(Md11SeedTrigger.None, DeliverQuiet(gate, 1));
@@ -241,8 +255,9 @@ public class Md11SeedGateTests
     public void TheAircraftsOwnVars_AreTheOnesThatSayItHasPublished_TheStockRadiosAreNot()
     {
         var def = new TFDiMD11Definition();
-        var lamp = Md11ControlMap.Load().Controls.First(c => c.Kind == Md11Kinds.Annunciator).NodeId;
-        Assert.True(def.IsAircraftOwned(lamp), lamp);
+        var lamps = Md11ControlMap.Load().Controls.Where(c => c.Kind == Md11Kinds.Annunciator).Select(c => c.NodeId).ToList();
+        Assert.NotEmpty(lamps);
+        foreach (var lamp in lamps) Assert.True(def.IsAircraftOwned(lamp), lamp);   // every one of the ~488
         Assert.True(def.IsAircraftOwned(Md11Fcp.ReadCaptainBaro));
         Assert.True(def.IsAircraftOwned(Md11SpeedbrakeSystem.ArmKey));
         Assert.True(def.IsAircraftOwned(Md11SpeedbrakeSystem.LeverKey));
