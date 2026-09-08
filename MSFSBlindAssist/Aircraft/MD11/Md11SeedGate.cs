@@ -68,8 +68,8 @@ public sealed class Md11SeedGate
     /// <summary>After the first full cycle, seed regardless at this age.</summary>
     public const int CeilingMs = 30_000;
 
-    /// <summary>A value within this of the last known one is the same value — the batch's own change filter (SimConnectManager.VarCache).</summary>
-    public const double ChangeTolerance = 0.001;
+    /// <summary>A value within this of the last known one is the same value — the delivery filter's own constant, so the two cannot drift.</summary>
+    public const double ChangeTolerance = SimConnect.SimConnectManager.ChangeTolerance;
 
     private readonly Dictionary<string, double> _lastSeen = new(StringComparer.Ordinal);
     private readonly HashSet<int> _delivered = new();

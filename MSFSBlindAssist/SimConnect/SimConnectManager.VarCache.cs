@@ -10,6 +10,13 @@ namespace MSFSBlindAssist.SimConnect;
 
 public partial class SimConnectManager
 {
+    /// <summary>
+    /// A delivered value within this of the cached one is the SAME value: no SimVarUpdated fires
+    /// for it (unless force-read). Both delivery paths use it, and so does anything that must
+    /// agree with them on what a change is (Md11SeedGate) — one constant, never a second 0.001.
+    /// </summary>
+    public const double ChangeTolerance = 0.001;
+
 
     /// <summary>
     /// Process individual variable response from our new registration system
@@ -55,7 +62,7 @@ public partial class SimConnectManager
             bool hasChanged = true;
             if (lastVariableValues.TryGetValue(varKey, out double previousValue))
             {
-                hasChanged = Math.Abs(previousValue - currentValue) > 0.001; // Small tolerance for floating point
+                hasChanged = Math.Abs(previousValue - currentValue) > ChangeTolerance;
             }
             // Plain indexer write is equivalent to the prior AddOrUpdate here: the update-factory was
             // value-replacing ((key, oldValue) => currentValue), not a merge of oldValue into the new
@@ -409,7 +416,7 @@ public partial class SimConnectManager
                         bool hasChanged = true;
                         if (lastVariableValues.TryGetValue(varKey, out double lastValue))
                         {
-                            hasChanged = Math.Abs(lastValue - value) > 0.001; // Small tolerance for floating point
+                            hasChanged = Math.Abs(lastValue - value) > ChangeTolerance;
                         }
 
                         // Honor a pending forceUpdate (RequestVariable(key, forceUpdate:true)). Batch-covered
