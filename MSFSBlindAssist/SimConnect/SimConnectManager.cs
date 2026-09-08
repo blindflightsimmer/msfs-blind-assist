@@ -83,8 +83,9 @@ public partial class SimConnectManager
     /// The continuous batches currently registered — the 1-based batch numbers holding at least
     /// one variable, ascending — so a subscriber of <see cref="ContinuousBatchDelivered"/> can
     /// tell when it has seen a full cycle. Empty while disconnected and until
-    /// StartContinuousMonitoring has run. Built per call; meant for the occasional check, not a
-    /// per-frame path.
+    /// StartContinuousMonitoring has run. Built per call — a list of at most five — and asked for
+    /// per batch delivery only while a definition is counting a cycle (the MD-11's seed pass,
+    /// for the seconds after a context reset); not a per-frame path.
     /// </summary>
     public IReadOnlyCollection<int> ActiveContinuousBatches
     {

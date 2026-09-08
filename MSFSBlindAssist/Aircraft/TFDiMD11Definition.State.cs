@@ -312,10 +312,12 @@ public partial class TFDiMD11Definition
 
     /// <summary>
     /// WHEN the still-empty trackers are seeded after a context reset: on the batch deliveries'
-    /// evidence — every active batch delivered since the reset, then nothing seedable moving for
-    /// <see cref="Md11SeedGate.QuietCycles"/> cycles, with a ceiling for a lamp that never stops.
-    /// A 3 s wall clock stood here first and was unsound: on a load slower than that it froze
-    /// the PRE-load cache as the baselines, and every lamp that then came up spoke (review,
+    /// evidence — every active batch delivered since the reset, at least one seedable value
+    /// changed since it (stillness alone is ambiguous: a loaded MD-11 publishes seconds after
+    /// AircraftLoaded), then every batch delivered <see cref="Md11SeedGate.QuietCycles"/> times
+    /// with nothing seedable moving, with a ceiling for a cockpit that never settles or never
+    /// changes. A 3 s wall clock stood here first and was unsound: on a load slower than that it
+    /// froze the PRE-load cache as the baselines, and every lamp that then came up spoke (review,
     /// 2026-09-08). Fed by <see cref="OnContinuousBatchDelivered"/> and, per seedable delivery,
     /// from ProcessSimVarUpdate; disarmed by <see cref="Dispose"/>.
     /// </summary>
@@ -331,22 +333,40 @@ public partial class TFDiMD11Definition
         var sim = _sim;
         if (sim == null) return;
         var trigger = _seedGate.OnBatchDelivered(batchNum, sim.ActiveContinuousBatches, Environment.TickCount64);
-        if (trigger != Md11SeedTrigger.None) SeedFromCache(trigger);
+        if (trigger == Md11SeedTrigger.None) return;
+        try
+        {
+            SeedFromCache(trigger);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("MD11", $"Context reset: the seed pass threw ({trigger}): {ex.Message}");
+        }
     }
 
     /// <summary>
-    /// The vars <see cref="SeedFromCache"/> reads — and so the ones whose deliveries the gate
-    /// weighs as evidence of the cache settling. Keep the two the same: a var seeded but not
-    /// counted could be seeded mid-change; a var counted but never seeded would hold the pass
-    /// for nothing. Pinned by Md11SeedGateTests.
+    /// The scalar vars <see cref="SeedFromCache"/> seeds, besides every lamp — the ONE list the
+    /// pass reads and <see cref="IsSeededFromCache"/> consults, so the set seeded and the set
+    /// counted as evidence cannot drift apart: a var seeded but not counted could be seeded
+    /// mid-change, a var counted but never seeded would hold the pass for nothing. A key added
+    /// here needs its tracker in <see cref="SeedScalar"/>. Pinned by Md11SeedGateTests.
     /// </summary>
+    internal static readonly string[] SeededScalarKeys = BuildSeededScalarKeys();
+
+    private static string[] BuildSeededScalarKeys()
+    {
+        var keys = new List<string>
+        {
+            Md11Squawk.CodeKey, Md11Fcp.ReadCaptainBaro, Md11SpeedbrakeSystem.ArmKey, Md11SpeedbrakeSystem.LeverKey,
+        };
+        keys.AddRange(Md11VSpeeds.Keys);
+        keys.AddRange(Md11Radios.Keys);
+        return keys.ToArray();
+    }
+
+    /// <summary>A var the seed pass reads: a listed scalar, or any lamp.</summary>
     internal bool IsSeededFromCache(string varName) =>
-        varName == Md11Squawk.CodeKey
-        || varName == Md11Fcp.ReadCaptainBaro
-        || varName == Md11SpeedbrakeSystem.ArmKey
-        || varName == Md11SpeedbrakeSystem.LeverKey
-        || Md11VSpeeds.IsKey(varName)
-        || Array.IndexOf(Md11Radios.Keys, varName) >= 0
+        Array.IndexOf(SeededScalarKeys, varName) >= 0
         || (_byNodeId.TryGetValue(varName, out var control) && control.Kind == Md11Kinds.Annunciator);
 
     /// <summary>
@@ -366,26 +386,39 @@ public partial class TFDiMD11Definition
             if (c.Kind != Md11Kinds.Annunciator || _lampLastVal.ContainsKey(c.NodeId)) continue;
             if (sim.GetCachedVariableValue(c.NodeId) is double lamp) { _lampLastVal[c.NodeId] = lamp; seeded++; }
         }
-        foreach (var key in Md11Radios.Keys)
-            if (sim.GetCachedVariableValue(key) is double khz && _com.SeedIfEmpty(key, khz)) seeded++;
-        if (sim.GetCachedVariableValue(Md11Squawk.CodeKey) is double code && _squawk.SeedIfEmpty(code)) seeded++;
-        if (sim.GetCachedVariableValue(Md11Fcp.ReadCaptainBaro) is double baro && _altimeter.SeedIfEmpty(baro)) seeded++;
-        foreach (var key in Md11VSpeeds.Keys)
-            if (sim.GetCachedVariableValue(key) is double speed && _vSpeeds.SeedIfEmpty(key, speed)) seeded++;
-        if (double.IsNaN(_spdbrkHandle) && sim.GetCachedVariableValue(Md11SpeedbrakeSystem.ArmKey) is double arm)
+        foreach (var key in SeededScalarKeys)
         {
-            _spdbrkHandle = arm;
-            seeded++;
-        }
-        if (_lastSpoilerSpoken.Length == 0 && sim.GetCachedVariableValue(Md11SpeedbrakeSystem.LeverKey) is double rng
-            && Md11SpeedbrakeSystem.DescribeTravel(rng) is string detent)
-        {
-            _spdbrkRng = rng;
-            _lastSpoilerSpoken = $"Spoilers {detent.ToLowerInvariant()}";
-            seeded++;
+            if (sim.GetCachedVariableValue(key) is not double value) continue;
+            if (SeedScalar(key, value)) seeded++;
         }
 
         Log.Debug("MD11", $"Context reset: {seeded} baselines seeded from the cache after {_seedGate.Deliveries} batch deliveries "
-            + (trigger == Md11SeedTrigger.Quiet ? $"({_seedGate.QuietDeliveries} quiet)." : "(at the ceiling, never quiet)."));
+            + $"({trigger}: {_seedGate.QuietDeliveries} quiet, a change seen: {_seedGate.SawChange}).");
+    }
+
+    /// <summary>Seeds one listed scalar into its tracker when that tracker is still empty; true when it did.</summary>
+    private bool SeedScalar(string key, double value)
+    {
+        switch (key)
+        {
+            case Md11Squawk.CodeKey:
+                return _squawk.SeedIfEmpty(value);
+            case Md11Fcp.ReadCaptainBaro:
+                return _altimeter.SeedIfEmpty(value);
+            case Md11SpeedbrakeSystem.ArmKey:
+                if (!double.IsNaN(_spdbrkHandle)) return false;
+                _spdbrkHandle = value;
+                return true;
+            case Md11SpeedbrakeSystem.LeverKey:
+                if (_lastSpoilerSpoken.Length != 0 || Md11SpeedbrakeSystem.DescribeTravel(value) is not string detent) return false;
+                _spdbrkRng = value;
+                _lastSpoilerSpoken = $"Spoilers {detent.ToLowerInvariant()}";
+                return true;
+            default:
+                if (Md11VSpeeds.IsKey(key)) return _vSpeeds.SeedIfEmpty(key, value);
+                if (Array.IndexOf(Md11Radios.Keys, key) >= 0) return _com.SeedIfEmpty(key, value);
+                Log.Debug("MD11", $"Context reset: {key} is listed in SeededScalarKeys but has no tracker to seed.");
+                return false;
+        }
     }
 }

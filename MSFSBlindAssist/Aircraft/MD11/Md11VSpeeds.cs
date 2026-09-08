@@ -88,7 +88,7 @@ public sealed class Md11VSpeedAnnouncer
         return true;
     }
 
-    /// <summary>Forgets a sentence still waiting out its settle. The Connected branch calls it: a sentence a re-fire armed with no context reset before it (a monitoring restart) dies with its tail there and must not ride into a later one. Baselines are kept.</summary>
+    /// <summary>Forgets a sentence still waiting out its settle; baselines are kept. The Connected branch calls it as belt and braces: after the context reset that precedes every connect nothing should be pending there, but a sentence that somehow is dies with its tail (the generation bump) and must not ride into a later one.</summary>
     public void DropPending() => _pending.Clear();
 
     /// <summary>Seeds a speed that has no baseline (a flight load re-delivers only what changed); true when it did.</summary>

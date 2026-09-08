@@ -374,11 +374,14 @@ public interface IAircraftDefinition
 
     /// <summary>
     /// A continuous batch has finished dispatching: every SimVarUpdated it carried has reached
-    /// ProcessSimVarUpdate, whether or not anything in it moved. Raised for EVERY batch, on the
-    /// UI thread, after that batch's updates — the evidence that the cache is current for a
-    /// sample. The MD-11's context-reset seed pass waits on a full cycle of these and on the
-    /// deliveries going quiet (Md11SeedGate); <see cref="DeferredFlushWatchVariable"/> is the
-    /// narrower "the batch carrying THIS variable arrived" form. Default: nothing.
+    /// ProcessSimVarUpdate, whether or not anything in it moved. Raised on the UI thread after
+    /// that batch's updates, for every delivery the UI thread can vouch for — MainForm skips one
+    /// it would be servicing off-thread or with updates still queued, and the next delivery of
+    /// that batch is a period later — so it is evidence that the cache is current for a sample,
+    /// not a guarantee of one call per period. The MD-11's context-reset seed pass waits on a
+    /// full cycle of these and on the deliveries going quiet (Md11SeedGate);
+    /// <see cref="DeferredFlushWatchVariable"/> is the narrower "the batch carrying THIS
+    /// variable arrived" form. Default: nothing.
     /// </summary>
     void OnContinuousBatchDelivered(int batchNum);
 

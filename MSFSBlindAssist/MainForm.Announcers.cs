@@ -43,7 +43,15 @@ public partial class MainForm
         var aircraft = currentAircraft;
         if (aircraft == null) return;
 
-        aircraft.OnContinuousBatchDelivered(batchNum);      // every delivery; base no-op
+        try
+        {
+            aircraft.OnContinuousBatchDelivered(batchNum);      // every delivery; base no-op
+        }
+        catch (Exception ex)
+        {
+            // Its own catch, so a definition's counting can never cost the flush below its period.
+            Log.Debug("Announcements", $"OnContinuousBatchDelivered threw for batch {batchNum}: {ex.Message}");
+        }
 
         if (aircraft.DeferredFlushWatchVariable is not string watchVar) return;
         if (simConnectManager == null) return;
