@@ -262,8 +262,12 @@ public partial class TFDiMD11Definition
         _lampChangeTicks.Clear();
         _gate.Reset();
         _com.Reset();
-        _squawk.Reset();                        // the next squawk is a baseline again
-        _vSpeeds.Reset();                       // the next value of each take-off speed is a baseline again
+        // NOT reset here: the squawk and the take-off speeds. On a reconnect this runs AFTER the
+        // first batch has already delivered them (the cache is cleared at reconnect, so every var
+        // re-fires once), and a reset would throw away the baseline just taken — the next genuine
+        // change would then be eaten as a fresh baseline: the pilot's perf entry, silent. Their
+        // baselines carry across the drop instead; a value that changed during it speaks once,
+        // which is true. An aircraft switch constructs a new definition, so both start fresh there.
         _altimeter.Reset();                     // the next altimeter value is a baseline again
         _spdbrkHandle = double.NaN;             // the speedbrake re-baselines on reconnect too
         _lastSpoilerSpoken = string.Empty;

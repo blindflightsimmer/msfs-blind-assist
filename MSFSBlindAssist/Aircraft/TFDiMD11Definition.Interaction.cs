@@ -722,8 +722,47 @@ public partial class TFDiMD11Definition
     /// <summary>Take-off roll "V1" / "Rotate" / "V2" — see <see cref="Md11TakeoffCallouts"/>. Reset on a reconnect.</summary>
     private readonly TakeoffVSpeedCallouts _takeoffCallouts = new();
 
-    /// <summary>"V1 145 knots" as the FMS sets each take-off speed — see <see cref="Md11VSpeedAnnouncer"/>. Reset on a reconnect.</summary>
+    /// <summary>"V1 145, VR 150, V2 158 … knots" as the FMS sets the take-off speeds — see <see cref="Md11VSpeedAnnouncer"/> (no reset: see its summary).</summary>
     private readonly Md11VSpeedAnnouncer _vSpeeds = new();
+
+    /// <summary>
+    /// Waits out the settle, then speaks the pending take-off speeds on the UI thread as one
+    /// sentence — if still the latest (each change arms its own check; an early one finds nothing
+    /// due and re-arms once, the last one speaks), if no reconnect or aircraft switch intervened,
+    /// and with every speed the pilot muted in Ctrl+M left out. The same shape as
+    /// AnnounceAltimeterWhenSettledAsync: the UI-thread tail carries its own catch.
+    /// </summary>
+    private async Task AnnounceVSpeedsWhenSettledAsync(ScreenReaderAnnouncer announcer)
+    {
+        int generation = _announceGeneration;
+        try
+        {
+            await Task.Delay(Md11VSpeedAnnouncer.SettleMs + 50).ConfigureAwait(false);
+            OnUiThread(() =>
+            {
+                try
+                {
+                    if (generation != _announceGeneration) return;
+                    var muted = Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet;
+                    var sentence = _vSpeeds.Due(Environment.TickCount64, muted.Contains);
+                    if (sentence == null)
+                    {
+                        if (_vSpeeds.HasPending) _ = AnnounceVSpeedsWhenSettledAsync(announcer);   // checked early: one more round
+                        return;
+                    }
+                    announcer.Announce(sentence);
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug("MD11", $"Take-off speed announcement (UI-thread tail) threw: {ex.Message}");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("MD11", $"Take-off speed announcement threw: {ex.Message}");
+        }
+    }
 
     /// <summary>
     /// The last SIM_ON_GROUND sample. Starts true: a ramp start is the norm, and an airborne start
@@ -774,14 +813,15 @@ public partial class TFDiMD11Definition
         // callouts would go quietly dead with every test still green.
         if (Md11TakeoffCallouts.IsVSpeedKey(varName)) Md11TakeoffCallouts.Feed(_takeoffCallouts, varName, value);
 
-        // The FMS setting a take-off speed is news, spoken the way the PMDGs speak it ("V1 145
-        // knots"): baseline-first, a cleared speed silent (Md11VSpeedAnnouncer). Consumed here, so
-        // the silent read-out branch below never sees these five; Ctrl+M mutes through MainForm's
-        // wrap, on the same rows that mute the roll callouts.
+        // The FMS setting the take-off speeds is news, spoken the way the PMDGs speak it and as
+        // ONE sentence in V1 / VR / V2 order once the batch's burst has settled
+        // (Md11VSpeedAnnouncer): baseline-first, a cleared speed silent. Consumed here, so the
+        // silent read-out branch below never sees these five. The sentence is spoken from a
+        // timer, so AnnounceVSpeedsWhenSettledAsync checks the Ctrl+M mute itself, per speed.
         if (Md11VSpeeds.IsKey(varName))
         {
-            var spoken = _vSpeeds.OnUpdate(varName, value);
-            if (spoken != null) announcer.Announce(spoken);
+            _uiContext ??= SynchronizationContext.Current;
+            if (_vSpeeds.OnUpdate(varName, value, Environment.TickCount64)) _ = AnnounceVSpeedsWhenSettledAsync(announcer);
             return true;
         }
 

@@ -188,10 +188,11 @@ knots, so a rejected take-off re-arms for the next attempt and a landing can nev
 Takeoff Assist (Ctrl+T) adds "80 knots" and "100 knots". Mute any of the three V-speed calls in
 Ctrl+M under V1, Rotate speed and V2.
 
-The speeds themselves are announced as the FMS sets them, the way the PMDG Boeings do it: "V1
-145 knots", "VR 150 knots", "V2 158 knots", then the slat and flap retraction speeds. Starting
-the app with the speeds already entered says nothing; a change to a speed, or the FMS computing
-a new set, does. Each is muted by its own row in Ctrl+M.
+The speeds themselves are announced as the FMS sets them, the way the PMDG Boeings do it, as
+one sentence: "V1 145, VR 150, V2 158, slat retraction speed 190, flap retraction speed 210
+knots". Starting the app with the speeds already entered says nothing; a change to a speed, or
+the FMS computing a new set, does. Each speed is muted by its own row in Ctrl+M and simply
+drops out of the sentence.
 
 
 MINIMUMS
