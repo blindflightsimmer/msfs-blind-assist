@@ -14,9 +14,14 @@ namespace MSFSBlindAssist.Aircraft;
 /// for the live-probe evidence. The aircraft is otherwise entirely relative/event-driven, so this
 /// family is the one place a value can be typed rather than walked.
 ///
-/// Each dialog carries the toggle for its own window's UNIT, because value and unit are one
-/// decision to a pilot: "set Mach 0.82" is a unit change and a value in one breath, and the mode
-/// changes what the number even means.
+/// The buttons after the value box are in the order a pilot reaches for them (owner's ruling,
+/// 2026-09-08): the knob's Push and Pull first — pulling to take a selected value is what the
+/// window is mostly opened for — then the mode button (NAV, FMS Speed), and the window's unit
+/// toggle LAST, because switching a window between heading and track or IAS and Mach is rare.
+/// The altitude dialog puts PROF first, ahead of its knob, and carries no unit toggle at all: the
+/// typed value is always feet (the unit is written with it), so Feet/Metres is only ever wanted
+/// for the window's own display, and that lives on the Flight Control Panel in the Glareshield
+/// section like the rest of the rarely-touched panel.
 /// </summary>
 public partial class TFDiMD11Definition
 {
@@ -31,16 +36,17 @@ public partial class TFDiMD11Definition
 
         var toggles = new List<ToggleButtonDef>
         {
-            new("&Track / Heading", () => Mode(sim, Md11Fcp.ModeHeadingIsTrack) ? "Track" : "Heading",
-                () => PressControl("MD11_CGS_HDGTRK_BT")),
+            // The knob itself pushes and pulls, and both are real actions on the aircraft with
+            // their own events — so they belong wherever the pilot is working this window, not
+            // only in the full panel, and first in the tab order (see the class summary). One-shot
+            // actions carry no state. Same for speed and altitude.
+            new("P&ush knob", () => "", () => PressControlEvents(Md11Fcp.HeadingKnob, "PUSH_DOWN", "PUSH_UP")),
+            new("Pu&ll knob", () => "", () => PressControlEvents(Md11Fcp.HeadingKnob, "PULL_DOWN", "PULL_UP")),
             // Engaged or not, from the FCP's own dashed heading window (Md11AutoflightState).
             new("&NAV", () => Md11AutoflightState.Engaged(Md11AutoflightState.NavEngaged(Val(sim, Md11Fcp.ReadHeading))),
                 () => PressControl("MD11_CGS_NAV_BT")),
-            // The knob itself pushes and pulls, and both are real actions on the aircraft with
-            // their own events — so they belong wherever the pilot is working this window, not
-            // only in the full panel. One-shot actions carry no state. Same for speed and altitude.
-            new("P&ush knob", () => "", () => PressControlEvents(Md11Fcp.HeadingKnob, "PUSH_DOWN", "PUSH_UP")),
-            new("Pu&ll knob", () => "", () => PressControlEvents(Md11Fcp.HeadingKnob, "PULL_DOWN", "PULL_UP")),
+            new("&Track / Heading", () => Mode(sim, Md11Fcp.ModeHeadingIsTrack) ? "Track" : "Heading",
+                () => PressControl("MD11_CGS_HDGTRK_BT")),
         };
 
         var dialog = new ValueInputForm(
@@ -77,13 +83,15 @@ public partial class TFDiMD11Definition
 
         var toggles = new List<ToggleButtonDef>
         {
-            new("&IAS / Mach", () => Mode(sim, Md11Fcp.ModeSpeedIsMach) ? "Mach" : "IAS",
-                () => PressControl("MD11_CGS_IASMACH_BT")),
+            new("P&ush knob", () => "", () => PressControlEvents(Md11Fcp.SpeedKnob, "PUSH_DOWN", "PUSH_UP")),
+            new("Pu&ll knob", () => "", () => PressControlEvents(Md11Fcp.SpeedKnob, "PULL_DOWN", "PULL_UP")),
             // Engaged or not, from the FCP's own dashed speed window (Md11AutoflightState).
             new("&FMS Speed", () => Md11AutoflightState.Engaged(Md11AutoflightState.FmsSpeedEngaged(Val(sim, Md11Fcp.ReadSpeed))),
                 () => PressControl("MD11_CGS_FMSSPD_BT")),
-            new("P&ush knob", () => "", () => PressControlEvents(Md11Fcp.SpeedKnob, "PUSH_DOWN", "PUSH_UP")),
-            new("Pu&ll knob", () => "", () => PressControlEvents(Md11Fcp.SpeedKnob, "PULL_DOWN", "PULL_UP")),
+            // Last: the typed value picks its own unit by shape, so this is only for the window's
+            // display and is seldom touched.
+            new("&IAS / Mach", () => Mode(sim, Md11Fcp.ModeSpeedIsMach) ? "Mach" : "IAS",
+                () => PressControl("MD11_CGS_IASMACH_BT")),
         };
 
         var dialog = new ValueInputForm(
@@ -133,9 +141,10 @@ public partial class TFDiMD11Definition
 
         var toggles = new List<ToggleButtonDef>
         {
-            new("Feet / &Metres", () => Mode(sim, Md11Fcp.ModeAltitudeIsMetres) ? "Metres" : "Feet",
-                () => PressControl("MD11_CGS_FTM_BT")),
-            // PROF's engagement lives only on the FMA, which is not exported — no state to show.
+            // PROF first, ahead of the knob: it is the altitude window's engage. Its engagement
+            // lives only on the FMA, which is not exported — no state to show. No Feet/Metres
+            // here — the typed value is always feet and the unit is written with it (below); the
+            // window's own unit is the "Altitude Unit Select" row of the Flight Control Panel.
             new("&PROF", () => "", () => PressControl("MD11_CGS_PROF_BT")),
             new("P&ush knob", () => "", () => PressControlEvents(Md11Fcp.AltitudeKnob, "PUSH_DOWN", "PUSH_UP")),
             new("Pu&ll knob", () => "", () => PressControlEvents(Md11Fcp.AltitudeKnob, "PULL_DOWN", "PULL_UP")),

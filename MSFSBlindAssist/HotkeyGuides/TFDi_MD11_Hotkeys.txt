@@ -67,10 +67,13 @@ knob-winding:
              altimeters are checked a moment after that, and you only hear about one that did
              not take ("Standby altimeter not set, reads 1012, 29.88").
 
-Each dialog also carries the related buttons: the heading dialog has NAV (engaged or not
-engaged) and the knob's Push and Pull, the speed dialog FMS Speed and its knob, the altitude
-dialog PROF and its knob, the vertical speed dialog the wheel. The same buttons are in the
-Ctrl+P window.
+Each dialog also carries the related buttons, in the order you are likely to want them after
+the value: the heading dialog has the knob's Push and Pull, then NAV (engaged or not engaged),
+then Track / Heading last; the speed dialog Push, Pull, FMS Speed, then IAS / Mach last; the
+altitude dialog PROF first, then Push and Pull - it has no Feet / Metres button, because the
+value you type is always feet; the window's own unit is the "Altitude Unit Select" row of the
+Flight Control Panel in the Glareshield section. The vertical speed dialog has the wheel. The
+same buttons are in the Ctrl+P window.
 
 Note on modes: the dialogs set and read the SELECTED values and their units. NAV and FMS Speed
 are reported from the panel's dashed windows; PROF and an armed approach live on the flight mode
