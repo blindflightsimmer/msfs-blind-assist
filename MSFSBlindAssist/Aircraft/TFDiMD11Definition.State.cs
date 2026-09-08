@@ -77,9 +77,11 @@ public partial class TFDiMD11Definition
     private const int DarkSettleMs = 1500;
 
     /// <summary>
-    /// Bumped by <see cref="ResetAnnouncementBaselines"/> (a reconnect) and by
+    /// Bumped by <see cref="OnSimContextReset"/> (a disconnect or a flight load), by
+    /// <see cref="ResetAnnouncementBaselines"/> (the Connected branch) and by
     /// <see cref="Dispose"/> (an aircraft switch disposes the outgoing definition) so a deferred
-    /// dark transition scheduled before either cannot speak the old session's state afterwards.
+    /// dark transition, settle or read-back scheduled before any of them cannot speak the old
+    /// situation afterwards.
     /// </summary>
     private int _announceGeneration;
 
@@ -260,7 +262,7 @@ public partial class TFDiMD11Definition
     /// ProcessSimVarUpdate, so NOTHING baseline-first may be wiped here — every wipe that used to
     /// live here swallowed the next real change of its tracker (the first master caution, the
     /// first COM tune, the first altimeter wind, the pilot's first perf entry of a reconnected
-    /// session; review, 2026-09-08). Those move to <see cref="OnSimDisconnected"/>. What belongs
+    /// session; review, 2026-09-08). Those move to <see cref="OnSimContextReset"/>. What belongs
     /// here is what must not survive into the new session whatever the ordering: the roll's arm,
     /// the take-off cue's latch, the pending timers.
     /// </summary>
@@ -275,12 +277,15 @@ public partial class TFDiMD11Definition
     }
 
     /// <summary>
-    /// The way DOWN: every baseline-first tracker is wiped here, so the reconnect's first delivery
-    /// of each var re-seeds it silently — connecting must not narrate the cockpit, the radio
-    /// stack, the altimeter or the speeds — and the NEXT change after that speaks. An aircraft
-    /// switch constructs a new definition, which needs none of this.
+    /// A disconnect, or a flight load on a live connection: every baseline-first tracker that
+    /// would otherwise NARRATE its re-seed is wiped here, so the next delivery of each var seeds
+    /// it silently — connecting or loading must not read out the cockpit, the radio stack, the
+    /// altimeter or the speeds — and the change after that speaks. The flap pair is left alone
+    /// on purpose: it dedups on its last spoken text, so an unchanged lever is silent and a
+    /// changed one speaks once, truthfully. An aircraft switch constructs a new definition,
+    /// which needs none of this.
     /// </summary>
-    public override void OnSimDisconnected()
+    public override void OnSimContextReset()
     {
         _lampLastVal.Clear();
         _lampChangeTicks.Clear();

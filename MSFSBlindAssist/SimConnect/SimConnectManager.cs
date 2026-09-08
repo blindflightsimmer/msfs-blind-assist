@@ -97,6 +97,16 @@ public partial class SimConnectManager
     /// </summary>
     public event EventHandler<string>? AircraftIcaoTypeDetected;
 
+    /// <summary>
+    /// The AircraftLoaded system event: a flight or aircraft was loaded (or reloaded) on a live
+    /// connection. The string is the aircraft file SimConnect names. Raised BEFORE the aircraft
+    /// info re-request, i.e. as early as the app can know that the variables it is about to
+    /// receive describe a new situation — MainForm hands it to the definition's
+    /// OnSimContextReset so baseline-first announcers re-seed silently instead of narrating a
+    /// cockpit that merely loaded.
+    /// </summary>
+    public event EventHandler<string>? AircraftLoaded;
+
     // Aircraft definition
     private IAircraftDefinition? _currentAircraft;
     public IAircraftDefinition? CurrentAircraft

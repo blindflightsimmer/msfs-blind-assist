@@ -48,7 +48,7 @@ public static class Md11VSpeeds
 /// reads 0 or TFDi's dashed sentinel and is remembered but never spoken — "V1 0 knots" is not
 /// information — while the next real value after a clear IS spoken: the speeds came back.
 ///
-/// <see cref="Reset"/> is for the DISCONNECT (the definition's OnSimDisconnected), never for the
+/// <see cref="Reset"/> is for the DISCONNECT (the definition's OnSimContextReset), never for the
 /// reconnect: by the time the Connected branch runs, the first batch has already re-fired the
 /// five (the cache is cleared, so every var re-fires once), and a reset there would throw away
 /// the baseline just taken — the pilot's next perf entry would be eaten as a fresh baseline.
@@ -88,7 +88,7 @@ public sealed class Md11VSpeedAnnouncer
         return true;
     }
 
-    /// <summary>Forgets a sentence still waiting out its settle (the Connected branch: it dies with its tail and must not ride into a later one). Baselines are kept.</summary>
+    /// <summary>Forgets a sentence still waiting out its settle. The Connected branch calls it: a sentence a re-fire armed with no context reset before it (a monitoring restart) dies with its tail there and must not ride into a later one. Baselines are kept.</summary>
     public void DropPending() => _pending.Clear();
 
     /// <summary>Forget everything: every speed is a baseline again. For the DISCONNECT — see the class summary for why never the reconnect.</summary>

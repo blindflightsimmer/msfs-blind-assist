@@ -42,6 +42,7 @@ public partial class SimConnectManager
         if ((SYSTEM_EVENT_ID)data.uEventID == SYSTEM_EVENT_ID.AircraftLoaded)
         {
             Log.Debug("SimConnect", $"AircraftLoaded system event: {data.szFileName}");
+            AircraftLoaded?.Invoke(this, data.szFileName ?? string.Empty);
             // Re-read ATC MODEL so AircraftIcaoTypeDetected fires for the newly loaded aircraft.
             RequestAircraftInfo();
         }

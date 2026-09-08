@@ -722,7 +722,7 @@ public partial class TFDiMD11Definition
     /// <summary>Take-off roll "V1" / "Rotate" / "V2" — see <see cref="Md11TakeoffCallouts"/>. Reset on a reconnect.</summary>
     private readonly TakeoffVSpeedCallouts _takeoffCallouts = new();
 
-    /// <summary>"V1 145, VR 150, V2 158 … knots" as the FMS sets the take-off speeds — see <see cref="Md11VSpeedAnnouncer"/> (no reset: see its summary).</summary>
+    /// <summary>"V1 145, VR 150, V2 158 … knots" as the FMS sets the take-off speeds — see <see cref="Md11VSpeedAnnouncer"/> (wiped on a context reset, never on the reconnect: see its summary).</summary>
     private readonly Md11VSpeedAnnouncer _vSpeeds = new();
 
     /// <summary>

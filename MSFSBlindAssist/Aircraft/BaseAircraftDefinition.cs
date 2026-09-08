@@ -745,7 +745,7 @@ public abstract class BaseAircraftDefinition : IAircraftDefinition
     public virtual void ResetAnnouncementBaselines() { }
 
     /// <inheritdoc />
-    public virtual void OnSimDisconnected() { }
+    public virtual void OnSimContextReset() { }
 
     /// <inheritdoc />
     /// <remarks>Most definitions hold nothing, so the batch hook never fires for them.</remarks>

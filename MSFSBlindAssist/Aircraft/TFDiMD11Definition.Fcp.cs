@@ -14,14 +14,15 @@ namespace MSFSBlindAssist.Aircraft;
 /// for the live-probe evidence. The aircraft is otherwise entirely relative/event-driven, so this
 /// family is the one place a value can be typed rather than walked.
 ///
-/// The buttons after the value box are in the order a pilot reaches for them (owner's ruling,
-/// 2026-09-08): the knob's Push and Pull first — pulling to take a selected value is what the
-/// window is mostly opened for — then the mode button (NAV, FMS Speed), and the window's unit
-/// toggle LAST, because switching a window between heading and track or IAS and Mach is rare.
-/// The altitude dialog puts PROF first, ahead of its knob, and carries no unit toggle at all: the
-/// typed value is always feet (the unit is written with it), so Feet/Metres is only ever wanted
-/// for the window's own display, and that lives on the Flight Control Panel in the Glareshield
-/// section like the rest of the rarely-touched panel.
+/// In the heading, speed and altitude dialogs the buttons after the value box are in the order
+/// a pilot reaches for them (owner's ruling, 2026-09-08): the knob's Push and Pull first —
+/// pulling to take a selected value is what the window is mostly opened for — then the mode
+/// button (NAV, FMS Speed), and the window's unit toggle LAST, because switching a window between
+/// heading and track or IAS and Mach is rare. The altitude dialog puts PROF first, ahead of its
+/// knob, and carries no unit toggle at all: the typed value is always feet (the unit is written
+/// with it), so Feet/Metres is only ever wanted for the window's own display, and that lives on
+/// the Flight Control Panel in the Glareshield section like the rest of the rarely-touched
+/// panel. The vertical-speed dialog is untouched: VS/FPA first, then the wheel — it has no knob.
 /// </summary>
 public partial class TFDiMD11Definition
 {

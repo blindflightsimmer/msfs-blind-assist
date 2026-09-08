@@ -121,6 +121,23 @@ public partial class MainForm
         announcer.Announce(version);
     }
 
+    /// <summary>
+    /// A flight or aircraft was loaded on a live connection. The definition's baseline-first
+    /// announcers re-seed from the new situation rather than narrate it — the second job the
+    /// old Connected-branch wipe used to do (an app connected at the menu, then a flight load),
+    /// now on the earliest signal there is. SimConnect dispatches on the UI thread; the marshal
+    /// is belt-and-braces.
+    /// </summary>
+    private void OnAircraftLoaded(object? sender, string file)
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(new Action(() => OnAircraftLoaded(sender, file)));
+            return;
+        }
+        currentAircraft?.OnSimContextReset();
+    }
+
     private void OnConnectionStatusChanged(object? sender, string status)
     {
         if (InvokeRequired)
@@ -246,8 +263,9 @@ public partial class MainForm
 
             // Baseline-first trackers are wiped NOW, on the way down — never on the Connected
             // branch above, which runs after the reconnect's first batch has already re-fired
-            // every variable into the definition (IAircraftDefinition.OnSimDisconnected).
-            currentAircraft?.OnSimDisconnected();
+            // every variable into the definition (IAircraftDefinition.OnSimContextReset; the
+            // AircraftLoaded system event is its other caller).
+            currentAircraft?.OnSimContextReset();
 
             // Stop event batching timer and clear queue
             eventBatchTimer?.Stop();

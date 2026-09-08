@@ -109,7 +109,7 @@ public sealed class Md11SquawkAnnouncer
     }
 
     /// <summary>
-    /// The next code is a baseline again. Called on the DISCONNECT (OnSimDisconnected), never on
+    /// The next code is a baseline again. Called on the DISCONNECT (OnSimContextReset), never on
     /// the reconnect — there the first batch has already re-fired the code, so a reset would eat
     /// the next real change; an aircraft switch builds a fresh definition. A running entry keeps
     /// its silence until it ends.
