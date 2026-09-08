@@ -83,7 +83,9 @@ public partial class TFDiMD11Definition
             HighFrequency = true,
             ExcludeFromMonitorManager = true,
         };
-        foreach (var row in Md11TakeoffCallouts.MuteRows)
+        // All five take-off speeds SPEAK — as the FMS sets them (Md11VSpeedAnnouncer, "V1 145
+        // knots") and, for V1 / VR / V2, as the roll reaches them — so all five keep a Ctrl+M row.
+        foreach (var row in Md11VSpeeds.Keys)
             v[row].ExcludeFromMonitorManager = false;
 
         // ---- Minimums / altimeters ---------------------------------------------------

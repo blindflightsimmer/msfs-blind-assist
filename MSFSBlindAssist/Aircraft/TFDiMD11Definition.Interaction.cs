@@ -722,6 +722,9 @@ public partial class TFDiMD11Definition
     /// <summary>Take-off roll "V1" / "Rotate" / "V2" — see <see cref="Md11TakeoffCallouts"/>. Reset on a reconnect.</summary>
     private readonly TakeoffVSpeedCallouts _takeoffCallouts = new();
 
+    /// <summary>"V1 145 knots" as the FMS sets each take-off speed — see <see cref="Md11VSpeedAnnouncer"/>. Reset on a reconnect.</summary>
+    private readonly Md11VSpeedAnnouncer _vSpeeds = new();
+
     /// <summary>
     /// The last SIM_ON_GROUND sample. Starts true: a ramp start is the norm, and an airborne start
     /// is harmless either way, because the machine arms only on a sample below 40 kt, which the
@@ -770,6 +773,17 @@ public partial class TFDiMD11Definition
         // shape — an export given ValueDescriptions one day would leave the silent set, and the
         // callouts would go quietly dead with every test still green.
         if (Md11TakeoffCallouts.IsVSpeedKey(varName)) Md11TakeoffCallouts.Feed(_takeoffCallouts, varName, value);
+
+        // The FMS setting a take-off speed is news, spoken the way the PMDGs speak it ("V1 145
+        // knots"): baseline-first, a cleared speed silent (Md11VSpeedAnnouncer). Consumed here, so
+        // the silent read-out branch below never sees these five; Ctrl+M mutes through MainForm's
+        // wrap, on the same rows that mute the roll callouts.
+        if (Md11VSpeeds.IsKey(varName))
+        {
+            var spoken = _vSpeeds.OnUpdate(varName, value);
+            if (spoken != null) announcer.Announce(spoken);
+            return true;
+        }
 
         switch (varName)
         {

@@ -263,6 +263,7 @@ public partial class TFDiMD11Definition
         _gate.Reset();
         _com.Reset();
         _squawk.Reset();                        // the next squawk is a baseline again
+        _vSpeeds.Reset();                       // the next value of each take-off speed is a baseline again
         _altimeter.Reset();                     // the next altimeter value is a baseline again
         _spdbrkHandle = double.NaN;             // the speedbrake re-baselines on reconnect too
         _lastSpoilerSpoken = string.Empty;
