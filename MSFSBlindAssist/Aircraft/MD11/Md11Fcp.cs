@@ -83,7 +83,36 @@ public static class Md11Fcp
     public const int MinAltitudeFt = 0;
     public const int MaxAltitudeFt = 41000;
     public const int MaxVerticalSpeedFpm = 6000;
+    /// <summary>
+    /// The smallest NON-ZERO vertical speed the Ctrl+V dialog takes — conventional, the FCP's V/S
+    /// window renders "%04d" and real-aircraft V/S selection is in 100 fpm steps; below this a
+    /// number can only be an FPA or a typo. 0 is the one value both windows accept: level off.
+    /// </summary>
+    public const int MinVerticalSpeedFpm = 100;
     public const double MaxFpaDegrees = 9.9;
+
+    /// <summary>
+    /// Which unit a typed Ctrl+V value is written in — numbered as <see cref="WriteVerticalSpeedUnit"/>
+    /// takes it (0 = V/S, 1 = FPA) — or null when the number fits neither window.
+    ///
+    /// The rule: an entry that is valid in the CURRENT mode keeps it; only an entry that is valid in
+    /// the OTHER window alone switches to it. A V/S is 0 or ±100-6000 fpm; an FPA is ±0-9.9°. The two
+    /// overlap on exactly one value, 0, and there <paramref name="currentIsFpa"/> (the cached
+    /// <see cref="ModeVerticalIsFpa"/>) decides — a pilot who types 0 in V/S mode to level off must
+    /// NOT be switched to FPA, or the window and Shift+V say FPA and the wheel steps in tenths of a
+    /// degree. "-3" still means an FPA and "-1500" a V/S whichever mode is showing, because each is
+    /// valid in only one window. 10-99 and anything past 6000 fit nothing and are refused.
+    /// </summary>
+    public static Md11VerticalUnit? ResolveVerticalUnit(double v, bool currentIsFpa)
+    {
+        var a = Math.Abs(v);
+        bool vsValid = a == 0 || (a >= MinVerticalSpeedFpm && a <= MaxVerticalSpeedFpm);
+        bool fpaValid = a <= MaxFpaDegrees;
+        if (vsValid && fpaValid) return currentIsFpa ? Md11VerticalUnit.Fpa : Md11VerticalUnit.VerticalSpeed;
+        if (vsValid) return Md11VerticalUnit.VerticalSpeed;
+        if (fpaValid) return Md11VerticalUnit.Fpa;
+        return null;
+    }
 
     // ---------------------------------------------------------------------------------
     // The knobs
@@ -275,4 +304,14 @@ public static class Md11Fcp
         if (h < 0) h += 360;
         return h;
     }
+}
+
+/// <summary>
+/// The V/S window's unit, numbered exactly as <see cref="Md11Fcp.WriteVerticalSpeedUnit"/> takes it,
+/// so <c>(double)unit</c> is the inbox value.
+/// </summary>
+public enum Md11VerticalUnit
+{
+    VerticalSpeed = 0,
+    Fpa = 1,
 }

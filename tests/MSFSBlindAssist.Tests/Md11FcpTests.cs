@@ -98,12 +98,16 @@ public class Md11FcpTests
         Assert.True(Md11Fcp.MinSpeedKnots > 10, "IAS band must sit entirely above the knots/Mach split");
     }
 
-    /// <summary>Likewise for vertical: an FPA is single-digit degrees, a V/S is hundreds of fpm.</summary>
+    /// <summary>
+    /// Likewise for vertical: an FPA is single-digit degrees, a V/S is hundreds of fpm. The two
+    /// bands meet on exactly one value, 0 (level off), which ResolveVerticalUnit settles from the
+    /// current mode — so the NON-ZERO bands must never touch, or a second ambiguous value appears.
+    /// </summary>
     [Fact]
     public void VerticalBands_CannotOverlap()
     {
-        Assert.True(Md11Fcp.MaxFpaDegrees < 20, "FPA band must sit below the V/S-vs-FPA split");
-        Assert.True(Md11Fcp.MaxVerticalSpeedFpm > 20, "V/S band must sit above the split");
+        Assert.True(Md11Fcp.MaxFpaDegrees < Md11Fcp.MinVerticalSpeedFpm, "the FPA band must end below the smallest non-zero V/S");
+        Assert.True(Md11Fcp.MaxVerticalSpeedFpm > Md11Fcp.MinVerticalSpeedFpm, "the V/S band must be non-empty");
     }
 
     [Theory]

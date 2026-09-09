@@ -174,17 +174,23 @@ public partial class TFDiMD11Definition
     // ---------------------------------------------------------------------------------
 
     /// <summary>
-    /// Same shape-based unit pick as speed: a V/S is thousands of feet per minute, an FPA is a
-    /// single-digit angle, so "-1500" and "-3" cannot be confused for one another.
+    /// Same shape-based unit pick as speed — a V/S is hundreds of feet per minute, an FPA is a
+    /// single-digit angle, so "-1500" and "-3" cannot be confused for one another — with the one
+    /// value both windows accept, 0, settled by the CURRENT mode (<see cref="Md11Fcp.ResolveVerticalUnit"/>):
+    /// typing 0 to level off in V/S mode must not silently switch the window to FPA.
     /// </summary>
     private void ShowVSDialog(SimConnectManager sim, ScreenReaderAnnouncer announcer,
         System.Windows.Forms.Form parentForm)
     {
         if (!Connected(sim, announcer)) return;
 
+        // The window's current mode off the 1 Hz batch — the tie-breaker for 0. Validation and
+        // commit run back-to-back in ValueInputForm.SetValue, so both see the same reading.
+        bool CurrentIsFpa() => Mode(sim, Md11Fcp.ModeVerticalIsFpa);
+
         var toggles = new List<ToggleButtonDef>
         {
-            new("&VS / FPA", () => Mode(sim, Md11Fcp.ModeVerticalIsFpa) ? "FPA" : "V/S",
+            new("&VS / FPA", () => CurrentIsFpa() ? "FPA" : "V/S",
                 () => PressControl("MD11_CGS_VS_FPA_BT")),
             // The MD-11 has no engage-V/S button — turning the V/S / FPA wheel is what engages the
             // pitch mode. Exposed here so the pilot can engage and fine-tune it by hand; submitting
@@ -195,42 +201,35 @@ public partial class TFDiMD11Definition
 
         var dialog = new ValueInputForm(
             "FCP Vertical Speed", "vertical speed",
-            $"plus or minus up to {Md11Fcp.MaxVerticalSpeedFpm} feet per minute, or an FPA such as -3", announcer,
+            $"plus or minus up to {Md11Fcp.MaxVerticalSpeedFpm} feet per minute, or an FPA such as -3; 0 levels off in the current mode", announcer,
             input =>
             {
                 if (!double.TryParse(input, NumberStyles.Float | NumberStyles.AllowLeadingSign,
                         CultureInfo.InvariantCulture, out var v))
                     return (false, "Enter a vertical speed in feet per minute, or an FPA such as -3");
 
-                return LooksLikeFpa(v)
-                    ? Math.Abs(v) <= Md11Fcp.MaxFpaDegrees
-                        ? (true, "")
-                        : (false, $"Enter an FPA between -{Md11Fcp.MaxFpaDegrees} and {Md11Fcp.MaxFpaDegrees} degrees")
-                    : Math.Abs(v) <= Md11Fcp.MaxVerticalSpeedFpm
-                        ? (true, "")
-                        : (false, $"Enter a vertical speed within {Md11Fcp.MaxVerticalSpeedFpm} feet per minute");
+                if (Md11Fcp.ResolveVerticalUnit(v, CurrentIsFpa()) != null) return (true, "");
+                return Math.Abs(v) > Md11Fcp.MaxVerticalSpeedFpm
+                    ? (false, $"Enter a vertical speed within {Md11Fcp.MaxVerticalSpeedFpm} feet per minute")
+                    : (false, $"Enter a vertical speed of at least {Md11Fcp.MinVerticalSpeedFpm} feet per minute, or an FPA between -{Md11Fcp.MaxFpaDegrees} and {Md11Fcp.MaxFpaDegrees} degrees");
             },
             toggles,
             input =>
             {
                 if (!double.TryParse(input, NumberStyles.Float | NumberStyles.AllowLeadingSign,
                         CultureInfo.InvariantCulture, out var v)) return;
+                if (Md11Fcp.ResolveVerticalUnit(v, CurrentIsFpa()) is not Md11VerticalUnit unit) return;
 
-                var fpa = LooksLikeFpa(v);
+                bool fpa = unit == Md11VerticalUnit.Fpa;
                 // Engage the pitch mode (nudge the wheel) AND set the value — a plain value-set
-                // leaves it in a window the FCC is not flying. See SetVerticalSpeedEngaged.
-                SetVerticalSpeedEngaged(fpa ? v : Math.Round(v), fpa ? 1 : 0, sim);
+                // leaves it in a window the FCC is not flying. See SetVerticalSpeedEngaged. The
+                // enum's number IS the VR_U inbox value (0 = V/S, 1 = FPA).
+                SetVerticalSpeedEngaged(fpa ? v : Math.Round(v), (double)unit, sim);
             });
 
         dialog.ShowCancelButton = false;
         dialog.Show(parentForm);
     }
-
-    /// <summary>
-    /// An FPA is at most ±9.9°; a usable V/S is hundreds of fpm. 20 splits them with room to
-    /// spare in both directions.
-    /// </summary>
-    private static bool LooksLikeFpa(double v) => Math.Abs(v) <= 20;
 
     // ---------------------------------------------------------------------------------
     // Altimeter (Ctrl+B)
