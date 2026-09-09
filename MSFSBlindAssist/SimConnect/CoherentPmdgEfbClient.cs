@@ -491,6 +491,9 @@ namespace MSFSBlindAssist.SimConnect
                     data[$"items.{i}.level"] = elements[i].level.ToString();
                     data[$"items.{i}.live"] = elements[i].live ?? "";
                     data[$"items.{i}.disabled"] = elements[i].disabled ? "true" : "false";
+                    // Present only when the agent asked for it (the MD-11 stepper arrows and tiles);
+                    // the form treats absence as false, so no other EFB's push changes by a byte.
+                    if (elements[i].announceChange) data[$"items.{i}.announceChange"] = "true";
                     // Options for a real <select>; unit-separator joined.
                     if (elements[i].options is { Count: > 0 })
                         data[$"items.{i}.options"] = string.Join(OptionSeparator, elements[i].options!);
@@ -664,6 +667,11 @@ namespace MSFSBlindAssist.SimConnect
             public int level { get; set; }
             public string? live { get; set; }
             public bool disabled { get; set; }
+            // Agent opt-in: the shell may speak this control's post-press label change (the MD-11
+            // stepper arrows and the tiles, whose label carries their own new state). Absent on
+            // every other element — and on every other EFB's agent, so the identical lines in
+            // CoherentEFBClient.cs (the flyPad client) are deliberately NOT given this field.
+            public bool announceChange { get; set; }
             public List<string>? options { get; set; }
             public double? min { get; set; }
             public double? max { get; set; }

@@ -327,6 +327,7 @@ public class FbwEfbForm : Form
                 case "level":     el.Level = int.TryParse(kv.Value, out var lv) ? lv : 0; break;
                 case "live":      el.Live = kv.Value; break;
                 case "disabled":  el.Disabled = kv.Value == "true"; break;
+                case "announceChange": el.AnnounceChange = kv.Value == "true"; break;
                 case "options":   el.Options = string.IsNullOrEmpty(kv.Value) ? null : kv.Value.Split(OptionSeparator); break;
                 case "min":       el.Min = ParseInv(kv.Value); break;
                 case "max":       el.Max = ParseInv(kv.Value); break;
@@ -406,6 +407,7 @@ public class FbwEfbForm : Form
             level = e.Level,
             live = e.Live,
             disabled = e.Disabled,
+            announceChange = e.AnnounceChange,
             options = e.Options,
             min = e.Min,
             max = e.Max,
@@ -746,6 +748,7 @@ public class FbwEfbForm : Form
         public int Level;
         public string Live = "";
         public bool Disabled;
+        public bool AnnounceChange;   // agent opt-in: speak this control's post-press label change (MD-11 stepper arrows + tiles)
         public string[]? Options;
         public double? Min;      // range (slider) bounds for controlType "range"
         public double? Max;
@@ -999,9 +1002,17 @@ public class FbwEfbForm : Form
       else if (c.getAttribute('data-disabled') === 'true') { c.removeAttribute('data-disabled'); }
       var before = c.textContent;
       setText(c, label);
-      // The pilot's own press changed this control's label (a stepper now shows its next
-      // choice): say so, once, while they are still on it. Anything else patches silently.
-      if (before !== label && c === lastClick.node && document.activeElement === c && Date.now() - lastClick.at < 5000) announce(label);
+      // The pilot's own press changed this control's label AND the agent asked for it to be spoken
+      // (announceChange — the MD-11 stepper arrows and tiles, whose new '(now …)' choice or
+      // 'Passenger 1L: Open' state nobody else reads): say so, once, while they are still on it.
+      // Without the flag a post-press label change is the press ITSELF — a tab's '(current page)',
+      // a flyPad service tile's '(called)' — which the screen reader has already spoken, so it
+      // patches silently on every EFB. The flag is per-element and never a suffix match, because a
+      // suffix can misfire on another agent's text while an explicit opt-in cannot. Pinned against
+      // THIS string by tools/flypad-shell-test/efb-shell.test.js (it extracts PageHtml from this
+      // file). The per-item 'live' hint next door cannot do this job: the shell applies aria-live to
+      // <p> only, and a tile is a <button> with no static value line of its own.
+      if (before !== label && it.announceChange === true && c === lastClick.node && document.activeElement === c && Date.now() - lastClick.at < 5000) announce(label);
       return;
     }
     setText(c, text);   // plain text <p>

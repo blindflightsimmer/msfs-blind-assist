@@ -553,8 +553,15 @@
     // ITSELF is not reused here: it runs the value through spaceUnit, which would split a runway
     // designator like "06L" into the spoken "06 L".
     els.push(A.el(inp, { kind: 'static', text: (label ? label + ': ' : '') + (cur || '(empty)') }));
-    els.push(A.el(cb.up, { kind: 'button', clickable: true, disabled: !!cb.up.disabled, text: A.iconButtonName(cb.up) }));
-    els.push(A.el(cb.down, { kind: 'button', clickable: true, disabled: !!cb.down.disabled, text: A.iconButtonName(cb.down) }));
+    // announceChange: the opt-in that asks the shared shell (FbwEfbForm's patchEl) to SPEAK this
+    // control's label again once the pilot's own press has changed it. It belongs on exactly those
+    // controls whose label carries their own NEW STATE: these two arrows, and the tiles further
+    // down. A press moves the field, so "Runway next (now 06L)" becomes "Runway next (now 06R)" on
+    // the very button the pilot is still focused on, and nothing else would read the new choice to
+    // them. Every OTHER control's post-press label change IS the press the screen reader has
+    // already spoken — a tab's "(current page)", a flyPad tile's "(called)" — and stays silent.
+    els.push(A.el(cb.up, { kind: 'button', clickable: true, disabled: !!cb.up.disabled, text: A.iconButtonName(cb.up), announceChange: true }));
+    els.push(A.el(cb.down, { kind: 'button', clickable: true, disabled: !!cb.down.disabled, text: A.iconButtonName(cb.down), announceChange: true }));
   });
 
   // ---------------------------------------------------------------------------------
@@ -664,7 +671,10 @@
 
   A.block('tile', A.isTileA, function (el, els) {
     var name = A.txt(el.children[0]), btn = el.children[1];
-    els.push(A.el(btn, { kind: 'button', clickable: true, disabled: !!btn.disabled, text: name + ': ' + A.txt(btn) }));
+    // announceChange (see the stepper block): the label carries the tile's own state, so the flip a
+    // press produces — "Passenger 1L: Closed" -> "Passenger 1L: Open" — is the OUTCOME the pilot
+    // asked for (did the door open?) and nobody else reads it to them.
+    els.push(A.el(btn, { kind: 'button', clickable: true, disabled: !!btn.disabled, text: name + ': ' + A.txt(btn), announceChange: true }));
   });
 
   A.isTileB = function (el) {
@@ -675,11 +685,14 @@
 
   A.block('state-tile', A.isTileB, function (el, els) {
     var a = el.children[0], b = el.children[1], name = A.txt(a.getElementsByTagName('p')[0]);
+    // The LOAD button's label is the state's name and never changes on a press, so it asks for
+    // nothing; its ACTION button's label carries the action's own state, so it opts in exactly like
+    // the tile above (announceChange — see the stepper block).
     els.push(A.el(a, { kind: 'button', clickable: true, disabled: !!a.disabled, text: name }));
     var action = A.txt(b);
-    if (action) els.push(A.el(b, { kind: 'button', clickable: true, disabled: !!b.disabled, text: name + ': ' + action }));
+    if (action) els.push(A.el(b, { kind: 'button', clickable: true, disabled: !!b.disabled, text: name + ': ' + action, announceChange: true }));
     else if (A.iconName(b) === 'check') els.push(A.el(b, { kind: 'static', text: name + ' is the default' }));
-    else els.push(A.el(b, { kind: 'button', clickable: true, disabled: !!b.disabled, text: name + ': ' + A.iconButtonName(b) }));
+    else els.push(A.el(b, { kind: 'button', clickable: true, disabled: !!b.disabled, text: name + ': ' + A.iconButtonName(b), announceChange: true }));
   });
 
   // ---------------------------------------------------------------------------------

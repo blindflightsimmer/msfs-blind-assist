@@ -30,3 +30,25 @@ test('a tile button is stamped on the EFB button itself', () => {
   assert.equal(node.tagName, 'BUTTON');
   assert.equal(node.textContent.trim(), 'Disconnect');
 });
+
+// The shared EFB shell speaks a control's post-press label change ONLY for an element the agent
+// flagged announceChange: true. A tile's label carries its own state, so the flip the pilot's press
+// produced ("Passenger 1L: Closed" → "Passenger 1L: Open") is the OUTCOME they asked for and nobody
+// else reads it to them. Whole-page assertion: exactly the tiles ask for it here, nothing else on
+// the Services page does (not the headings, not the read-outs, not the nav tabs).
+test('exactly the Services tiles ask the shell to speak their post-press label', () => {
+  const els = scrape('services-ground');
+  assert.deepStrictEqual(els.filter(e => e.announceChange === true).map(e => e.text),
+    ['Passenger 1L: Closed', 'Passenger 1R: Closed', 'Cargo Main: Closed', 'Cargo 1R: Closed',
+      'Cargo 2R: Closed', 'Bulk Cargo: Closed', 'Nose Weight: Set', 'GPU: Disconnect', 'ASU: Connect', 'Wheel Chocks: Remove']);
+  assert.ok(els.some(e => e.announceChange !== true), 'the page also carries unflagged elements');
+});
+
+// A state tile's ACTION button carries its state the same way ("Ready to Fly: Set as default"); the
+// load button beside it ("Ready to Fly") and the static default marker do not change on a press, so
+// neither asks for anything.
+test('a state tile flags its action button only', () => {
+  const els = scrape('state-ground');
+  assert.deepStrictEqual(els.filter(e => e.announceChange === true).map(e => e.text),
+    ['Ready to Start: Set as default', 'Ready to Fly: Set as default', 'Load Last Save: Set as default']);
+});

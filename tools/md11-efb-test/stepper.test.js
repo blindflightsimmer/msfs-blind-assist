@@ -95,3 +95,17 @@ test('an empty option list falls back to the arrows, never an ancestor component
   const els = JSON.parse(A.scrape()).elements;
   assert.ok(!els.some(e => e.controlType === 'select'), 'no dropdown is offered: ' + JSON.stringify(els.map(e => e.text)));
 });
+
+// The shared EFB shell speaks a control's post-press label change ONLY for an element the agent
+// flagged announceChange: true. On the Perf page the two arrows are the sole source of that flag —
+// the static value line beside them, the nav tabs and everything else on the page must not carry it.
+test('only the two arrow buttons ask the shell to speak their post-press label', () => {
+  const hinted = els => els.filter(e => e.announceChange === true).map(e => e.text);
+  const fallback = scrape('perf-stepper-fallback', { autoVis: true, nav: 'Perf' });
+  assert.deepStrictEqual(hinted(fallback), ['Runway previous (now RW06L)', 'Runway next (now RW06L)']);
+  assert.ok(fallback.some(e => e.announceChange !== true), 'the page also carries unflagged elements');
+  // A field the EFB has not filled in yet: the arrows gain their "(now …)" only after the first
+  // press, which is exactly the change the pilot must hear.
+  assert.deepStrictEqual(hinted(scrape('perf-stepper-empty', { autoVis: true, nav: 'Perf' })),
+    ['Runway previous', 'Runway next']);
+});
