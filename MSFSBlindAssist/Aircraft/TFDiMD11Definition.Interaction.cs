@@ -590,10 +590,12 @@ public partial class TFDiMD11Definition
             if (!ok)
             {
                 // The CEVENT click channel is a rate-limited shared slot, and single clicks often
-                // don't land — the switch just sits there. Fall back to writing the control's state
-                // L:var directly (the same animation-input var the Dial-A-Flap wheel uses, which
-                // proved settable this way where clicks failed). Walk-first keeps any control that
-                // the click path DOES drive working as before.
+                // don't land — the switch just sits there. Fall back to writing the control's OWN
+                // state L:var directly (it moved the fuel switches and IRS selectors in the early
+                // logs, before ToggleCoreAsync existed). Gated by Md11DirectSet.Refuse: only the var
+                // this control's row reads back, never the speedbrake/flap/gear levers, whose state
+                // vars are not their command encoding. Walk-first keeps any control that the click
+                // path DOES drive working as before.
                 ok = await TryDirectSetAsync(control, target, sim).ConfigureAwait(false);
             }
             if (ct.IsCancellationRequested) return;
@@ -618,10 +620,25 @@ public partial class TFDiMD11Definition
     /// reading it back to confirm the write held. Returns true only if the value actually landed on
     /// the target detent — a wasm-owned output that reverts the write returns false, so the caller
     /// still speaks the honest "did not move".
+    ///
+    /// Gated by <see cref="Md11DirectSet.Refuse"/>: the write goes ONLY to the var this control's
+    /// own definition reads back (the read below is what confirms it), and never to a control in
+    /// <see cref="Md11DirectSet.FallbackNeverWrites"/> — the speedbrake lever's row reads the
+    /// travel var while its map state var is the ground-spoiler pull (a detent written there
+    /// blanked the Ground spoilers row), and the flap and gear levers' state vars are travel or
+    /// animation values, not command encodings. A refused control returns false and the caller
+    /// speaks the same "did not move" as always.
     /// </summary>
     private async Task<bool> TryDirectSetAsync(Md11Control control, double target, SimConnectManager sim)
     {
-        if (_bus == null || string.IsNullOrEmpty(control.StateVar)) return false;
+        if (_bus == null) return false;
+        GetVariables().TryGetValue(control.NodeId, out var def);
+        var refusal = Md11DirectSet.Refuse(control, def?.Name);
+        if (refusal != null)
+        {
+            Log.Info("MD11", $"{control.NodeId}: direct write of {target} refused — {refusal}.");
+            return false;
+        }
 
         _bus.WriteExternal(control.StateVar, target);
         await Task.Delay(600).ConfigureAwait(false);         // ANIM_LAG is 100–1000 ms

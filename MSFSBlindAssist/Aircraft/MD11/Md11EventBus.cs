@@ -197,8 +197,10 @@ public sealed class Md11EventBus : IDisposable
     internal static int HoldDelayMs(int holdMs, int backlogMs) => Math.Max(holdMs, MinGapMs) + backlogMs;
 
     /// <summary>
-    /// Writes one <c>MD11_EXTCTL_*</c> variable — the sanctioned direct-write family, and the only
-    /// thing on this aircraft that is NOT a CEVENT.
+    /// Writes one L:var directly through the calc path — the shared channel for the three writes on
+    /// this aircraft that are NOT a CEVENT: the sanctioned <c>MD11_EXTCTL_*</c> inboxes (the
+    /// contract below), the Dial-A-Flap wheel's own backing var (<c>Md11FlapSystem.SetDialRawAsync</c>)
+    /// and the walk's gated direct-write fallback (<c>Md11DirectSet</c>). Nothing else may call it.
     ///
     /// VERIFIED AGAINST THE LIVE AIRCRAFT (2026-07-17), because none of this is documented:
     /// writing 123 to <c>MD11_EXTCTL_FCP_HDG</c> put 123 into <c>MD11_AFS_HDG</c> (the FCP window
