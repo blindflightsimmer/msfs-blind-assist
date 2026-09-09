@@ -66,6 +66,25 @@ public static class Md11SpeedbrakeSystem
     };
 
     /// <summary>
+    /// The read-back after the lever's click: null when the DELIVERED pull is the target, or when
+    /// nothing was delivered — a verdict rests on a delivery; with no delivery nothing is spoken
+    /// and the Ground spoilers row shows the state — else "did not arm" / "did not disarm".
+    ///
+    /// The old read slept a fixed time and then read the CACHE, which for this batch-covered var
+    /// still holds the pre-click pull whenever the next 1 Hz delivery has not landed: "did not
+    /// arm" was spoken over a click the aircraft had taken. And because the pilot's own combo pick
+    /// is echo-suppressed for three seconds (MainForm's UiSetEchoSuppressMs), that false failure
+    /// was normally the only thing they heard.
+    /// </summary>
+    public static string? ArmReadBack(double target, double? delivered)
+    {
+        if (delivered is not double h) return null;
+        int want = (int)Math.Round(target);
+        if ((int)Math.Round(h) == want) return null;
+        return want == 1 ? "Ground spoilers did not arm." : "Ground spoilers did not disarm.";
+    }
+
+    /// <summary>
     /// Why a Ground spoilers selection is refused before anything is sent, or null when it may go.
     /// The click only toggles the pull, so "Extended" is not a choice, arming needs the lever
     /// retracted (the aircraft ignores the pull otherwise), and disarming an auto-extended set

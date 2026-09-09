@@ -331,7 +331,14 @@ public partial class TFDiMD11Definition
         int generation = _announceGeneration;
         try
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             await Task.Delay(Md11Fcp.VerifyAfterMs).ConfigureAwait(false);
+            // Every export is batch-covered: each fresh read completes on its next 1 Hz delivery.
+            // The old fixed sleep read the cache and had to out-wait two deliveries to be sure of
+            // seeing the write; an export not delivered stays null, which DescribeAltimeterShortfall
+            // treats as no evidence.
+            var reads = await Task.WhenAll(written.Select(w => sim.ReadFreshAsync(w.Read, BatchReadBackTimeoutMs))).ConfigureAwait(false);
+            Log.Debug("MD11", $"Altimeter read-back: {reads.Count(r => r != null)} of {written.Count} exports delivered after {sw.ElapsedMilliseconds} ms.");
             OnUiThread(() =>
             {
                 try
@@ -339,9 +346,9 @@ public partial class TFDiMD11Definition
                     if (generation != _announceGeneration) return;   // aircraft switch / reconnect / flight load
                     if (entry != _altimeterEntrySeq) return;         // a newer entry owns the read-back
                     var shortfalls = new List<string>();
-                    foreach (var (side, read, value) in written)
+                    for (int i = 0; i < written.Count; i++)
                     {
-                        var text = Md11Fcp.DescribeAltimeterShortfall(side, value, sim.GetCachedVariableValue(read));
+                        var text = Md11Fcp.DescribeAltimeterShortfall(written[i].Side, written[i].Value, reads[i]);
                         if (text != null) shortfalls.Add(text);
                     }
                     if (shortfalls.Count > 0) announcer.Announce(string.Join(". ", shortfalls));

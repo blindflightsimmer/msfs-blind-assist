@@ -156,6 +156,23 @@ public class Md11RadioTests
         Assert.Equal("135.500", text);
     }
 
+    /// <summary>
+    /// The tuning read-back speaks only a MISMATCH on a DELIVERED value — "COM 1 standby did not
+    /// change, still 124.850." — and nothing at all when nothing was delivered: a verdict rests on
+    /// the radio's report, never on a sleep that guessed when the 1 Hz batch would land. Outside
+    /// the airband (an unpowered radio reads 0) the failure carries no "still 0.000".
+    /// </summary>
+    [Theory]
+    [InlineData(124900, 124900.0, null)]
+    [InlineData(124900, 124900.4, null)]                                          // half a kHz of float noise
+    [InlineData(124900, 124850.0, "COM 1 standby did not change, still 124.850.")]
+    [InlineData(124900, 0.0, "COM 1 standby did not change.")]                    // an unpowered radio: no "still 0.000"
+    [InlineData(124900, null, null)]
+    public void TheTuneReadBack_SpeaksOnlyAMismatch_OnADeliveredValue(double target, double? delivered, string? expected)
+    {
+        Assert.Equal(expected, Md11Radios.TuneReadBack(target, delivered, "COM 1 standby did not change"));
+    }
+
     /// <summary>A flight load re-delivers only what changed, so an empty key is seeded from the cache and a seeded one is left alone.</summary>
     [Fact]
     public void SeedIfEmpty_SeedsOnlyAKeyWithNoBaseline()

@@ -98,20 +98,36 @@ public partial class TFDiMD11Definition
         if (_bus == null || !_byNodeId.TryGetValue(Md11SpeedbrakeSystem.LeverKey, out var lever)) return;
         var click = lever.Event("LEFT_BUTTON_DOWN");
         if (click is not > 0) return;
+        int backlogMs = _bus.Pending * Md11EventBus.MinGapMs;   // sampled before the click joins the queue
         _bus.Fire(click.Value);
-        _ = VerifyGroundSpoilersAsync(target, simConnect, announcer);
+        _ = VerifyGroundSpoilersAsync(target, backlogMs, simConnect, announcer);
     }
 
-    private async Task VerifyGroundSpoilersAsync(double target, SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    /// <summary>The pull's settle after the lever's click is WRITTEN, before the read-back is requested — the aircraft's own apply time, kept from the fixed-sleep protocol.</summary>
+    private const int ArmSettleMs = 700;
+
+    /// <summary>
+    /// The click was QUEUED on the paced bus, so the settle is measured from when it will be
+    /// written (<paramref name="backlogMs"/>, the walker's stamp), and the pull is then read on
+    /// its next 1 Hz delivery — never a fixed sleep and the cache, which for a batch-covered var
+    /// still holds the pre-click pull whenever the next delivery has not landed, and judged a
+    /// click the aircraft had taken as "did not arm". Only a DELIVERED mismatch is spoken
+    /// (<see cref="Md11SpeedbrakeSystem.ArmReadBack"/>): nothing delivered inside the ceiling
+    /// means nothing is spoken and the Ground spoilers row shows the state. The pick itself is
+    /// echo-suppressed by MainForm for three seconds, so a false failure here used to be the only
+    /// thing the pilot heard.
+    /// </summary>
+    private async Task VerifyGroundSpoilersAsync(double target, int backlogMs, SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
         try
         {
-            await Task.Delay(700).ConfigureAwait(false);
-            sim.RequestVariable(Md11SpeedbrakeSystem.ArmKey, forceUpdate: true);
-            await Task.Delay(400).ConfigureAwait(false);
-            var read = sim.GetCachedVariableValue(Md11SpeedbrakeSystem.ArmKey);
-            if (read is double h && (int)Math.Round(h) == (int)Math.Round(target)) return;
-            string failure = (int)Math.Round(target) == 1 ? "Ground spoilers did not arm." : "Ground spoilers did not disarm.";
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            await Task.Delay(Md11EventBus.ReadBackDelayMs(ArmSettleMs, backlogMs)).ConfigureAwait(false);
+            var read = await sim.ReadFreshAsync(Md11SpeedbrakeSystem.ArmKey, BatchReadBackTimeoutMs).ConfigureAwait(false);
+            Log.Debug("MD11", $"Ground spoiler read-back: {Md11SpeedbrakeSystem.ArmKey}={read?.ToString("0.##") ?? "null"} " +
+                $"after {sw.ElapsedMilliseconds} ms (backlog {backlogMs} ms), target {target:0}.");
+            var failure = Md11SpeedbrakeSystem.ArmReadBack(target, read);
+            if (failure == null) return;
             OnUiThread(() => announcer.Announce(failure));
         }
         catch (Exception ex)
@@ -146,7 +162,12 @@ public partial class TFDiMD11Definition
         if (text != null) announcer.Announce(text);
     }
 
-    /// <summary>How long a stock tuning event gets before the read-back judges it.</summary>
+    /// <summary>
+    /// How long a stock tuning event gets before the read-back is REQUESTED. The read then
+    /// completes on the frequency's next 1 Hz delivery (ReadFreshAsync), so this is only the
+    /// aircraft's own apply time — TFDi's radio panel drives the stock var, and how quickly is
+    /// unmeasured (the probe said "held", not how soon) — kept rather than cut.
+    /// </summary>
     private const int ComTuneSettleMs = 1500;
 
     /// <summary>
@@ -185,20 +206,23 @@ public partial class TFDiMD11Definition
     }
 
     /// <summary>
-    /// After the settle, force-read the frequency and speak only a MISMATCH ("… did not change,
-    /// still 124.850"); a match was already announced by the COM announcer when the variable moved.
+    /// After the settle, read the frequency on its next delivery and speak only a DELIVERED
+    /// mismatch ("… did not change, still 124.850"); a match was already announced by the COM
+    /// announcer when the variable moved, and nothing delivered is no verdict (logged, not spoken).
     /// </summary>
     private async Task VerifyComAsync(string key, double targetKhz, string failure, SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
         try
         {
             await Task.Delay(ComTuneSettleMs).ConfigureAwait(false);
-            sim.RequestVariable(key, forceUpdate: true);
-            await Task.Delay(400).ConfigureAwait(false);
-            var read = sim.GetCachedVariableValue(key);
-            if (read is double khz && Math.Abs(khz - targetKhz) <= 0.5) return;
-            string still = read is double k && Md11Radios.InAirband(k) ? $", still {Md11Radios.FormatMhz(k)}" : "";
-            OnUiThread(() => announcer.Announce($"{failure}{still}."));
+            var read = await sim.ReadFreshAsync(key, BatchReadBackTimeoutMs).ConfigureAwait(false);
+            var sentence = Md11Radios.TuneReadBack(targetKhz, read, failure);
+            if (sentence == null)
+            {
+                if (read == null) Log.Debug("MD11", $"COM tuning read-back: nothing delivered for {key} within {BatchReadBackTimeoutMs} ms — no verdict.");
+                return;
+            }
+            OnUiThread(() => announcer.Announce(sentence));
         }
         catch (Exception ex)
         {
@@ -207,12 +231,12 @@ public partial class TFDiMD11Definition
     }
 
     /// <summary>
-    /// The inbox is consumed within the next FCC cycle and the export rides the 1 Hz batch. The
-    /// two delays together span more than two batch deliveries, which is what actually makes the
-    /// read-back current; the forced reads in between are belt-and-braces.
+    /// The inbox is consumed within the next FCC cycle — the EXTCTL apply allowance every inbox
+    /// read-back shares (<see cref="Md11Fcp.VerifyAfterMs"/>, where the reasoning lives). The
+    /// export is then read on its next 1 Hz delivery; the second sleep that used to out-wait the
+    /// batch is gone with the fixed-sleep protocol.
     /// </summary>
-    private const int MinimumsSettleMs = 1200;
-    private const int MinimumsReadBackMs = 1100;
+    private const int MinimumsSettleMs = Md11Fcp.VerifyAfterMs;
 
     /// <summary>
     /// The typed minimums: validated (a refusal is spoken and nothing is sent), written to the
@@ -237,16 +261,20 @@ public partial class TFDiMD11Definition
     {
         try
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             await Task.Delay(MinimumsSettleMs).ConfigureAwait(false);
             // Both keys are batch-covered (the read-back and the mode switch's silent mirror), so
-            // a forced read is honoured on the next delivery rather than answered immediately —
-            // and the 2.3 s of waiting either side already spans two of those. These are
-            // belt-and-braces, not the thing that makes the read current.
-            sim.RequestVariable(side.ReadKey, forceUpdate: true);
-            sim.RequestVariable(side.ModeKey, forceUpdate: true);
-            await Task.Delay(MinimumsReadBackMs).ConfigureAwait(false);
-            var read = sim.GetCachedVariableValue(side.ReadKey);
-            var mode = sim.GetCachedVariableValue(side.ModeKey);
+            // each fresh read completes on its next 1 Hz delivery — one period at most, and the
+            // ceiling only bounds a delivery that never comes. Requested together so neither waits
+            // behind the other; each completes on its own batch's next delivery (the 528 batch vars
+            // ride two batches sorted by name, so the two need not share one). A read that is not
+            // delivered stays null, and Confirmation says so.
+            var readTask = sim.ReadFreshAsync(side.ReadKey, BatchReadBackTimeoutMs);
+            var modeTask = sim.ReadFreshAsync(side.ModeKey, BatchReadBackTimeoutMs);
+            var read = await readTask.ConfigureAwait(false);
+            var mode = await modeTask.ConfigureAwait(false);
+            Log.Debug("MD11", $"Minimums read-back: {side.ReadKey}={read?.ToString("0.##") ?? "null"} mode={mode?.ToString("0.##") ?? "null"} " +
+                $"after {sw.ElapsedMilliseconds} ms (typed {feet}).");
             bool? modeIsBaro = mode is double m ? m > 0.5 : null;
             var sentence = Md11Minimums.Confirmation(side, feet, read, modeIsBaro);
             OnUiThread(() => announcer.Announce(sentence));
@@ -307,7 +335,19 @@ public partial class TFDiMD11Definition
     /// announcement) or needlessly long. ReadFreshAsync completes on the delivery itself; this
     /// is only the ceiling, two periods with margin.
     /// </summary>
-    private const int SquawkReadBackTimeoutMs = 2500;
+    private const int SquawkReadBackTimeoutMs = BatchReadBackTimeoutMs;
+
+    /// <summary>
+    /// The ceiling on a fresh read of a BATCH-COVERED key — the ground spoiler pull, the COM
+    /// frequencies, the minimums and altimeter exports, the squawk: the read completes on the
+    /// next 1 Hz delivery, so this is one period plus one of margin, and only bounds a delivery
+    /// that never comes (a disconnect). An individual-def key answers on the next dispatch and
+    /// reads under the walker's <see cref="Md11SelectorWalker.FreshReadTimeoutMs"/> (1200) —
+    /// the direct-set "held" check — completing early; the guard decision and the press
+    /// feedback's latch, which sit on an actuation's path, use the shorter
+    /// <see cref="GuardReadTimeoutMs"/>.
+    /// </summary>
+    private const int BatchReadBackTimeoutMs = 2500;
 
     private async Task SetSquawkAsync(string code, SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
@@ -389,13 +429,28 @@ public partial class TFDiMD11Definition
             {
                 bool guarded = !string.IsNullOrEmpty(control.GuardId);
                 _gate.NotePress(control.NodeId, Environment.TickCount64);
+                // The feedback's clock starts when the press is QUEUED and adds the bus backlog it
+                // then waits behind (Pending × MinGapMs — the stamp every walker click and
+                // PressAndHoldAsync carry). A guarded press is queued only after its guard chain
+                // has run, so GuardedPressAsync hands that moment over itself; the hold-to-test
+                // path keeps an estimate (GuardedPressExtraMs) because its feedback must speak at
+                // the settle, not after the 3 s hold.
+                Task<int> queued;
                 if (Md11TestButtons.IsHoldToTest(control.NodeId))
+                {
+                    queued = Task.FromResult(_bus.Pending * Md11EventBus.MinGapMs + (guarded ? GuardedPressExtraMs : 0));
                     _ = HoldTestButtonAsync(control, simConnect, guarded);   // held, so its lights get seen
+                }
                 else if (guarded)
-                    _ = GuardedPressAsync(control, simConnect, announcer);
+                {
+                    queued = GuardedPressAsync(control, simConnect);
+                }
                 else
+                {
+                    queued = Task.FromResult(_bus.Pending * Md11EventBus.MinGapMs);
                     _bus.Press(control);
-                _ = PressFeedbackAsync(control, simConnect, announcer, guarded);
+                }
+                _ = PressFeedbackAsync(control, simConnect, announcer, queued);
                 return true;
             }
 
@@ -508,14 +563,15 @@ public partial class TFDiMD11Definition
 
         if (gen != _dialSetGen) return;                // superseded during the walk — let the newer one speak
         await Task.Delay(200).ConfigureAwait(false);   // let the final value settle and stream in
-        sim.RequestVariable(Md11FlapSystem.DialKey, forceUpdate: true);
-        await Task.Delay(120).ConfigureAwait(false);
-        // Re-check AFTER the settle delays, not only before them: the two waits above are 320 ms in
+        // Re-check AFTER the settle delay, not only before it: the wait above is 200 ms in
         // which a newer selection can supersede this one — or Dispose can bump the generation — and
         // past this point the value read is `sim`'s cache, which after a switch belongs to the NEXT
         // aircraft. Announcing then speaks a real angle for a wheel this walk never touched.
         if (gen != _dialSetGen) return;
-        var raw = sim.GetCachedVariableValue(Md11FlapSystem.DialKey);
+        // The wheel streams on its own SIM_FRAME subscription, so its fresh read IS the cache
+        // (FreshReadPolicy.CacheIsFresh), handed back at once: the force-read this used to issue
+        // was a documented no-op for such a var, and the 120 ms after it dead time.
+        var raw = await sim.ReadFreshAsync(Md11FlapSystem.DialKey, Md11SelectorWalker.FreshReadTimeoutMs).ConfigureAwait(false);
         if (raw == null) return;
 
         _dialRaw = raw.Value;
@@ -664,12 +720,16 @@ public partial class TFDiMD11Definition
         }
 
         _bus.WriteExternal(control.StateVar, target);
-        await Task.Delay(600).ConfigureAwait(false);         // ANIM_LAG is 100–1000 ms
-        sim.RequestVariable(control.NodeId, forceUpdate: true);
-        await Task.Delay(250).ConfigureAwait(false);
-
-        var actual = sim.GetCachedVariableValue(control.NodeId);
-        if (actual == null) return false;
+        await Task.Delay(600).ConfigureAwait(false);         // ANIM_LAG is 100–1000 ms: the value travels before it rests
+        // Read on DELIVERY: every walked control's var has its own data definition, so this
+        // completes on the PERIOD.ONCE response (or the cache for a SIM_FRAME-streamed var), never
+        // on a fixed sleep over whatever the cache held. Nothing delivered is not "held".
+        var actual = await sim.ReadFreshAsync(control.NodeId, Md11SelectorWalker.FreshReadTimeoutMs).ConfigureAwait(false);
+        if (actual == null)
+        {
+            Log.Debug("MD11", $"{control.NodeId}: direct set to {target} — nothing delivered to read back.");
+            return false;
+        }
 
         var ordered = Md11SelectorWalker.OrderedValues(control);
         bool held = ordered.Count > 0
@@ -680,8 +740,25 @@ public partial class TFDiMD11Definition
         return held;
     }
 
-    /// <summary>Settle after lifting a guard before actuating the control under it.</summary>
-    private const int GuardOpenSettleMs = 250;
+    /// <summary>Settle after lifting a guard before actuating the control under it, measured from the guard click's WRITE.</summary>
+    internal const int GuardOpenSettleMs = 250;
+
+    /// <summary>
+    /// The ceiling on the guard's two fresh reads, and on the press feedback's latch read. A guard
+    /// var has its own data definition, so a PERIOD.ONCE answers on the next dispatch — a frame or
+    /// two; ten frames is generous. Short on purpose, for two reasons: the decision read sits on
+    /// the fire-handle walk's and the guarded press's critical path, and a lost ONCE must not
+    /// stall them by the batch-sized ceiling; and the whole guarded-press chain has to speak its
+    /// feedback inside <see cref="Md11AnnouncementGate.EchoWindowMs"/> (2500 ms) or the press's own
+    /// lamp echo is spoken as well — pinned by Md11AnnouncementGateTests.
+    ///
+    /// The trade is real and is accepted: past this ceiling the state is unreadable and
+    /// <see cref="Md11Guard.Decide"/> leaves the cover alone (exactly as an undelivered value did),
+    /// so the control is actuated UNGATED and a covered fire handle may then report "did not move"
+    /// — retry the pick. And until the timed-out-waiter finding lands, a late delivery answering
+    /// this read's abandoned waiter can satisfy the NEXT guard read on the same key.
+    /// </summary>
+    internal const int GuardReadTimeoutMs = 300;
 
     /// <summary>
     /// Lifts a control's guard cover first, if it has one and it is currently closed.
@@ -708,10 +785,10 @@ public partial class TFDiMD11Definition
             var openEvent = guard.Event("LEFT_BUTTON_DOWN");
             if (openEvent == null) return;   // no way to move it — proceed ungated
 
-            // Read the guard's current state (settle briefly). Unreadable → leave alone.
-            sim.RequestVariable(guard.NodeId, forceUpdate: true);
-            await Task.Delay(180).ConfigureAwait(false);
-            var state = sim.GetCachedVariableValue(guard.NodeId);
+            // Read the guard's current state on DELIVERY (a PERIOD.ONCE answers on the next
+            // dispatch). Nothing delivered inside GuardReadTimeoutMs → null → leave alone; the old
+            // sleep-and-cache read could act on a stale cached position here.
+            var state = await sim.ReadFreshAsync(guard.NodeId, GuardReadTimeoutMs).ConfigureAwait(false);
 
             var decision = Md11Guard.Decide(state);
             if (decision != Md11Guard.Action.Open)
@@ -721,16 +798,19 @@ public partial class TFDiMD11Definition
                 return;
             }
 
-            // Closed → lift it, then settle so the control underneath is actuable.
+            // Closed → lift it, then settle so the control underneath is actuable. The settle is
+            // measured from when the click will be WRITTEN (the bus backlog ahead of it) — the
+            // press or walk that follows is queued behind it in the same FIFO, so this is the only
+            // thing that keeps the two writes GuardOpenSettleMs apart (a guard click written right
+            // beside its button's press was ignored, live).
+            int backlogMs = _bus.Pending * Md11EventBus.MinGapMs;
             _bus.Fire(openEvent.Value);
-            await Task.Delay(GuardOpenSettleMs).ConfigureAwait(false);
+            await Task.Delay(Md11EventBus.ReadBackDelayMs(GuardOpenSettleMs, backlogMs)).ConfigureAwait(false);
 
-            // Confirm for the log only; the actuation runs regardless of what the re-read says.
-            sim.RequestVariable(guard.NodeId, forceUpdate: true);
-            await Task.Delay(120).ConfigureAwait(false);
-            var after = sim.GetCachedVariableValue(guard.NodeId);
-            Log.Info("MD11", $"Guard {guard.NodeId}: {state.Value.ToString("0.##")} → {after?.ToString("0.##") ?? "null"} " +
-                $"before actuating {control.NodeId}.");
+            // Confirm for the log only, OFF the actuation's path: the actuation runs regardless of
+            // what the re-read says, so it must not wait on it (a lost PERIOD.ONCE would stall the
+            // fire-handle walk or the press by the ceiling for a value nobody acts on).
+            _ = LogGuardAfterAsync(guard, control, state.Value, sim);
         }
         catch (Exception ex)
         {
@@ -739,11 +819,36 @@ public partial class TFDiMD11Definition
         }
     }
 
-    /// <summary>Lifts the guard (best-effort, state-aware), then fires the button's press/release.</summary>
-    private async Task GuardedPressAsync(Md11Control control, SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    /// <summary>
+    /// The guard's log-only confirmation, run beside the actuation rather than ahead of it: the
+    /// request is issued before this returns (so it still reads the guard "before actuating"),
+    /// and the line is written whenever the delivery lands. Never touches the actuation.
+    /// </summary>
+    private async Task LogGuardAfterAsync(Md11Control guard, Md11Control control, double before, SimConnectManager sim)
+    {
+        try
+        {
+            var after = await sim.ReadFreshAsync(guard.NodeId, GuardReadTimeoutMs).ConfigureAwait(false);
+            Log.Info("MD11", $"Guard {guard.NodeId}: {before.ToString("0.##")} → {after?.ToString("0.##") ?? "null"} " +
+                $"before actuating {control.NodeId}.");
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("MD11", $"Guard {guard.NodeId} re-read threw (ignored): {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Lifts the guard (best-effort, state-aware), then queues the button's press/release.
+    /// Completes with the bus backlog the press was queued behind — the press feedback's clock
+    /// starts there, after the guard chain has actually run, not on an estimate of it.
+    /// </summary>
+    private async Task<int> GuardedPressAsync(Md11Control control, SimConnectManager sim)
     {
         await EnsureGuardOpenAsync(control, sim).ConfigureAwait(false);
+        int backlogMs = (_bus?.Pending ?? 0) * Md11EventBus.MinGapMs;
         _bus?.Press(control);
+        return backlogMs;
     }
 
     /// <summary>

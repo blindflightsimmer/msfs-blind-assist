@@ -263,6 +263,21 @@ public sealed class Md11EventBus : IDisposable
     /// </summary>
     internal static int HoldDelayMs(int holdMs, int backlogMs) => Math.Max(holdMs, MinGapMs) + backlogMs;
 
+    /// <summary>
+    /// How long a read-back waits after QUEUING a click so that the aircraft's settle
+    /// (<paramref name="settleMs"/>) is measured from when the click is WRITTEN: the backlog it
+    /// waits behind (<see cref="Pending"/> × <see cref="MinGapMs"/>, sampled before the Fire) plus
+    /// the settle. The same stamp the walker gives every click and <see cref="PressAndHoldAsync"/>
+    /// gives its DOWN, generalised to the ground spoiler, guard-lift and press-feedback read-backs.
+    ///
+    /// It is the general RULE, not the fix for the false "Ground spoilers did not arm." — on
+    /// today's paths the backlog is at most a couple of events (the walker queues one click per
+    /// step; the MCDU scratchpad send is the one real burst), so with the queue idle this is the
+    /// bare settle and costs the pilot nothing. What removed the false verdict is reading on
+    /// DELIVERY instead of sleeping and reading the cache (see <c>SimConnectManager.ReadFreshAsync</c>).
+    /// </summary>
+    internal static int ReadBackDelayMs(int settleMs, int backlogMs) => settleMs + backlogMs;
+
     /// <summary>Registers one hold on <paramref name="upId"/>; false once <see cref="Dispose"/>'s release sweep has run.</summary>
     private bool TrackHeld(int upId)
     {

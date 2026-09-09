@@ -138,11 +138,17 @@ public static class Md11Fcp
     };
 
     /// <summary>
-    /// How long after Ctrl+B's writes all three altimeters are read back.
-    /// The inbox is applied within a frame and the export rides the 1 Hz batch, so this spans two
-    /// deliveries with margin — the same reasoning as the minimums read-back.
+    /// How long after an EXTCTL inbox write its export is read back — Ctrl+B's three altimeters,
+    /// and the typed minimums (<c>TFDiMD11Definition.MinimumsSettleMs</c> is this constant). The
+    /// read itself completes on the export's next 1 Hz delivery (<c>SimConnectManager.ReadFreshAsync</c>),
+    /// so this is only the FCC's allowance for CONSUMING the inbox — "within the next FCC cycle",
+    /// a period nobody has measured — kept at the minimums' long-standing figure rather than cut:
+    /// a settle shorter than the apply latency lets the next delivery carry the PRE-write export
+    /// and speak a false "not set". The old 2500 was sized to out-wait two batch deliveries from
+    /// a fixed sleep, which a delivery-completed read no longer needs. Measure it from the
+    /// "Altimeter read-back" / "Minimums read-back" lines in debug.log before cutting further.
     /// </summary>
-    public const int VerifyAfterMs = 2500;
+    public const int VerifyAfterMs = 1200;
 
     public const double MinInHg = 26.00;
     public const double MaxInHg = 32.00;

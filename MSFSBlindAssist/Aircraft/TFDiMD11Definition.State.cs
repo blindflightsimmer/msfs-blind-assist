@@ -57,8 +57,20 @@ public partial class TFDiMD11Definition
     /// </summary>
     private SynchronizationContext? _uiContext;
 
-    /// <summary>Lamps ride the 1 Hz batch; a press's effect is visible within this. Guarded presses add the guard settle.</summary>
-    private const int PressSettleMs = 1200;
+    /// <summary>
+    /// Lamps ride the 1 Hz batch; a press's effect is visible within this of the press being
+    /// WRITTEN — the feedback's clock starts when the press is queued and adds the bus backlog
+    /// ahead of it (<see cref="Md11EventBus.ReadBackDelayMs"/>). A guarded press hands over that
+    /// moment itself (GuardedPressAsync), after its guard chain has actually run.
+    /// </summary>
+    internal const int PressSettleMs = 1200;
+
+    /// <summary>
+    /// Only the hold-to-test path still ESTIMATES its guard chain — a fresh guard read (a frame or
+    /// two, <see cref="GuardReadTimeoutMs"/> at worst), the guard's click and its 250 ms settle:
+    /// its feedback must speak at the settle, not after the 3 s hold, so it cannot wait for the
+    /// DOWN to be queued. Everywhere else the chain is awaited, not estimated.
+    /// </summary>
     private const int GuardedPressExtraMs = 500;
 
     /// <summary>
@@ -206,17 +218,27 @@ public partial class TFDiMD11Definition
     /// Press feedback (spec §3.6): after the lamps and latch settle, speak the resulting state
     /// once, queued — always, so an inert press (engines off, AUTO mode) tells the pilot the
     /// unchanged state rather than nothing. Seeds the dedup so the press's own lamp echo is quiet.
+    /// <paramref name="queued"/> completes when the press has been QUEUED on the bus, with the
+    /// backlog it then waits behind — the settle is measured from there, so a press behind a
+    /// walker burst, or behind its own guard chain, is not read back before it has landed.
+    ///
+    /// The whole chain has to finish inside <see cref="Md11AnnouncementGate.EchoWindowMs"/>, or
+    /// the window closes on its own and the press's lamp echo is spoken beside this feedback.
+    /// That is why the latch read below is bounded by the short <see cref="GuardReadTimeoutMs"/>
+    /// rather than the walker's ceiling — pinned by Md11AnnouncementGateTests.
     /// </summary>
-    private async Task PressFeedbackAsync(Md11Control c, SimConnectManager sim, ScreenReaderAnnouncer announcer, bool guarded)
+    private async Task PressFeedbackAsync(Md11Control c, SimConnectManager sim, ScreenReaderAnnouncer announcer, Task<int> queued)
     {
         try
         {
-            await Task.Delay(PressSettleMs + (guarded ? GuardedPressExtraMs : 0)).ConfigureAwait(false);
+            int backlogMs = await queued.ConfigureAwait(false);
+            await Task.Delay(Md11EventBus.ReadBackDelayMs(PressSettleMs, backlogMs)).ConfigureAwait(false);
+            // A latched button's own var has its own data definition: the read completes on the
+            // PERIOD.ONCE delivery, which lands in the cache Compose reads below (the old fixed
+            // 300 ms sleep read whatever the cache held). Nothing delivered leaves the cache as it
+            // was, and the feedback reads the last known state as before.
             if (c.State?.Latch != null)
-            {
-                sim.RequestVariable(c.NodeId, forceUpdate: true);
-                await Task.Delay(300).ConfigureAwait(false);
-            }
+                await sim.ReadFreshAsync(c.NodeId, GuardReadTimeoutMs).ConfigureAwait(false);
 
             // The delays above leave this on a thread-pool thread. Compose + feedback + announce
             // must run on the UI thread: the gate's dictionaries are also mutated by

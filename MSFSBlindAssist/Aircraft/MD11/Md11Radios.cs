@@ -86,6 +86,20 @@ public static class Md11Radios
     /// <summary>kHz → "135.500", invariant culture (spoken, so never a comma decimal).</summary>
     public static string FormatMhz(double khz) => (khz / 1000.0).ToString("0.000", CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// The tuning read-back's sentence: null when the DELIVERED frequency is the target (within
+    /// half a kHz of float noise) or when nothing was delivered — a verdict rests on the radio's
+    /// report, never on a sleep that guessed when the batch would land — else the failure, with
+    /// what the radio shows when that is an airband frequency ("…, still 124.850.").
+    /// </summary>
+    public static string? TuneReadBack(double targetKhz, double? deliveredKhz, string failure)
+    {
+        if (deliveredKhz is not double khz) return null;
+        if (Math.Abs(khz - targetKhz) <= 0.5) return null;
+        string still = InAirband(khz) ? $", still {FormatMhz(khz)}" : "";
+        return $"{failure}{still}.";
+    }
+
     /// <summary>The read-out row's value: the frequency, or dashes while the radio reads nothing sensible.</summary>
     public static string Display(double khz) => InAirband(khz) ? FormatMhz(khz) : "--";
 

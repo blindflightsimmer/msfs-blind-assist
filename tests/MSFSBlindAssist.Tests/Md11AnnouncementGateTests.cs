@@ -1,3 +1,4 @@
+using MSFSBlindAssist.Aircraft;
 using MSFSBlindAssist.Aircraft.MD11;
 
 namespace MSFSBlindAssist.Tests;
@@ -112,5 +113,29 @@ public class Md11AnnouncementGateTests
         g.Feedback("X", "On");
         g.Reset();
         Assert.True(g.ShouldSpeakBackground("X", "On", 1));
+    }
+
+    /// <summary>
+    /// The press feedback MUST speak before the echo window closes. The window is stamped when the
+    /// press is dispatched (NotePress) and is closed either by <see cref="Md11AnnouncementGate.Feedback"/>
+    /// or by <see cref="Md11AnnouncementGate.EchoWindowMs"/> elapsing — and if it elapses first the
+    /// press's own lamp echo passes ShouldSpeakBackground and is spoken, then the feedback (which
+    /// seeds the dedup but never consults it) says the same thing again. So the slowest live path —
+    /// a GUARDED press: the guard's decision read, the cover's settle, the bus backlog the press is
+    /// queued behind, the lamps' settle, and the latch's own fresh read — has to fit inside it.
+    /// This is why the latch read is bounded by the short guard ceiling rather than the walker's.
+    /// </summary>
+    [Fact]
+    public void AGuardedPressFeedback_FitsInsideTheEchoWindow()
+    {
+        int worstCase = TFDiMD11Definition.GuardReadTimeoutMs     // the guard's decision read
+                      + TFDiMD11Definition.GuardOpenSettleMs      // the cover's settle, from the click's write
+                      + 2 * Md11EventBus.MinGapMs                 // the backlog a live path can hold (walker: one click per step)
+                      + TFDiMD11Definition.PressSettleMs          // the lamps' settle after the press is written
+                      + TFDiMD11Definition.GuardReadTimeoutMs;    // the latch's fresh read
+
+        Assert.True(worstCase < Md11AnnouncementGate.EchoWindowMs,
+            $"A guarded press's feedback can take {worstCase} ms, which does not fit inside the " +
+            $"{Md11AnnouncementGate.EchoWindowMs} ms echo window — the lamp echo would be spoken too.");
     }
 }

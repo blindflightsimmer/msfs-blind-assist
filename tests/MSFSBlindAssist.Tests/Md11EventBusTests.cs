@@ -36,6 +36,24 @@ public class Md11EventBusTests
         Assert.Equal(Md11EventBus.MinGapMs + 120, Md11EventBus.HoldDelayMs(0, backlogMs: 120));
     }
 
+    /// <summary>
+    /// Pins the SHAPE of the read-back rule the walker, <c>PressAndHoldAsync</c> and the three
+    /// spoken read-backs now share: a read-back after a QUEUED click waits the aircraft's settle
+    /// from the moment the click is WRITTEN, which is the settle plus whatever backlog the click
+    /// waits behind. An idle queue therefore costs the pilot nothing extra. (What actually removed
+    /// the false "Ground spoilers did not arm." is reading on DELIVERY rather than after a fixed
+    /// sleep — see the ArmReadBack / TuneReadBack rows; today's backlogs are at most a couple of
+    /// events, the MCDU scratchpad send being the one real burst.)
+    /// </summary>
+    [Theory]
+    [InlineData(700, 0, 700)]
+    [InlineData(700, 5 * Md11EventBus.MinGapMs, 700 + 5 * Md11EventBus.MinGapMs)]
+    [InlineData(0, 120, 120)]
+    public void ReadBackDelay_IsTheSettleMeasuredFromTheClicksWrite(int settleMs, int backlogMs, int expected)
+    {
+        Assert.Equal(expected, Md11EventBus.ReadBackDelayMs(settleMs, backlogMs));
+    }
+
     // ---- Dispose: drain and release -------------------------------------------------------
 
     /// <summary>Records every calc string the pump writes; ids parsed off the "{seq} 0 * {id} (>L:CEVENT)" shape.</summary>

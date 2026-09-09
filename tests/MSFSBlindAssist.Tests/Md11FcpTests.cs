@@ -225,10 +225,17 @@ public class Md11FcpTests
             Md11Fcp.DescribeAltimeterShortfall("First Officer", 30.12, 29.92));
     }
 
+    /// <summary>
+    /// The read-back after Ctrl+B completes on the exports' DELIVERY (ReadFreshAsync), so the
+    /// wait before it is only the FCC's allowance for consuming an EXTCTL inbox — the same
+    /// unmeasured allowance the typed minimums give theirs — never the two batch periods the old
+    /// fixed sleep had to out-wait. Beyond a couple of FCC cycles it is dead time; below a cycle
+    /// the fresh read could hand back the pre-write export and speak a false "not set".
+    /// </summary>
     [Fact]
-    public void AltimeterReadBack_WaitsOutTwoBatchDeliveries()
+    public void AltimeterReadBack_SettlesForTheInboxOnly_ThenReadsOnDelivery()
     {
-        Assert.InRange(Md11Fcp.VerifyAfterMs, 2000, 4000);
+        Assert.InRange(Md11Fcp.VerifyAfterMs, 500, 2000);
     }
 
     /// <summary>

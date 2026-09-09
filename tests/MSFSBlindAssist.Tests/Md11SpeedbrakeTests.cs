@@ -91,6 +91,27 @@ public class Md11SpeedbrakeTests
         Assert.Equal(new[] { Md11SpeedbrakeSystem.LeverKey, Md11SpeedbrakeSystem.ArmKey }, panel);
     }
 
+    /// <summary>
+    /// The arming read-back speaks only a MISMATCH on a DELIVERED value. Nothing delivered is no
+    /// verdict: the old read slept a fixed time and then read the CACHE, which for a batch-covered
+    /// var still holds the pre-click value whenever the next 1 Hz delivery has not landed yet — so
+    /// "did not arm" was spoken over a click the aircraft had taken. With the combo pick
+    /// echo-suppressed for three seconds (MainForm's UiSetEchoSuppressMs) that false failure was
+    /// the only thing the pilot heard. The sentences are unchanged.
+    /// </summary>
+    [Theory]
+    [InlineData(1, 1.0, null)]
+    [InlineData(0, 0.0, null)]
+    [InlineData(1, 0.0, "Ground spoilers did not arm.")]
+    [InlineData(0, 1.0, "Ground spoilers did not disarm.")]
+    [InlineData(0, 2.0, "Ground spoilers did not disarm.")]   // auto-extended: the disarm did not take
+    [InlineData(1, null, null)]
+    [InlineData(0, null, null)]
+    public void TheArmReadBack_SpeaksOnlyAMismatch_OnADeliveredValue(double target, double? delivered, string? expected)
+    {
+        Assert.Equal(expected, Md11SpeedbrakeSystem.ArmReadBack(target, delivered));
+    }
+
     [Fact]
     public void NoOtherBatchEntry_SharesThePullVarsName()
     {
