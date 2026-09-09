@@ -56,7 +56,8 @@ public class Md11AutopilotWindow : Form
 
     private bool _populating;
 
-    // ---- node ids, all verified present in the embedded map by Md11AutopilotWindowTests ----
+    // ---- node ids, all verified present in the embedded map by Md11FlightControlPanelTests ----
+    // Captions (and their Alt accelerators) live on Md11FcpButtons, pinned unique by Md11FcpButtonsTests.
     private const string Autoflight = "MD11_CGS_AUTOFLIGHT_BT";
     private const string Prof = "MD11_CGS_PROF_BT";
     private const string Nav = "MD11_CGS_NAV_BT";
@@ -142,22 +143,22 @@ public class Md11AutopilotWindow : Form
         // is a one-shot, so those stay plain.
         y = AddSection("Autoflight", y);
         y = AddButtonRow(y,
-            ("&Autoflight", Autoflight, () => Md11AutoflightState.Autoflight(Val("MD11_AP_STATE"), Val("MD11_ATS_STATE"))),
-            ("&PROF", Prof, null),
-            ("&NAV", Nav, () => Md11AutoflightState.Engaged(Md11AutoflightState.NavEngaged(Val(Md11Fcp.ReadHeading)))));
+            (Md11FcpButtons.Autoflight, Autoflight, () => Md11AutoflightState.Autoflight(Val("MD11_AP_STATE"), Val("MD11_ATS_STATE"))),
+            (Md11FcpButtons.Prof, Prof, null),
+            (Md11FcpButtons.Nav, Nav, () => Md11AutoflightState.Engaged(Md11AutoflightState.NavEngaged(Val(Md11Fcp.ReadHeading)))));
         y = AddButtonRow(y,
-            ("A&pproach / Land", ApprLand, null),
-            ("&FMS Speed", FmsSpd, () => Md11AutoflightState.Engaged(Md11AutoflightState.FmsSpeedEngaged(Val(Md11Fcp.ReadSpeed)))),
-            ("&Go Around", GoAround, null));
+            (Md11FcpButtons.ApproachLand, ApprLand, null),
+            (Md11FcpButtons.FmsSpeed, FmsSpd, () => Md11AutoflightState.Engaged(Md11AutoflightState.FmsSpeedEngaged(Val(Md11Fcp.ReadSpeed)))),
+            (Md11FcpButtons.GoAround, GoAround, null));
 
         // ---- Mode selects ---- each names its current mode, from the aircraft's own unit vars.
         y = AddSection("Mode select", y);
         y = AddButtonRow(y,
-            ("&IAS / Mach", IasMachSel, () => Val(Md11Fcp.ModeSpeedIsMach) > 0.5 ? "Mach" : "IAS"),
-            ("&Heading / Track", HdgTrkSel, () => Val(Md11Fcp.ModeHeadingIsTrack) > 0.5 ? "Track" : "Heading"));
+            (Md11FcpButtons.IasMach, IasMachSel, () => Val(Md11Fcp.ModeSpeedIsMach) > 0.5 ? "Mach" : "IAS"),
+            (Md11FcpButtons.HeadingTrack, HdgTrkSel, () => Val(Md11Fcp.ModeHeadingIsTrack) > 0.5 ? "Track" : "Heading"));
         y = AddButtonRow(y,
-            ("&VS / FPA", VsFpaSel, () => Val(Md11Fcp.ModeVerticalIsFpa) > 0.5 ? "FPA" : "V/S"),
-            ("Altitude &Unit", AltUnitSel, () => Val(Md11Fcp.ModeAltitudeIsMetres) > 0.5 ? "metres" : "feet"));
+            (Md11FcpButtons.VsFpa, VsFpaSel, () => Val(Md11Fcp.ModeVerticalIsFpa) > 0.5 ? "FPA" : "V/S"),
+            (Md11FcpButtons.AltitudeUnit, AltUnitSel, () => Val(Md11Fcp.ModeAltitudeIsMetres) > 0.5 ? "metres" : "feet"));
 
         // ---- Vertical speed wheel ----
         // The MD-11 has no "engage V/S" button: rotating the V/S / FPA wheel is what engages the
@@ -174,7 +175,7 @@ public class Md11AutopilotWindow : Form
 
         // ---- Autothrust disconnect ----
         y = AddSection("Autothrust", y);
-        y = AddButtonRow(y, ("Disconnect &Left", AtsDiscL, null), ("Disconnect &Right", AtsDiscR, null));
+        y = AddButtonRow(y, (Md11FcpButtons.AtsDisconnectLeft, AtsDiscL, null), (Md11FcpButtons.AtsDisconnectRight, AtsDiscR, null));
 
         // ---- Combos ----
         y = AddSection("Selectors", y);
@@ -209,7 +210,7 @@ public class Md11AutopilotWindow : Form
 
         var close = new Button
         {
-            Text = "&Close",
+            Text = Md11FcpButtons.Close,
             Location = new Point(10, y),
             Size = new Size(100, 30),
         };
@@ -339,14 +340,14 @@ public class Md11AutopilotWindow : Form
 
         var up = new Button
         {
-            Text = "Wheel &up", Location = new Point(170, y), Size = new Size(100, 30),
+            Text = Md11FcpButtons.WheelUp, Location = new Point(170, y), Size = new Size(100, 30),
             AccessibleName = $"{name} wheel up",
         };
         up.Click += (s, e) => FireEvent(node, "WHEEL_UP", $"{name} wheel up");
 
         var down = new Button
         {
-            Text = "Wheel &down", Location = new Point(278, y), Size = new Size(100, 30),
+            Text = Md11FcpButtons.WheelDown, Location = new Point(278, y), Size = new Size(100, 30),
             AccessibleName = $"{name} wheel down",
         };
         down.Click += (s, e) => FireEvent(node, "WHEEL_DOWN", $"{name} wheel down");

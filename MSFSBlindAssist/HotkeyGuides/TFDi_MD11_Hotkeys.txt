@@ -47,7 +47,9 @@ NAV and FMS Speed read "engaged" or "not engaged" (from the panel's own windows,
 the four mode selects read their current mode: "IAS / Mach: Mach", "Heading / Track: Heading",
 "VS / FPA: V/S", "Altitude Unit: feet". PROF, Approach/Land, Go Around, the knob push and pull
 buttons, the vertical speed wheel and the autothrust disconnects have no state to show and read
-as plain buttons.
+as plain buttons. Every button has its own Alt+letter, which the screen reader speaks with the
+button; two are not the first letter: Approach/Land is Alt+O (Alt+P is PROF) and Wheel up is
+Alt+W (Alt+U is Altitude Unit; Wheel down is Alt+D).
 
 Shift+Tab from the Autoflight button reaches a status list with the four windows and the
 autopilot and autothrottle: "Speed: Mach 0.82", "Heading: dashed, NAV engaged", "Altitude: 36000
