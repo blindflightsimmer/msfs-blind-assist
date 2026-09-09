@@ -310,6 +310,13 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     public Dictionary<double, string> DialAFlapChoices() => _flaps.DialValueDescriptions();
 
     /// <summary>
+    /// The <see cref="DialAFlapChoices"/> key nearest the wheel's current raw value — what a combo
+    /// built from those choices must select to show the current setting. The var is continuous, so
+    /// an exact-key match misses on every real value; see <see cref="Md11FlapSystem.NearestDialChoice"/>.
+    /// </summary>
+    public double NearestDialAFlapChoice(double raw) => _flaps.NearestDialChoice(raw);
+
+    /// <summary>
     /// Sets one FCP window, optionally switching its unit first.
     ///
     /// Unit BEFORE value, deliberately: the unit decides how the FCC reads the number, so writing
@@ -548,6 +555,15 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                 // same rule the gear hotkey read-out uses (Md11GearLever). The pick still writes
                 // the key, which is what the walker's two-position toggle resolves against.
                 if (c.NodeId == Md11GearLever.Key) def.ValueToDescriptionKey = Md11GearLever.DescriptionKey;
+                // Both flap controls are combos of discrete positions over a var that is not
+                // discrete: the thumbwheel's raw value is continuous, and the handle's Dial-A-Flap
+                // detent is a BAND (FLAP_RNG 38-65 — parked at 46.91 in TFDi's ReadyToFly state).
+                // Neither ever matched a key exactly, so both combos opened with NO selection, and
+                // in a DropDownList the first Down-arrow selects row 0 and COMMITS it: 10 degrees
+                // on the wheel, and on the handle "Flap Up / Slat Retracted" — a walk that RETRACTS
+                // the flaps. Each classifies by the rule its own read-out already uses.
+                else if (c.NodeId == Md11FlapSystem.DialKey) def.ValueToDescriptionKey = _flaps.NearestDialChoice;
+                else if (c.NodeId == Md11FlapSystem.LeverKey) def.ValueToDescriptionKey = _flaps.LeverDetentKey;
                 return def;
             }
 

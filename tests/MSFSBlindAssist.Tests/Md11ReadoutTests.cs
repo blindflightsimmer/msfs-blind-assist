@@ -84,17 +84,24 @@ public class Md11ReadoutTests
     }
 
     /// <summary>
-    /// The classifier is the gear lever's alone: every other MD-11 combo keeps the raw value as its
-    /// key (the speedbrake lever's travel detents are exact keys and must stay that way).
+    /// A classifier belongs only to a control whose VALUE space is not its combo's KEY space: the
+    /// gear lever's 0-25 travel against {0 Up, 1 Down}, the Dial-A-Flap wheel's continuous raw
+    /// value against whole degrees, and the flap handle's Dial-A-Flap BAND against the detent
+    /// points. Every other MD-11 combo keeps the raw value as its key (the speedbrake lever's
+    /// travel detents are exact keys and must stay that way).
     /// </summary>
     [Fact]
-    public void OnlyTheGearLever_ClassifiesItsValue()
+    public void OnlyMismatchedKeySpaces_ClassifyTheirValue()
     {
         var classified = Def.GetVariables()
             .Where(kv => kv.Value.ValueToDescriptionKey != null)
             .Select(kv => kv.Key)
+            .OrderBy(k => k, StringComparer.Ordinal)
             .ToList();
-        Assert.Equal(new[] { Md11GearLever.Key }, classified);
+        Assert.Equal(
+            new[] { Md11FlapSystem.DialKey, Md11FlapSystem.LeverKey, Md11GearLever.Key }
+                .OrderBy(k => k, StringComparer.Ordinal),
+            classified);
 
         // The concrete counter-example: an unclassified var's key IS its value.
         var lever = Def.GetVariables()[Md11SpeedbrakeSystem.LeverKey];

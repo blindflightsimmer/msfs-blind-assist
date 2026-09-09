@@ -1,3 +1,5 @@
+using System.Globalization;
+using MSFSBlindAssist.Aircraft;
 using MSFSBlindAssist.Aircraft.MD11;
 
 namespace MSFSBlindAssist.Tests;
@@ -272,5 +274,111 @@ public class Md11FlapSystemTests
         var sys = System();
 
         Assert.Equal(sys.DialSpec.UnitsPerDeg / 2.0, sys.DialToleranceRaw, precision: 4);
+    }
+
+    // ---------------------------------------------------------------------------------
+    // Seeding a combo from a var that is not keyed the way the combo is
+    // ---------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The wheel's var is CONTINUOUS — TFDi's shipped ReadyToFly state parks it at raw 33.0
+    /// (14.95°) — while the combo rows are keyed by whole degrees, so an exact-key lookup misses
+    /// on every real value and a combo seeded that way opens with NO selection, where the first
+    /// Down-arrow selects row 0 and writes 10° to the take-off wheel. Seed by the nearest degree.
+    /// </summary>
+    [Theory]
+    [InlineData(33.0, 15)]   // the shipped ReadyToFly wheel, 14.95°
+    [InlineData(0, 10)]
+    [InlineData(100, 25)]
+    [InlineData(3.0, 10)]    // 10.45° rounds down
+    [InlineData(3.4, 11)]    // 10.51° rounds up
+    [InlineData(36.7, 16)]   // 15.505° rounds up
+    public void NearestSelectableDegrees_SnapsTheContinuousWheelToAListedDegree(double raw, int expected)
+    {
+        Assert.Equal(expected, System().NearestSelectableDegrees(raw));
+    }
+
+    /// <summary>A value off the end of the wheel's travel seeds the end row, never a row that does not exist.</summary>
+    [Theory]
+    [InlineData(-5, 10)]
+    [InlineData(105, 25)]
+    public void NearestSelectableDegrees_ClampsToTheWheelTravel(double raw, int expected)
+    {
+        Assert.Equal(expected, System().NearestSelectableDegrees(raw));
+    }
+
+    /// <summary>
+    /// The seed must agree with the two places the same angle is rendered as TEXT — the panel
+    /// display row (TryGetDisplayOverride) and the flap read-out (DescribePosition) — which both
+    /// round with ToString("0"). A seed that rounded differently would select "14 degrees" under a
+    /// display row reading "15 degrees". Swept across the whole travel: the sweep pins that the two
+    /// agree everywhere the wheel can sit, not one particular rounding rule at one particular value.
+    /// </summary>
+    [Fact]
+    public void NearestSelectableDegrees_AgreesWithTheSpokenDegreeText()
+    {
+        var sys = System();
+
+        for (var i = 0; i <= 2000; i++)
+        {
+            var raw = i * 0.05;
+            var spoken = sys.DegreesFor(raw).ToString("0", CultureInfo.InvariantCulture);
+            Assert.Equal(spoken, sys.NearestSelectableDegrees(raw).ToString(CultureInfo.InvariantCulture));
+        }
+    }
+
+    /// <summary>
+    /// The seed is a KEY of DialValueDescriptions, so a combo built from that dictionary selects it
+    /// by exact value; and its label is byte-identical to the definition's display row for the same
+    /// raw value, so the combo can never show one angle while the status display shows another.
+    /// Pinned together so a relabel of either side breaks visibly.
+    /// </summary>
+    [Fact]
+    public void NearestDialChoice_IsAListedKeyWhoseLabelMatchesTheDisplayRow()
+    {
+        var sys = System();
+        var def = new TFDiMD11Definition();
+        var choices = sys.DialValueDescriptions();
+
+        for (var i = 0; i <= 400; i++)
+        {
+            var raw = i * 0.25;
+            var key = sys.NearestDialChoice(raw);
+
+            Assert.True(choices.ContainsKey(key), $"raw {raw}: {key} is not a combo key");
+            Assert.Equal($"{sys.NearestSelectableDegrees(raw)} degrees", choices[key]);
+            Assert.True(def.TryGetDisplayOverride(Md11FlapSystem.DialKey, raw, out var row));
+            Assert.Equal(choices[key], row);
+        }
+    }
+
+    /// <summary>
+    /// Both flap combos are keyed by discrete positions over a var that is not discrete: the
+    /// thumbwheel's raw value is continuous, and the handle's Dial-A-Flap detent is a BAND
+    /// (FLAP_RNG 38–65 — TFDi's ReadyToFly state parks the handle at 46.91). MainForm's combo
+    /// lookup is an exact key match, so both opened with NO selection, and in a DropDownList the
+    /// first Down-arrow then selects row 0 and COMMITS it — 10° on the wheel, and on the handle
+    /// "Flap Up / Slat Retracted", a walk that RETRACTS the flaps. Which key a delivered value
+    /// describes is the DEFINITION's to answer (SimVarDefinition.ValueToDescriptionKey), so both
+    /// carry a classifier and every value the aircraft can report lands on a listed key.
+    /// </summary>
+    [Theory]
+    [InlineData(Md11FlapSystem.DialKey, 0, "10 degrees")]
+    [InlineData(Md11FlapSystem.DialKey, 33.0, "15 degrees")]              // the shipped ReadyToFly wheel
+    [InlineData(Md11FlapSystem.DialKey, 47.3, "17 degrees")]              // between two listed degrees
+    [InlineData(Md11FlapSystem.DialKey, 100, "25 degrees")]
+    [InlineData(Md11FlapSystem.LeverKey, 0, "Flap Up / Slat Retracted")]
+    [InlineData(Md11FlapSystem.LeverKey, 46.91, "Dial-A-Flap")]           // the parked handle, inside the band
+    [InlineData(Md11FlapSystem.LeverKey, 60, "Dial-A-Flap")]              // elsewhere in the same band
+    [InlineData(Md11FlapSystem.LeverKey, 100, "Flap 50")]
+    public void BothFlapCombos_ClassifyTheirValueOntoAListedKey(string varKey, double value, string expectLabel)
+    {
+        var def = new TFDiMD11Definition().GetVariables()[varKey];
+
+        Assert.NotNull(def.ValueToDescriptionKey);
+        var key = def.DescriptionKeyFor(value);
+        Assert.True(def.ValueDescriptions.ContainsKey(key),
+            $"{varKey} {value} classified onto {key}, which the combo does not carry");
+        Assert.Equal(expectLabel, def.ValueDescriptions[key]);
     }
 }

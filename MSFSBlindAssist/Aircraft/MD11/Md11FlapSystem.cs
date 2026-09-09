@@ -109,6 +109,21 @@ public sealed class Md11FlapSystem
         return d;
     }
 
+    /// <summary>
+    /// The <see cref="LeverValueDescriptions"/> KEY that describes a raw FLAP_RNG value — the
+    /// classifier behind the handle's combo (<c>SimVarDefinition.ValueToDescriptionKey</c>).
+    ///
+    /// The detents are not all points: Dial-A-Flap is a BAND (38–65, the handle sitting wherever
+    /// the thumbwheel puts it — TFDi's ReadyToFly state parks it at 46.91), so an exact-key lookup
+    /// missed it on every real take-off and the combo opened with NO selection, where the first
+    /// Down-arrow selects row 0 and commits it: "Flap Up / Slat Retracted", a walk that RETRACTS
+    /// the flaps. Same classification the read-out uses (<see cref="DetentFor"/>), so the combo and
+    /// the spoken position can never disagree. A value in NO detent is the handle in transit; it
+    /// stays unclassified, which leaves the combo showing nothing rather than a position the
+    /// handle is not in.
+    /// </summary>
+    public double LeverDetentKey(double flapRng) => DetentFor(flapRng)?.Value ?? flapRng;
+
     // ---------------------------------------------------------------------------------
     // Dial-A-Flap combo
     // ---------------------------------------------------------------------------------
@@ -143,6 +158,32 @@ public sealed class Md11FlapSystem
     /// inside this rounds to the requested whole degree.
     /// </summary>
     public double DialToleranceRaw => DialSpec.UnitsPerDeg / 2.0;
+
+    /// <summary>
+    /// The listed whole degree nearest a raw thumbwheel value, clamped to the wheel's 10–25° span.
+    ///
+    /// Rounds half AWAY from zero — the rule <c>ToString("0")</c> applies in
+    /// <see cref="DescribePosition"/> and in the panel display row — so a combo seeded from this
+    /// can never show one degree while the read-out speaks another.
+    /// </summary>
+    public int NearestSelectableDegrees(double raw)
+    {
+        var deg = (int)Math.Round(DegreesFor(raw), MidpointRounding.AwayFromZero);
+        return Math.Clamp(deg, (int)Math.Round(DialSpec.MinDeg), (int)Math.Round(DialSpec.MaxDeg));
+    }
+
+    /// <summary>
+    /// The <see cref="DialValueDescriptions"/> KEY nearest a raw thumbwheel value — what a combo
+    /// built from that dictionary must select to show the wheel's current setting, and the
+    /// classifier behind it (<c>SimVarDefinition.ValueToDescriptionKey</c>).
+    ///
+    /// The var is CONTINUOUS (raw 33.0 for TFDi's shipped 14.95°) while the keys are whole degrees,
+    /// so an exact-key lookup misses on every real value and a combo seeded that way opens with NO
+    /// selection — where the first Down-arrow selects row 0 and writes 10° to the take-off wheel.
+    /// Same rounding expression as the keys, so the match is exact.
+    /// </summary>
+    public double NearestDialChoice(double raw)
+        => Math.Round(DialSpec.ToRaw(NearestSelectableDegrees(raw)), 4);
 
     // ---------------------------------------------------------------------------------
     // Actuation

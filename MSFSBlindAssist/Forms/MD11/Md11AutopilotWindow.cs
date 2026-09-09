@@ -416,6 +416,17 @@ public class Md11AutopilotWindow : Form
 
     private double Val(string key) => _sim.GetCachedVariableValue(key) ?? 0;
 
+    /// <summary>
+    /// The row carrying this <see cref="TFDiMD11Definition.DialAFlapChoices"/> key, or -1. Row values
+    /// and keys are the same rounded doubles from the same spec, so the equality is exact.
+    /// </summary>
+    private int IndexOfDialChoice(double key)
+    {
+        for (var i = 0; i < _dialAFlap.Items.Count; i++)
+            if (_dialAFlap.Items[i] is ComboItem item && item.Value == key) return i;
+        return -1;
+    }
+
     // ---------------------------------------------------------------------------------
     // Lifecycle
     // ---------------------------------------------------------------------------------
@@ -423,12 +434,6 @@ public class Md11AutopilotWindow : Form
     public void ShowForm()
     {
         _previousWindow = GetForegroundWindow();
-
-        // Snap the combos to the aircraft's current state without firing a write back at it.
-        _populating = true;
-        var bank = _sim.GetCachedVariableValue(BankLimitKnob);
-        if (bank is >= 0 && bank < _bankLimit.Items.Count) _bankLimit.SelectedIndex = (int)bank.Value;
-        _populating = false;
 
         RefreshStates();
         _refresh.Start();
@@ -440,9 +445,30 @@ public class Md11AutopilotWindow : Form
         TopMost = false;
 
         // Land on the Autoflight button: its caption is the state a pilot opens this window for
-        // ("Autoflight: AP 1, ATS on"). Shift+Tab reaches the status list.
+        // ("Autoflight: AP 1, ATS on"). Shift+Tab reaches the status list. BEFORE the seed below,
+        // deliberately: the form only Hides on close, so it reopens with whatever control was last
+        // active — and a screen reader DOES speak a programmatic selection change on the control it
+        // is sitting on. Focus first and every combo the seed touches is unfocused, so it says
+        // nothing.
         ActiveControl = _autoflight;
         _autoflight.Focus();
+
+        // Snap the combos to the aircraft's current state without firing a write back at it.
+        // AFTER Show(), deliberately: on the session's first open the combos have no native handle
+        // until Show() creates it, and MainForm.PanelBuilder documents a SelectedIndexChanged replay
+        // at handle creation that fired phantom user-action writes during panel build. With the
+        // handle alive an assignment is one immediate CB_SETCURSEL raised under _populating, and
+        // there is nothing left for handle creation to replay.
+        _populating = true;
+        var bank = _sim.GetCachedVariableValue(BankLimitKnob);
+        if (bank is >= 0 && bank < _bankLimit.Items.Count) _bankLimit.SelectedIndex = (int)bank.Value;
+        // The wheel's var is CONTINUOUS (raw 33.0 for TFDi's shipped 14.95°) while the rows are keyed
+        // by whole degrees, so an exact-key match misses on every real value and the combo opened
+        // with NO selection — where the first Down-arrow selects row 0 and writes 10° to the
+        // take-off wheel. Seed the nearest listed degree; only an empty cache leaves it empty.
+        var dialRaw = _sim.GetCachedVariableValue(Md11FlapSystem.DialKey);
+        _dialAFlap.SelectedIndex = dialRaw is double raw ? IndexOfDialChoice(_def.NearestDialAFlapChoice(raw)) : -1;
+        _populating = false;
     }
 
     protected override void OnVisibleChanged(EventArgs e)
