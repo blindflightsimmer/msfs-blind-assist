@@ -775,6 +775,7 @@ public partial class SimConnectManager
         // Clear existing registrations
         variableDataDefinitions.Clear();
         requestIdToVarKey.Clear();
+        _freshRequestIdToVarKey.Clear();
         lastVariableValues.Clear();
         lock (forceUpdateVariables) { forceUpdateVariables.Clear(); }
         _freshReads.FailAll();

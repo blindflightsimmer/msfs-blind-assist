@@ -25,11 +25,13 @@ public partial class SimConnectManager
     {
         try
         {
-            // Find the variable key for this request ID
-            if (!requestIdToVarKey.TryGetValue(requestId, out var varKey) || varKey == null)
-            {
-                return;
-            }
+            // Find the variable key for this request ID. A fresh read's PERIOD.ONCE went out under
+            // its own id (see FreshReadWaiters): resolve that first — a ONCE answers exactly once,
+            // so the mapping is consumed here — else the id is the var's data-definition id.
+            string? varKey;
+            bool freshRequest = _freshRequestIdToVarKey.TryRemove(requestId, out varKey);
+            if (!freshRequest && !requestIdToVarKey.TryGetValue(requestId, out varKey)) return;
+            if (varKey == null) return;
 
             var variables = CurrentAircraft?.GetVariables() ?? new Dictionary<string, SimVarDefinition>();
             if (!variables.TryGetValue(varKey, out var varDef) || varDef == null)
@@ -68,7 +70,24 @@ public partial class SimConnectManager
             // value-replacing ((key, oldValue) => currentValue), not a merge of oldValue into the new
             // value, so there is no concurrent-update logic being lost — see task-4.1-report.md.
             lastVariableValues[varKey] = currentValue;
-            _freshReads.Complete(varKey, currentValue);   // a fresh read is satisfied by ANY delivery, changed or not
+            // A fresh read is answered by its OWN request, changed or not — never by an earlier
+            // read's late answer (the read gave up; its answer must not become the next read's),
+            // and never by a panel's ONCE under the data-definition id, which was asked by someone
+            // else at a time the waiter cannot know. A var on its own periodic subscription gets
+            // no ONCE of its own (RequestVariable leaves the subscription alone), so for it the
+            // periodic sample — taken after any waiter registered — is the answer.
+            if (freshRequest)
+            {
+                if (!_freshReads.Complete(varKey, requestId, currentValue))
+                {
+                    Log.Debug("SimConnect",
+                        $"Dropped late fresh-read answer for {varKey} (request {requestId}): the read had already given up; cache updated.");
+                }
+            }
+            else if (FreshReadPolicy.IsOwnSubscription(varDef))
+            {
+                _freshReads.Complete(varKey, currentValue);
+            }
 
             // Suppress SimVarUpdated for unchanged ANNOUNCED CONTINUOUS variables. Previously we
             // fired unconditionally so that displays would refresh; the unintended consequence was

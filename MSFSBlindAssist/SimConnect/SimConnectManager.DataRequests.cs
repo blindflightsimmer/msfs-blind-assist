@@ -83,9 +83,21 @@ public partial class SimConnectManager
     }
 
     // Awaitable fresh reads (see FreshReadWaiters). Completed from the two delivery paths in
-    // SimConnectManager.VarCache.cs — the individual-def response and the continuous batch — and
-    // failed on disconnect / aircraft switch beside forceUpdateVariables.Clear().
-    private readonly FreshReadWaiters _freshReads = new();
+    // SimConnectManager.VarCache.cs — the individual-def response (by request id) and the
+    // continuous batch (a period sample) — and failed on disconnect / aircraft switch beside
+    // forceUpdateVariables.Clear().
+    //
+    // Every fresh read's PERIOD.ONCE goes out under its OWN request id from this range (the
+    // definition id is unchanged), so its answer can be told from an abandoned earlier read's.
+    // Dispatch routes any id >= INDIVIDUAL_VARIABLE_BASE to ProcessIndividualVariableResponse;
+    // data-definition ids start at 1000 and reset per aircraft switch, so a range starting at one
+    // million can never collide with them (pinned by FreshReadWaitersTests). _freshRequestIdToVarKey
+    // maps an issued id to its var key until the ONCE answers (consumed on delivery) or the
+    // connection/aircraft resets (cleared beside requestIdToVarKey) — it is deliberately NOT folded
+    // into requestIdToVarKey, whose contract is exact sync with variableDataDefinitions.
+    internal const int FreshRequestIdBase = 1_000_000;
+    private readonly FreshReadWaiters _freshReads = new(FreshRequestIdBase);
+    private readonly ConcurrentDictionary<int, string> _freshRequestIdToVarKey = new();
 
     /// <summary>
     /// True when a <see cref="ReadFreshAsync"/> of <paramref name="varKey"/> reflects the aircraft
@@ -113,7 +125,8 @@ public partial class SimConnectManager
         bool deliverable = variableDataDefinitions.ContainsKey(varKey) || continuousVariableIndexMap.ContainsKey(varKey);
         if (!deliverable) return Task.FromResult<double?>(null);
         if (FreshReadPolicy.CacheIsFresh(DefinitionOf(varKey))) return Task.FromResult(GetCachedVariableValue(varKey));
-        return _freshReads.WaitAsync(varKey, () => RequestVariable(varKey, forceUpdate: true), timeoutMs, ct);
+        return _freshReads.WaitAsync(varKey,
+            id => RequestVariable(varKey, forceUpdate: true, freshRequestId: id), timeoutMs, ct);
     }
 
     private SimVarDefinition? DefinitionOf(string varKey)
@@ -128,6 +141,17 @@ public partial class SimConnectManager
     /// <param name="varKey">The variable key to request</param>
     /// <param name="forceUpdate">If true, will always fire SimVarUpdated event even if value hasn't changed</param>
     public void RequestVariable(string varKey, bool forceUpdate = false)
+        => RequestVariable(varKey, forceUpdate, freshRequestId: null);
+
+    /// <summary>
+    /// <paramref name="freshRequestId"/>: a <see cref="ReadFreshAsync"/> issues its PERIOD.ONCE
+    /// under this id instead of the data-definition id, so its answer can be told from any other
+    /// delivery of the var (see <see cref="FreshReadWaiters"/>). The id is recorded in
+    /// <see cref="_freshRequestIdToVarKey"/> only once the request is actually issued — a var this
+    /// method issues no ONCE for (batch-covered, or on its own periodic subscription) is answered
+    /// by its next sample instead, exactly as before.
+    /// </summary>
+    private void RequestVariable(string varKey, bool forceUpdate, int? freshRequestId)
     {
         if (!IsConnected || simConnect == null)
         {
@@ -181,12 +205,15 @@ public partial class SimConnectManager
         try
         {
             int dataDefId = variableDataDefinitions[varKey];
-            simConnect.RequestDataOnSimObject((DATA_REQUESTS)dataDefId,
+            int requestId = freshRequestId ?? dataDefId;
+            if (freshRequestId is int freshId) _freshRequestIdToVarKey[freshId] = varKey;
+            simConnect.RequestDataOnSimObject((DATA_REQUESTS)requestId,
                 (DATA_DEFINITIONS)dataDefId, SIMCONNECT_OBJECT_ID_USER,
                 SIMCONNECT_PERIOD.ONCE, SIMCONNECT_DATA_REQUEST_FLAG.DEFAULT, 0, 0, 0);
         }
         catch (Exception ex)
         {
+            if (freshRequestId is int failedId) _freshRequestIdToVarKey.TryRemove(failedId, out _);
             Log.Debug("SimConnect", $"Error requesting variable {varKey}: {ex.Message}");
         }
     }

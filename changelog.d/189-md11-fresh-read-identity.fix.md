@@ -1,0 +1,1 @@
+MD-11: a stutter in the sim during a switch walk can no longer make the walk read the switch where it was before it clicked, so it no longer takes an extra step or learns a control's direction the wrong way round.

@@ -1251,6 +1251,7 @@ public partial class SimConnectManager
         // Clear all internal state dictionaries to ensure clean reconnection
         variableDataDefinitions.Clear();
         requestIdToVarKey.Clear();
+        _freshRequestIdToVarKey.Clear();
         lastVariableValues.Clear();
         continuousVariableIndexMap.Clear();
         for (int i = 0; i < batchVarArrays.Length; i++)
