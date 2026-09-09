@@ -73,4 +73,54 @@ public static class Md11McduKeys
         ' ' => "SP",
         _ => null,
     };
+
+    /// <summary>
+    /// The characters in <paramref name="text"/> that <see cref="ForChar"/> cannot type — each
+    /// once, in order of first appearance. Empty when the whole entry can be keyed.
+    ///
+    /// The window validates a typed entry with this BEFORE it presses anything. A character that
+    /// merely skipped would send the REST of the entry ("N123*" → N123, "KJFK,KLAX" → KJFKKLAX)
+    /// and leave the scratchpad holding text the pilot did not type, with nothing spoken — on
+    /// an aircraft whose screens a blind pilot cannot read, that is indistinguishable from the
+    /// entry having gone in correctly. The caller uppercases first; this does not.
+    /// </summary>
+    public static string UntypeableCharacters(string text)
+    {
+        var seen = new List<char>();
+        foreach (var c in text)
+            if (ForChar(c) == null && !seen.Contains(c)) seen.Add(c);
+        return new string(seen.ToArray());
+    }
+
+    /// <summary>
+    /// The sentence the window speaks when it REFUSES a typed entry because the MCDU keyboard
+    /// lacks a character in it, or null when every character types. Characters are named
+    /// ("comma", "asterisk") rather than echoed, because a screen reader's symbol level decides
+    /// whether a bare "*" is read as "star" or not at all; a character with no name here is
+    /// spoken as itself.
+    /// </summary>
+    public static string? RefusalFor(string text)
+    {
+        var missing = UntypeableCharacters(text);
+        if (missing.Length == 0) return null;
+
+        var names = missing.Select(c => SpokenNames.TryGetValue(c, out var n) ? n : c.ToString()).ToList();
+        var list = names.Count == 1
+            ? names[0]
+            : string.Join(", ", names.Take(names.Count - 1)) + " or " + names[^1];
+        return $"Not sent. The MCDU keyboard has no {list} key.";
+    }
+
+    /// <summary>Spoken names for the punctuation a pilot is most likely to type by habit.</summary>
+    private static readonly Dictionary<char, string> SpokenNames = new()
+    {
+        [','] = "comma", ['*'] = "asterisk", ['#'] = "hash", ['%'] = "percent",
+        [':'] = "colon", [';'] = "semicolon", ['\''] = "apostrophe", ['"'] = "quote",
+        ['('] = "left parenthesis", [')'] = "right parenthesis", ['_'] = "underscore",
+        ['?'] = "question mark", ['!'] = "exclamation mark", ['&'] = "ampersand",
+        ['@'] = "at sign", ['='] = "equals", ['<'] = "less than", ['>'] = "greater than",
+        ['\\'] = "backslash", ['['] = "left bracket", [']'] = "right bracket",
+        ['{'] = "left brace", ['}'] = "right brace", ['|'] = "vertical bar", ['^'] = "caret",
+        ['~'] = "tilde", ['`'] = "backtick", ['$'] = "dollar", ['\t'] = "tab",
+    };
 }

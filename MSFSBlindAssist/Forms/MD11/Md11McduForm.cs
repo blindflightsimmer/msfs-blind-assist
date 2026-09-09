@@ -443,26 +443,41 @@ public class Md11McduForm : Form
     {
         if (e.KeyCode != Keys.Return) return;
 
-        SendTextToMcdu(scratchpadInput.Text.ToUpperInvariant());
-        scratchpadInput.Clear();
+        // A refused entry stays in the box: the refusal names the character to remove, and the
+        // pilot edits and presses Enter again rather than retyping the whole line.
+        if (SendTextToMcdu(scratchpadInput.Text.ToUpperInvariant()))
+            scratchpadInput.Clear();
         e.Handled = true; e.SuppressKeyPress = true;
     }
 
     /// <summary>
     /// Types a string into the scratchpad, one key at a time — the MCDU has no "set text" input.
+    /// Returns false, having pressed NOTHING, when the entry holds a character the MCDU keyboard
+    /// lacks.
+    ///
+    /// The whole entry is validated first (Md11McduKeys.RefusalFor), for the same reason PressKey
+    /// speaks an undeliverable press: skipping the one character and sending the rest would put
+    /// "N123" or "KJFKKLAX" in the scratchpad with nothing spoken, and the pilot cannot see that
+    /// it is not what they typed. Refusing whole and naming the character lets them fix the text.
     ///
     /// No delay here on purpose: Md11EventBus owns pacing (it is a single shared CEVENT slot the
     /// aircraft itself also uses) and serializes every press through one queue. A second pacing
     /// layer in the form would just make typing slower without making it safer. The scratchpad is
     /// 24 columns, so a full line is well inside the bus's queue bound.
     /// </summary>
-    private void SendTextToMcdu(string text)
+    private bool SendTextToMcdu(string text)
     {
-        foreach (char c in text)
+        var refusal = Md11McduKeys.RefusalFor(text);
+        if (refusal != null)
         {
-            var key = Md11McduKeys.ForChar(c);
-            if (key != null) PressKey(key);
+            Log.Debug("MD11", $"MCDU scratchpad entry refused, untypeable '{Md11McduKeys.UntypeableCharacters(text)}' in \"{text}\"");
+            _announcer.Announce(refusal);
+            return false;
         }
+
+        foreach (char c in text)
+            PressKey(Md11McduKeys.ForChar(c)!);
+        return true;
     }
 
     // ---------------------------------------------------------------------------------
