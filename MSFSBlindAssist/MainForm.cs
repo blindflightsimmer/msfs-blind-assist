@@ -1062,6 +1062,14 @@ public partial class MainForm : Form
         coherentPmdgEfbCaptain?.Dispose();
         coherentPmdgEfbFirstOfficer?.Dispose();
 
+        // Same for the MD-11's windows + EFB client (same leak class, same swap-only teardown in
+        // MainForm.AircraftSwitch.cs): the MCDU form's 250 ms poll timer would otherwise tick
+        // through Disconnect()'s DoEvents pump, and the EFB client holds the ONE inspector socket
+        // Coherent allows for that view. Forms first, then the client, as on the swap path.
+        if (md11McduForm != null && !md11McduForm.IsDisposed) md11McduForm.Dispose();
+        if (md11EfbForm != null && !md11EfbForm.IsDisposed) md11EfbForm.Dispose();
+        coherentMd11Efb?.Dispose();
+
         // Clean up 787 forms + the IRS / CAS Coherent clients
         hs787FMCForm?.Dispose();
         hs787IrsClient?.Dispose();
@@ -1086,6 +1094,21 @@ public partial class MainForm : Form
         (currentAircraft as FlyByWireA380Definition)?.StopAllMotion();
         (currentAircraft as FlyByWireA320Definition)?.StopAllMotion();
         currentAircraft?.CancelDeferredFlush();
+
+        // The MD-11 def owns the CEVENT pump and, during a hold-to-test's 3 s, a button the sim
+        // still has pressed. Dispose it here — BEFORE Disconnect() — so its Dispose (which queues
+        // and drains any held test button's UP, then stops the pump; see Md11EventBus.Dispose)
+        // writes into the sim while it is still connected and the MD-11 is still the loaded
+        // aircraft. Otherwise this def, like the iFly SDK client and the PMDG EFB clients above,
+        // was only ever torn down on the aircraft-swap path. The count of buttons actually
+        // released (if any) is logged by Md11EventBus.Dispose itself, under its own [MD11] line —
+        // not repeated here, since a bounded drain can fall short and this line must not claim a
+        // release the drain could still have dropped.
+        if (currentAircraft is TFDiMD11Definition md11ExitDef)
+        {
+            md11ExitDef.Dispose();
+            Log.Debug("MD11", "App exit: definition disposed.");
+        }
 
         // Clean up managers and resources
         hotkeyManager?.Cleanup();
