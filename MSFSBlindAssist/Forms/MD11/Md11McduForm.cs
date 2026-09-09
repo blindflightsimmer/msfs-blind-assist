@@ -211,9 +211,13 @@ public class Md11McduForm : Form
 
         // 250 ms: fast enough that a keypress feels immediate, slow enough to be free. A tick
         // where nothing arrived costs one reference compare.
+        //
+        // NOT started here. ShowForm starts it and OnVisibleChanged stops it on hide, as every
+        // other CDU window in this app does: a hidden window has nobody to read to, and a poll
+        // that kept running after Escape spoke every page title, every MSG lamp and every
+        // scratchpad change over the cockpit for as long as the window stayed closed.
         _pollTimer = new System.Windows.Forms.Timer { Interval = 250 };
         _pollTimer.Tick += (s, e) => Poll();
-        _pollTimer.Start();
     }
 
     private void SetupEventHandlers()
@@ -227,37 +231,54 @@ public class Md11McduForm : Form
             _memory.RememberCursor(_unit, CursorRow());
             _rows = null;
             _unit = (Md11McduUnit)unitSelector.SelectedIndex;
-            // Re-render the newly selected unit at once rather than waiting for the next tick.
-            // Suppress the title announce: the screen reader already spoke the combo change, and
-            // re-announcing the page title on top of it is exactly the double-announce the panel
-            // rules forbid. Adopt the new title silently so a LATER genuine page change still fires.
-            // _screen is the PREVIOUS unit's page: left in place, Render drew it under the new
-            // unit's name and the next poll then announced the new unit's title on top of the
-            // combo — the double-announce this handler exists to prevent.
-            _screen = null;
-            _lastRendered = null;
-
-            // The previous unit's pending scratchpad announce is void: fired now, it would read
-            // the new unit's pad against the old unit's text and could say "Scratchpad cleared"
-            // for a scratchpad nobody cleared. Re-baseline on what the new unit shows — and the
-            // annunciator flags likewise, or a unit whose MSG was already lit would announce
-            // "MSG" as though it had just come on.
-            _scratchpadDebounceTimer?.Stop();
-            var switched = _sim.Md11McduDataManager?.GetScreen(_unit);
-            _lastAnnouncedScratchpad = switched?.Scratchpad.Trim() ?? "";
-            _lastAnnouncedFlags = switched == null ? "" : FlagsOf(switched);
-
-            // Render at once only when the new unit has CONTENT. A blank or never-delivered unit
-            // waits for the next 250 ms tick, whose blank-hold judgement (Md11McduPresence.Decide)
-            // this direct call bypasses — a unit caught mid-erase would otherwise speak a spurious
-            // "blank" some 300 ms before its page appears.
-            if (Md11McduPresence.Classify(switched) == Md11McduPresenceState.Content)
-                Render(silentTitle: true);
+            // Re-render the newly selected unit at once rather than waiting for the next tick,
+            // with the title announce suppressed: the screen reader already spoke the combo
+            // change, and re-announcing the page title on top of it is exactly the
+            // double-announce the panel rules forbid. ResyncToSelectedUnit adopts the new unit's
+            // title silently so a LATER genuine page change still fires.
+            ResyncToSelectedUnit();
         };
 
         scratchpadInput.KeyDown += ScratchpadInput_KeyDown;
         mcduDisplay.KeyDown += McduDisplay_KeyDown;
         this.KeyDown += Form_KeyDown;
+    }
+
+    /// <summary>
+    /// Adopts the selected unit's CURRENT screen as the baseline without speaking any of it, and
+    /// draws it at once when it has content.
+    ///
+    /// Shared by the unit switch and by <see cref="ShowForm"/> — the two moments the window starts
+    /// following a screen it was not following a moment ago. After a switch the cached page
+    /// belongs to the PREVIOUS unit; after a re-show it is whatever was there when the poll
+    /// stopped on hide. In both, the first thing spoken must be a change that happens AFTER this
+    /// moment, never a replay of what changed in between: the screen reader reads the window and
+    /// the focused row, and the page title is row 0.
+    /// </summary>
+    private void ResyncToSelectedUnit()
+    {
+        // _screen / _lastRendered are the page the window WAS following, not the one it is about
+        // to read. Left in place on a unit switch, Render drew the previous unit's page under the
+        // new unit's name and the next poll then announced the new unit's title on top of the
+        // combo — the double-announce the unit switch exists to prevent.
+        _screen = null;
+        _lastRendered = null;
+
+        // A pending scratchpad announce is void: fired now, it would read the current pad against
+        // stale text and could say "Scratchpad cleared" for a scratchpad nobody cleared.
+        // Re-baseline on what the unit shows — and the annunciator flags likewise, or a unit whose
+        // MSG was already lit would announce "MSG" as though it had just come on.
+        _scratchpadDebounceTimer?.Stop();
+        var current = _sim.Md11McduDataManager?.GetScreen(_unit);
+        _lastAnnouncedScratchpad = current?.Scratchpad.Trim() ?? "";
+        _lastAnnouncedFlags = current == null ? "" : FlagsOf(current);
+
+        // Render at once only when the unit has CONTENT. A blank or never-delivered unit waits
+        // for the next 250 ms tick, whose blank-hold judgement (Md11McduPresence.Decide) this
+        // direct call bypasses — a unit caught mid-erase would otherwise speak a spurious "blank"
+        // some 300 ms before its page appears.
+        if (Md11McduPresence.Classify(current) == Md11McduPresenceState.Content)
+            Render(silentTitle: true);
     }
 
     // ---------------------------------------------------------------------------------
@@ -731,6 +752,36 @@ public class Md11McduForm : Form
     public void ShowForm()
     {
         previousWindow = GetForegroundWindow();
+
+        // Only when the window was actually hidden. Shift+M on an already-open window is a
+        // re-show: it is following the feed already, so re-syncing there would cancel a
+        // scratchpad announce the pilot's own typing had legitimately armed, and would log a
+        // "poll started" for a poll that never stopped.
+        if (!Visible)
+        {
+            // Catch up on whatever changed while the window was hidden WITHOUT speaking it, and
+            // only then start following the feed. The poll was stopped on hide
+            // (OnVisibleChanged), so the page the pilot missed is read from the list under their
+            // cursor, not replayed as announcements over the screen reader's own read.
+            var before = _memory.LastTitle(_unit);
+            ResyncToSelectedUnit();
+            _pollTimer?.Start();
+            Log.Debug("MD11", $"MCDU window shown: poll started ({_unit})");
+
+            // Which page this IS is information the pilot had no other way to get: the re-sync is
+            // silent by design, and a first open — or a re-show onto a page the FMS moved to while
+            // the window was closed — would otherwise land the cursor on an arbitrary content
+            // line. Put it on the title row instead, so the screen reader's own read of the
+            // focused row names the page. No app announcement: a same-page re-show keeps the
+            // row-identity restore and puts the pilot back on the line they left.
+            if (_rows != null
+                && !Md11McduTitle.SamePage(before, _memory.LastTitle(_unit))
+                && mcduDisplay.Items.Count > 0)
+            {
+                mcduDisplay.SelectedIndex = 0;
+            }
+        }
+
         Show();
         BringToFront();
         Activate();
@@ -738,6 +789,20 @@ public class Md11McduForm : Form
         TopMost = false;
         this.ActiveControl = mcduDisplay;
         mcduDisplay.Focus();
+    }
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (Visible) return;
+
+        // Nothing to read to while hidden. Stop BOTH timers: the poll, and the scratchpad
+        // debounce a last Render may have armed — left running it fired 300 ms after the hide
+        // and spoke the scratchpad to a window nobody had open. ShowForm restarts the poll after
+        // re-syncing silently, so nothing that changed in between is replayed.
+        _pollTimer?.Stop();
+        _scratchpadDebounceTimer?.Stop();
+        Log.Debug("MD11", "MCDU window hidden: poll stopped");
     }
 
     protected override void Dispose(bool disposing)
