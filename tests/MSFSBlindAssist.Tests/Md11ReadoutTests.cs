@@ -1,3 +1,4 @@
+using MSFSBlindAssist.Aircraft;
 using MSFSBlindAssist.Aircraft.MD11;
 
 namespace MSFSBlindAssist.Tests;
@@ -14,6 +15,7 @@ namespace MSFSBlindAssist.Tests;
 public class Md11ReadoutTests
 {
     private static readonly Md11ControlMap Map = Md11ControlMap.Load();
+    private static readonly TFDiMD11Definition Def = new();
 
     /// <summary>
     /// The gear lever is a 0-25 TRAVEL, not a boolean: CenterInstrument.xml reads
@@ -27,7 +29,7 @@ public class Md11ReadoutTests
     [Fact]
     public void GearLever_MapClaimsBooleanButTheAircraftUsesAThreshold()
     {
-        var c = Map.Controls.FirstOrDefault(x => x.NodeId == "MD11_MIP_GEAR_SW");
+        var c = Map.Controls.FirstOrDefault(x => x.NodeId == Md11GearLever.Key);
 
         Assert.NotNull(c);
         // The map's claim — documented as WRONG. If a regenerated map ever fixes this, this
@@ -38,7 +40,8 @@ public class Md11ReadoutTests
 
     /// <summary>
     /// 25 (parked, lever down) and 0 (up) both classify correctly under the aircraft's rule; 10
-    /// (mid-travel) is where a naive boolean test diverges from the aircraft.
+    /// (mid-travel) is where a naive boolean test diverges from the aircraft. The hotkey read-out
+    /// reads through <see cref="Md11GearLever.IsDown"/>, so this pins the rule it speaks.
     /// </summary>
     [Theory]
     [InlineData(25, true)]    // live value, parked
@@ -49,7 +52,54 @@ public class Md11ReadoutTests
     public void GearLever_ThresholdMatchesTheAircraftsOwnTooltip(double travel, bool expectDown)
     {
         // TFDi's rule, verbatim: (L:MD11_MIP_GEAR_SW) 20 >=
-        Assert.Equal(expectDown, travel >= 20);
+        Assert.Equal(20, Md11GearLever.DownThreshold);
+        Assert.Equal(expectDown, Md11GearLever.IsDown(travel));
+    }
+
+    /// <summary>
+    /// The Landing Gear panel's combo is keyed on the map's {0 Up, 1 Down}, and MainForm selects
+    /// an item by an EXACT key match on the value it holds — so the parked lever's 25 selected
+    /// nothing and the combo read "Gear Lever" with no value. The definition's value→key
+    /// classifier (SimVarDefinition.ValueToDescriptionKey, the seam the combo renderer looks up
+    /// through) must map every travel onto a key the map has, by the SAME threshold the read-out
+    /// uses, so the combo shows the right item and the walk's gate-down re-sync can land.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 0, "Up")]
+    [InlineData(10, 0, "Up")]      // mid-travel: still up, as the aircraft says
+    [InlineData(19.9, 0, "Up")]
+    [InlineData(20, 1, "Down")]    // exactly at the threshold
+    [InlineData(25, 1, "Down")]    // live value, parked
+    public void GearLever_PanelComboKeyFollowsTheThreshold(double travel, double expectKey, string expectLabel)
+    {
+        Assert.Equal(expectKey, Md11GearLever.DescriptionKey(travel));
+
+        // Through the real definition: the classifier is wired onto the gear lever's variable and
+        // lands on a key the generated map actually carries, with the map's own label.
+        var def = Def.GetVariables()[Md11GearLever.Key];
+        double key = def.DescriptionKeyFor(travel);
+        Assert.Equal(expectKey, key);
+        Assert.True(def.ValueDescriptions.ContainsKey(key), $"travel {travel} classified onto key {key}, which the map does not carry");
+        Assert.Equal(expectLabel, def.ValueDescriptions[key]);
+    }
+
+    /// <summary>
+    /// The classifier is the gear lever's alone: every other MD-11 combo keeps the raw value as its
+    /// key (the speedbrake lever's travel detents are exact keys and must stay that way).
+    /// </summary>
+    [Fact]
+    public void OnlyTheGearLever_ClassifiesItsValue()
+    {
+        var classified = Def.GetVariables()
+            .Where(kv => kv.Value.ValueToDescriptionKey != null)
+            .Select(kv => kv.Key)
+            .ToList();
+        Assert.Equal(new[] { Md11GearLever.Key }, classified);
+
+        // The concrete counter-example: an unclassified var's key IS its value.
+        var lever = Def.GetVariables()[Md11SpeedbrakeSystem.LeverKey];
+        Assert.Null(lever.ValueToDescriptionKey);
+        Assert.Equal(17.5, lever.DescriptionKeyFor(17.5));
     }
 
     /// <summary>

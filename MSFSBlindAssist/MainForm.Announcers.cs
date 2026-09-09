@@ -1204,13 +1204,16 @@ public partial class MainForm
                     varName.StartsWith("ND_FILTER_", StringComparison.Ordinal) ||
                     varName.EndsWith("_DETENT", StringComparison.Ordinal);
 
-                // Find the matching value in the combo box
+                // Find the matching value in the combo box — through the definition's value→key
+                // classifier (identity unless set), so a travel-valued var keyed on positions
+                // (the MD-11 gear lever) re-syncs like any other combo.
                 if (!isSyntheticSelector && currentAircraft.GetVariables().ContainsKey(varName))
                 {
                     var varDef = currentAircraft.GetVariables()[varName];
-                    if (varDef.ValueDescriptions.ContainsKey(value))
+                    double key = varDef.DescriptionKeyFor(value);
+                    if (varDef.ValueDescriptions.ContainsKey(key))
                     {
-                        string description = varDef.ValueDescriptions[value];
+                        string description = varDef.ValueDescriptions[key];
                         int index = combo.Items.IndexOf(description);
                         if (index >= 0 && combo.SelectedIndex != index)
                         {

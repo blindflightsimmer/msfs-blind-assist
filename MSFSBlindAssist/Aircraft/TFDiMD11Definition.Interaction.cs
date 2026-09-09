@@ -1214,10 +1214,10 @@ public partial class TFDiMD11Definition
             // generator mis-reading the %{if}: the COMPARISON yields the boolean, not the var.
             case HotkeyAction.ReadGear:
             {
-                var g = simConnect.GetCachedVariableValue("MD11_MIP_GEAR_SW");
+                var g = simConnect.GetCachedVariableValue(Md11GearLever.Key);
                 announcer.AnnounceImmediate(g == null
                     ? "Gear position unavailable"
-                    : g.Value >= GearLeverDownThreshold ? "Gear down" : "Gear up");
+                    : Md11GearLever.IsDown(g.Value) ? "Gear down" : "Gear up");
                 return true;
             }
 
@@ -1334,13 +1334,6 @@ public partial class TFDiMD11Definition
         // is the same as last time.
         announcer.Announce(_flaps.DescribePosition(_flapRng, double.IsNaN(_dialRaw) ? 0 : _dialRaw));
     }
-
-    /// <summary>
-    /// The gear lever's travel (0-25) at or above which the aircraft calls it DOWN. TFDi's own
-    /// threshold, from the Gear Lever tooltip in CenterInstrument.xml — not a guess, and not the
-    /// 0/1 the control map's value_map claims.
-    /// </summary>
-    private const double GearLeverDownThreshold = 20;
 
     /// <summary>
     /// Fuel, by tank plus a total.

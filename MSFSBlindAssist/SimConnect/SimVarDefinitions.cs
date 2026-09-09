@@ -110,6 +110,25 @@ public class SimVarDefinition
     /// </summary>
     public IReadOnlyList<string>? StateVariables { get; set; }
 
+    /// <summary>
+    /// Maps a raw value onto the <see cref="ValueDescriptions"/> KEY that describes it, for a
+    /// variable whose keys are positions but whose value is a continuous travel — the TFDi MD-11
+    /// gear lever: keys {0 Up, 1 Down} from the control map, value 0-25 with Down at &gt;= 20. Null
+    /// (the default) means the raw value IS the key. Consulted by the panel COMBO renderer
+    /// (build-time seed and refresh) through <see cref="DescriptionKeyFor"/>, and nowhere else:
+    /// a pick still writes the KEY, and the raw value still reaches every other reader (the
+    /// SimConnect cache, hotkey read-outs, the MD-11 walker) untouched.
+    ///
+    /// Known limit: a combo pick caches its own KEY as the value until the next delivery, so a
+    /// classifier whose key space overlaps its value space can mislabel a combo REBUILT inside
+    /// that window (the gear lever's Down key, 1, classifies as Up — travel 1 genuinely is up).
+    /// It heals on the next real delivery; do not try to make the classifier idempotent on keys.
+    /// </summary>
+    public Func<double, double>? ValueToDescriptionKey { get; set; }
+
+    /// <summary>The ValueDescriptions key for <paramref name="value"/>: through <see cref="ValueToDescriptionKey"/> when set, else the value itself.</summary>
+    public double DescriptionKeyFor(double value) => ValueToDescriptionKey?.Invoke(value) ?? value;
+
     // ----- ARINC429 auto-decode -----
     // When true, the raw double is a FlyByWire ARINC429 word (numeric-truncate to u64; low
     // 32 bits = IEEE-754 float in engineering units, bits 32-33 = SSM). The generic decode

@@ -611,9 +611,9 @@ public partial class MainForm
                             Log.Debug("MainForm", $"{varKey} received value: {currentValue}");
                         }
 
-                        if (varDef.ValueDescriptions.ContainsKey(currentValue))
+                        if (varDef.ValueDescriptions.ContainsKey(varDef.DescriptionKeyFor(currentValue)))
                         {
-                            string description = varDef.ValueDescriptions[currentValue];
+                            string description = varDef.ValueDescriptions[varDef.DescriptionKeyFor(currentValue)];
                             combo.SelectedItem = description;
 
                             // Additional debug for landing lights
@@ -800,10 +800,13 @@ public partial class MainForm
                             combo.Items.Add(kvp.Value);
                     }
                     
-                    // Set initial value from sim if we have it
+                    // Set initial value from sim if we have it. The lookup goes through the
+                    // definition's value→key classifier (identity unless set): a var whose value
+                    // is a travel but whose keys are positions (the MD-11 gear lever, 0-25 against
+                    // {0 Up, 1 Down}) would otherwise never match and the combo would open blank.
                     if (currentSimVarValues.ContainsKey(varKey))
                     {
-                        double currentValue = currentSimVarValues[varKey];
+                        double currentValue = varDef.DescriptionKeyFor(currentSimVarValues[varKey]);
                         if (varDef.ValueDescriptions.ContainsKey(currentValue))
                         {
                             string description = varDef.ValueDescriptions[currentValue];

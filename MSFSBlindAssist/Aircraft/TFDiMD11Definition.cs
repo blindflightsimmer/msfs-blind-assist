@@ -517,7 +517,7 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                 string readVar = c.NodeId == Md11FlapSystem.DialKey ? c.NodeId
                     : c.NodeId == Md11SpeedbrakeSystem.LeverKey ? Md11SpeedbrakeSystem.TravelVar
                     : c.StateVar;
-                return new SimVarDefinition
+                var def = new SimVarDefinition
                 {
                     Name = readVar,
                     DisplayName = label,
@@ -542,6 +542,13 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                     // button beside the row. See Md11ExportBacked.
                     RenderAsReadOnlyStatus = values.Count == 0 || Md11ExportBacked.IsReadOnly(c, _exportVars),
                 };
+                // The gear lever's var is its 0-25 TRAVEL against the map's {0 Up, 1 Down}, and
+                // MainForm's combo lookup is an exact key match — parked at 25 the combo selected
+                // nothing. Classify the travel onto the map's keys by TFDi's own threshold, the
+                // same rule the gear hotkey read-out uses (Md11GearLever). The pick still writes
+                // the key, which is what the walker's two-position toggle resolves against.
+                if (c.NodeId == Md11GearLever.Key) def.ValueToDescriptionKey = Md11GearLever.DescriptionKey;
+                return def;
             }
 
             default:
