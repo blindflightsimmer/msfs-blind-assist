@@ -4,6 +4,7 @@ using MSFSBlindAssist.Aircraft;
 using MSFSBlindAssist.Aircraft.MD11;
 using MSFSBlindAssist.SimConnect;
 using MSFSBlindAssist.SimConnect.MD11;
+using MSFSBlindAssist.Utils.Logging;
 
 namespace MSFSBlindAssist.Forms.MD11;
 
@@ -282,6 +283,21 @@ public class Md11McduForm : Form
             PressKey("CLR");
             e.Handled = true; e.SuppressKeyPress = true;
         }
+        // Delete = clear the WHOLE scratchpad. Backspace is a single CLR (one character); Delete is
+        // the accessible shortcut for "empty it", which the hardware has no single key for. Scoped
+        // to the display for the same reason Backspace is: bound form-wide (KeyPreview), Delete
+        // pressed inside the MCDU Input box never reached the TextBox — a forward-delete while
+        // editing typed text fired the CLR loop at the aircraft's scratchpad and announced
+        // "Scratchpad cleared" over the edit. The loop runs as a Task with a fault continuation so
+        // anything it throws after its first await (a bus disposed by an aircraft switch mid-loop)
+        // lands in debug.log instead of the unhandled-exception handler.
+        else if (e.KeyCode == Keys.Delete)
+        {
+            ClearScratchpadAsync().ContinueWith(
+                t => Log.Error("MD11", "Scratchpad clear faulted", t.Exception?.GetBaseException()),
+                TaskContinuationOptions.OnlyOnFaulted);
+            e.Handled = true; e.SuppressKeyPress = true;
+        }
         // Plain Right Arrow pages forward, as on the FBW form — only while the screen has focus
         // (the scratchpad box needs Left/Right for its caret); Alt+Right still works window-wide.
         // Plain Left stays unbound on purpose: the MD-11 has no PREV PAGE key, and a ListBox
@@ -302,7 +318,7 @@ public class Md11McduForm : Form
     /// is what makes it safe for both cases: typed text (N characters → N presses) and a scratchpad
     /// MESSAGE (one press clears it), without over-deleting into whatever the FMS shows next.
     /// </summary>
-    private async void ClearScratchpad()
+    private async Task ClearScratchpadAsync()
     {
         var manager = _sim.Md11McduDataManager;
         if (manager == null) { _announcer.Announce("Not connected"); return; }
@@ -394,14 +410,6 @@ public class Md11McduForm : Form
         if (e.Alt && e.Shift && e.KeyCode == Keys.F)
         {
             PressKey("SEC_FPLN");
-            e.Handled = true; e.SuppressKeyPress = true; return;
-        }
-
-        // Delete = clear the WHOLE scratchpad. Backspace is a single CLR (one character); Delete is
-        // the accessible shortcut for "empty it", which the hardware has no single key for.
-        if (e.KeyCode == Keys.Delete)
-        {
-            ClearScratchpad();
             e.Handled = true; e.SuppressKeyPress = true; return;
         }
 
