@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Serialization;
+﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 using MSFSBlindAssist.Services;
 
 namespace MSFSBlindAssist.Settings;
@@ -542,12 +543,13 @@ public class UserSettings
         }
 
     /// <summary>
-    /// Rebuilds the six *DisabledMonitorVariables HashSet sidecars from their backing Lists.
-    /// Every known mutation of those lists (the Fenix/PMDG/A380/HS787/A32NX/iFly monitor-manager
+    /// Rebuilds the seven *DisabledMonitorVariables HashSet sidecars from their backing Lists.
+    /// Every known mutation of those lists (the Fenix/PMDG/A380/HS787/A32NX/iFly/MD-11 monitor-manager
     /// forms' ItemCheck handlers, FlyByWireA380Definition's ToggleECAMMonitoring hotkey, and
     /// SettingsManager.SeedFenixMonitorDefaults) is immediately followed by SettingsManager.Save,
     /// which calls this — so a mutation is never visible to the List without also being visible
-    /// to the HashSet. Also called after deserializing settings from disk (SettingsManager.Load).
+    /// to the HashSet. Also called after deserializing settings from disk (SettingsManager.Load)
+    /// and after the deserialization inside <see cref="Clone"/>.
     /// </summary>
     public void RebuildDisabledMonitorVariableCaches()
     {
@@ -563,108 +565,21 @@ public class UserSettings
     /// <summary>
     /// Creates a copy of this settings instance.
     /// </summary>
+    /// <remarks>
+    /// A serializer round-trip through the SAME options SettingsManager persists with, so a
+    /// clone is exactly what Save → Load would produce: every persisted property is copied by
+    /// construction (the serializer materialises a fresh List&lt;string&gt; per list — a deep copy),
+    /// and a property added later needs no matching line here. This replaced a hand-written
+    /// member-by-member initializer that had silently dropped ten properties — the MD-11 monitor
+    /// mutes and learned step polarity among them — because nothing enforced its completeness.
+    /// The [JsonIgnore] *Set sidecars are runtime-only and are rebuilt from their lists, exactly
+    /// as SettingsManager.Load does after deserializing.
+    /// </remarks>
     public UserSettings Clone()
     {
-        var clone = new UserSettings
-        {
-            AnnouncementMode = AnnouncementMode,
-            AnnounceTimeWithSeconds = AnnounceTimeWithSeconds,
-            HandFlyFeedbackMode = HandFlyFeedbackMode,
-            HandFlyToneVolume = HandFlyToneVolume,
-            HandFlyWaveType = HandFlyWaveType,
-            HandFlyMonitorHeading = HandFlyMonitorHeading,
-            HandFlyMonitorVerticalSpeed = HandFlyMonitorVerticalSpeed,
-            HandFlyAnnouncementIntervalMs = HandFlyAnnouncementIntervalMs,
-            VisualGuidanceToneWaveform = VisualGuidanceToneWaveform,
-            VisualGuidanceToneVolume = VisualGuidanceToneVolume,
-            VisualGuidanceCurrentToneWaveform = VisualGuidanceCurrentToneWaveform,
-            VisualGuidanceCurrentToneVolume = VisualGuidanceCurrentToneVolume,
-            VisualGuidanceHardPanTone = VisualGuidanceHardPanTone,
-            TakeoffAssistToneWaveform = TakeoffAssistToneWaveform,
-            TakeoffAssistToneVolume = TakeoffAssistToneVolume,
-            TakeoffAssistMuteCenterlineAnnouncements = TakeoffAssistMuteCenterlineAnnouncements,
-            TakeoffAssistInvertPanning = TakeoffAssistInvertPanning,
-            TakeoffAssistSteerTowardTone = TakeoffAssistSteerTowardTone,
-            TakeoffAssistToneConventionMigrated = TakeoffAssistToneConventionMigrated,
-            TakeoffAssistHardPanTone = TakeoffAssistHardPanTone,
-            TakeoffAssistLegacyMode = TakeoffAssistLegacyMode,
-            TakeoffAssistHeadingToneThreshold = TakeoffAssistHeadingToneThreshold,
-            TakeoffAssistEnableCallouts = TakeoffAssistEnableCallouts,
-            TakeoffAssistAutoActivateOnLineup = TakeoffAssistAutoActivateOnLineup,
-            HandFlyAutoActivateOnTakeoff = HandFlyAutoActivateOnTakeoff,
-            SimulatorVersion = SimulatorVersion,
-            LastAircraft = LastAircraft,
-            GeoNamesApiUsername = GeoNamesApiUsername,
-            NearestCityAnnouncementInterval = NearestCityAnnouncementInterval,
-            SimbriefUsername = SimbriefUsername,
-            SayIntentionsAutoStartTaxiGuidance = SayIntentionsAutoStartTaxiGuidance,
-            IFlyEfbPort = IFlyEfbPort,
-            AiProvider = AiProvider,
-            GeminiApiKey = GeminiApiKey,
-            GeminiSearchGrounding = GeminiSearchGrounding,
-            GeminiModel = GeminiModel,
-            ClaudeApiKey = ClaudeApiKey,
-            ClaudeModel = ClaudeModel,
-            ClaudeWebSearch = ClaudeWebSearch,
-            NearbyCitiesRange = NearbyCitiesRange,
-            RegionalCitiesRange = RegionalCitiesRange,
-            MajorCitiesRange = MajorCitiesRange,
-            LandmarksRange = LandmarksRange,
-            AirportsRange = AirportsRange,
-            TerrainRange = TerrainRange,
-            WaterBodiesRange = WaterBodiesRange,
-            TouristLandmarksRange = TouristLandmarksRange,
-            MaxNearbyPlacesToShow = MaxNearbyPlacesToShow,
-            MaxMajorCitiesToShow = MaxMajorCitiesToShow,
-            MaxAirportsToShow = MaxAirportsToShow,
-            MaxTerrainFeaturesToShow = MaxTerrainFeaturesToShow,
-            MaxWaterBodiesToShow = MaxWaterBodiesToShow,
-            MaxTouristLandmarksToShow = MaxTouristLandmarksToShow,
-            MajorCityPopulationThreshold = MajorCityPopulationThreshold,
-            MajorCityAPIThreshold = MajorCityAPIThreshold,
-            DistanceUnits = DistanceUnits,
-            GroundDistanceUnit = GroundDistanceUnit,
-            GroundTrafficUseMetres = GroundTrafficUseMetres,
-            FenixDisabledMonitorVariables = new List<string>(FenixDisabledMonitorVariables),
-            FenixMonitorDefaultsSeeded = FenixMonitorDefaultsSeeded,
-            PMDGDisabledMonitorVariables = new List<string>(PMDGDisabledMonitorVariables),
-            A380DisabledMonitorVariables = new List<string>(A380DisabledMonitorVariables),
-            HS787DisabledMonitorVariables = new List<string>(HS787DisabledMonitorVariables),
-            A32NXDisabledMonitorVariables = new List<string>(A32NXDisabledMonitorVariables),
-            IFlyDisabledMonitorVariables = new List<string>(IFlyDisabledMonitorVariables),
-            AltitudeCalloutsEnabled = AltitudeCalloutsEnabled,
-            MCDUUseAlternateLSKKeys = MCDUUseAlternateLSKKeys,
-            PMDGEnhancedDistanceMode = PMDGEnhancedDistanceMode,
-            ActiveSkyEnabled = ActiveSkyEnabled,
-            WeatherAutoAnnounceEnabled = WeatherAutoAnnounceEnabled,
-            WeatherAutoAnnounceIntervalMinutes = WeatherAutoAnnounceIntervalMinutes,
-            SigmetProximityAlertsEnabled = SigmetProximityAlertsEnabled,
-            PirepProximityAlertsEnabled = PirepProximityAlertsEnabled,
-            SigmetProximityRangeNm = SigmetProximityRangeNm,
-            DecodeWeatherAdvisories = DecodeWeatherAdvisories,
-            AnnounceTurbulenceEnabled = AnnounceTurbulenceEnabled,
-            AnnounceIcingEnabled = AnnounceIcingEnabled,
-            AnnounceRouteAdvisoriesEnabled = AnnounceRouteAdvisoriesEnabled,
-            RouteAdvisoryProximityNm = RouteAdvisoryProximityNm,
-            TaxiGuidanceToneWaveform = TaxiGuidanceToneWaveform,
-            TaxiGuidanceToneVolume = TaxiGuidanceToneVolume,
-            GuidanceToneDeviceId = GuidanceToneDeviceId,
-            GuidanceToneDeviceName = GuidanceToneDeviceName,
-            TaxiGuidanceInvertSteeringTone = TaxiGuidanceInvertSteeringTone,
-            TaxiGuidanceHardPanTone = TaxiGuidanceHardPanTone,
-            TaxiGuidanceAnnounceCrossings = TaxiGuidanceAnnounceCrossings,
-            TaxiGuidanceGroundSpeedAnnounceInterval = TaxiGuidanceGroundSpeedAnnounceInterval,
-            TaxiAugmentEnabled = TaxiAugmentEnabled,
-            TakeoffAssistGroundSpeedAnnounceInterval = TakeoffAssistGroundSpeedAnnounceInterval,
-            Hs787CommunityFolderOverride = Hs787CommunityFolderOverride,
-            Hs787SimVersionOverride = Hs787SimVersionOverride,
-            GsxBackgroundMonitoring = GsxBackgroundMonitoring,
-            GsxAutoSelectGateOnRoute = GsxAutoSelectGateOnRoute,
-            DockingGuidanceEnabled = DockingGuidanceEnabled,
-            DockingBeepWaveform = DockingBeepWaveform,
-            DockingBeepVolume = DockingBeepVolume,
-            DockingSpeedCalloutsEnabled = DockingSpeedCalloutsEnabled
-        };
+        string json = JsonSerializer.Serialize(this, SettingsManager.JsonOptions);
+        var clone = JsonSerializer.Deserialize<UserSettings>(json, SettingsManager.JsonOptions)
+            ?? throw new InvalidOperationException("UserSettings round-trip produced no object.");
         clone.RebuildDisabledMonitorVariableCaches();
         return clone;
     }
