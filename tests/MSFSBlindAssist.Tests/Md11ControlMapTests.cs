@@ -79,6 +79,25 @@ public class Md11ControlMapTests
     }
 
     /// <summary>
+    /// A guard cover's position is its OWN L:var (the node id TFDi animates the cover on), never
+    /// the control it covers. Four covers' tooltips read the covered button/switch for their
+    /// Open/Closed wording (Fuel Dump, Fuel Dump Emergency Stop, Center Gear Uplock, Main Cargo
+    /// Door Arm) and the generator's "first L:var in the tooltip" rule took that as the cover's
+    /// state: the auto-open then read "valve closed" as "cover closed" and lowered an OPEN cover
+    /// onto the press. The generator now pins every guard to its own node id; this pins the map.
+    /// </summary>
+    [Fact]
+    public void EveryGuard_ReadsItsOwnCover_NotTheControlItCovers()
+    {
+        var offenders = Map.Controls
+            .Where(c => c.Kind == Md11Kinds.Guard && !string.Equals(c.StateVar, c.NodeId, StringComparison.Ordinal))
+            .Select(c => $"{c.NodeId} reads {c.StateVar}")
+            .ToList();
+
+        Assert.Empty(offenders);
+    }
+
+    /// <summary>
     /// The MD-11F is what is loaded most often for cargo ops, and its cabin/cargo controls are the
     /// ones most likely to differ. This pins that the freighter-side controls the map claims are
     /// actually present, so a variant-specific panel cannot quietly become empty.

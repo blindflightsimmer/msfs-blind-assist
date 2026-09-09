@@ -295,6 +295,30 @@ class StateTests(unittest.TestCase):
         self.assertEqual({"var": "MD11_OVHD_ELEC_BATT_BT", "on": "On", "off": "Off"}, out["MD11_OVHD_ELEC_BATT_BT"]["state"]["latch"])
         self.assertEqual({"var": "MD11_OVHD_ELEC_BATT_GRD", "on": "Open", "off": "Closed"}, out["MD11_OVHD_ELEC_BATT_GRD"]["state"]["latch"])
 
+    def test_a_guard_whose_tooltip_reads_the_covered_button_still_reads_its_own_cover(self):
+        # TFDi's Fuel Dump cover tooltip reads the BUTTON's var for its Open/Closed wording, so
+        # parse_tooltip hands back MD11_OVHD_FUEL_DUMP_BT (that is the parser doing its job). A
+        # guard's position is its own node id — the var TFDi animates the cover on — never the
+        # control under it: keyed on the button, the auto-open read "valve closed" as "cover
+        # closed" and lowered an open cover onto the press. Same shape on the Fuel Dump
+        # Emergency Stop, Center Gear Uplock and Main Cargo Door Arm covers.
+        label, state_var, value_map = g.parse_tooltip(
+            "Fuel Dump (%((L:MD11_OVHD_FUEL_DUMP_BT))%{if}Open%{else}Closed%{end})")
+        self.assertEqual("MD11_OVHD_FUEL_DUMP_BT", state_var)
+        grd = ctl("MD11_OVHD_FUEL_DUMP_GRD", kind="guard", label=label, state_var=state_var,
+                  value_map=value_map, events={"LEFT_BUTTON_DOWN": 2})
+        dump = ctl("MD11_OVHD_FUEL_DUMP_BT", label="Fuel Dump", guard_id="MD11_OVHD_FUEL_DUMP_GRD",
+                   value_map={"1": "Open", "0": "Closed"}, events={"LEFT_BUTTON_DOWN": 1})
+        out = {c["node_id"]: c for c in g.apply_state(g.finalize_controls([dump, grd]))}
+        self.assertEqual("MD11_OVHD_FUEL_DUMP_GRD", out["MD11_OVHD_FUEL_DUMP_GRD"]["state_var"])
+        self.assertEqual({}, out["MD11_OVHD_FUEL_DUMP_GRD"]["value_map"])
+        self.assertEqual({"var": "MD11_OVHD_FUEL_DUMP_GRD", "on": "Open", "off": "Closed"},
+                         out["MD11_OVHD_FUEL_DUMP_GRD"]["state"]["latch"])
+        # The button under it is untouched: its own var, its own latch words.
+        self.assertEqual("MD11_OVHD_FUEL_DUMP_BT", out["MD11_OVHD_FUEL_DUMP_BT"]["state_var"])
+        self.assertEqual({"var": "MD11_OVHD_FUEL_DUMP_BT", "on": "Open", "off": "Closed"},
+                         out["MD11_OVHD_FUEL_DUMP_BT"]["state"]["latch"])
+
     def test_fault_only_button_is_normal_when_dark(self):
         self.assertEqual("Normal", g.dark_text(["FAULT", "DISAG"], "X"))
         self.assertEqual("On", g.dark_text(["OFF", "LOW"], "X"))

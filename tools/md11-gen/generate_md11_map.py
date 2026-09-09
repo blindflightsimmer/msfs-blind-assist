@@ -582,6 +582,17 @@ def finalize_controls(controls):
         # 3. Areas for raw 3D names and the misplaced options.
         if nid in AREA_FIXES:
             c["area"] = AREA_FIXES[nid]
+        # 3b. A guard cover's position is its OWN L:var — TFDi animates the cover on its node id
+        #     and the aircraft's state files carry it (Aircraft::vars->MD11_OVHD_FUEL_DUMP_GRD).
+        #     Four covers' tooltips read the control UNDER them for their Open/Closed wording
+        #     (Fuel Dump, Fuel Dump Emergency Stop, Center Gear Uplock, Main Cargo Door Arm), so
+        #     parse_tooltip's "first L:var" rule handed the guard the covered button's var: the
+        #     auto-open then read "button off" as "cover closed" and lowered an OPEN cover onto
+        #     the press. latch_for already keys a guard on nid; the state var must agree, and a
+        #     cover has no positions of its own (the other 28 guards ship an empty map).
+        if c["kind"] == "guard":
+            c["state_var"] = nid
+            c["value_map"] = {}
         # 4. Labels.
         if nid in LABEL_FIXES:
             c["label"], c["label_source"] = LABEL_FIXES[nid], "curated"

@@ -97,6 +97,24 @@ public class Md11DefinitionStateTests
     }
 
     [Fact]
+    public void EveryGuard_RegistersItsOwnCoverVar_NotTheCoveredControls()
+    {
+        // The guard's definition is what EnsureGuardOpenAsync force-reads to decide whether to
+        // lift the cover, so its Name must be the cover's own L:var. Registered under the covered
+        // button's var, "button off" read as "cover closed" and the auto-open lowered an open
+        // cover onto the press (Fuel Dump, Fuel Dump Emergency Stop, Center Gear Uplock, Main
+        // Cargo Door Arm). The battery guard above is one of the 28 that were always right.
+        var vars = Vars;
+        var map = Md11ControlMap.Load();
+        var offenders = map.Controls
+            .Where(c => c.Kind == Md11Kinds.Guard)
+            .Where(c => !vars.TryGetValue(c.NodeId, out var d) || !string.Equals(d.Name, c.NodeId, StringComparison.Ordinal))
+            .Select(c => $"{c.NodeId} reads {(vars.TryGetValue(c.NodeId, out var d) ? d.Name : "(unregistered)")}")
+            .ToList();
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
     public void OptionFlags_AreNotRegistered()
     {
         Assert.DoesNotContain("MD11_OPT_EFB", Vars.Keys);
