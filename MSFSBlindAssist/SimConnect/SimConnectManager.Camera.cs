@@ -107,7 +107,7 @@ public partial class SimConnectManager : ICameraViewIo
     /// <summary>
     /// Forgets <paramref name="tcs"/> if it is still the registered waiter, so a late delivery
     /// for an abandoned request lands on nobody instead of answering a newer read with the
-    /// camera as it was before an earlier restore.
+    /// camera as it was before an earlier switch.
     /// </summary>
     private void ReleaseCameraViewWaiter(TaskCompletionSource<CameraViewReading?> tcs)
     {

@@ -769,8 +769,8 @@ public abstract class BaseAircraftDefinition : IAircraftDefinition
 
     public virtual bool HasOwnIcingAnnouncer => false;
 
-    // One display read at a time: two overlapping reads would each move the camera and the
-    // second would restore to the first one's instrument view, parking the pilot there silently.
+    // One display read at a time: two overlapping reads would each move the camera and
+    // announce over each other, and the second capture could land mid-switch.
     private static int _displayReadInFlight;
 
     /// <summary>
@@ -778,9 +778,12 @@ public abstract class BaseAircraftDefinition : IAircraftDefinition
     /// selected AI provider. Shared by all aircraft definitions that support display capture.
     ///
     /// With <paramref name="instrumentView"/>, the simulator camera is first moved to that
-    /// instrument view (0-based index into the aircraft's cameras.cfg instrument cameras) and put
-    /// back right after the capture — the pilot presses nothing in the sim. Without it the flow is
-    /// exactly what it always was: the current view is captured.
+    /// instrument view (0-based index into the aircraft's cameras.cfg instrument cameras) — the
+    /// pilot presses nothing in the sim to get the display on screen. The camera STAYS there: the
+    /// pilot's previous view is often a user-saved custom camera, which the sim reports as a
+    /// pilot-view index it refuses on the way back (measured 2026-09-09), so a restore was a silent
+    /// no-op for exactly the pilots who used one; they return with their own view key instead.
+    /// Without it the flow is exactly what it always was: the current view is captured.
     /// </summary>
     protected async void ReadDisplay(Services.GeminiService.DisplayType displayType,
                                       string displayName,
@@ -823,17 +826,7 @@ public abstract class BaseAircraftDefinition : IAircraftDefinition
                     }
                 }
 
-                byte[]? screenshot;
-                try
-                {
-                    screenshot = await screenshotService.CaptureAsync();
-                }
-                finally
-                {
-                    // Before the AI request, not after it: the pilot's view is disturbed for the
-                    // capture only, never for the seconds a vision call takes.
-                    view?.Restore();
-                }
+                byte[]? screenshot = await screenshotService.CaptureAsync();
 
                 if (screenshot == null || screenshot.Length == 0)
                 {

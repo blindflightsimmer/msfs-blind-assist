@@ -21,7 +21,8 @@ The six display units (PFD, ND, EAD, SD) and the standby instrument are drawn fr
 aircraft's own code module with no text behind them, so there is no live PFD or EICAS readout
 the way the Airbus and Boeing have. They ARE readable, though, by AI vision: press Alt+P, Alt+N,
 Alt+E, Alt+S or Alt+I in output mode (see AI Display Reading below). The app moves the
-simulator's camera to the right instrument view for you and puts it back afterwards.
+simulator's camera to the right instrument view for you; press your own view key afterwards
+to go back to the view you were in.
 
 One consequence worth knowing: the flight mode annunciator is on the PFD and nowhere else, so
 Alt+P is the way to hear PROF, LAND ARMED, ALT HOLD and the rest. What the app can read
@@ -180,10 +181,14 @@ AI Display Reading (needs an AI provider and its key in File > Settings > AI tab
   Alt+I      Read the standby instrument on the forward pedestal. It is small in that view, so
              this one reads best on a high-resolution display
   Alt+D      Describe the outside scene
-  You press nothing in the simulator: the app switches to the instrument camera view that
-  frames the display (view 1 for the PFD, ND and EAD, view 3 for the SD, view 4 for the
-  standby), captures, and puts your view back, all within a second. If the simulator is in an
-  external or drone camera the app says "Switch to a cockpit view first" and does nothing.
+  You press nothing in the simulator to get the display on screen: the app switches to the
+  instrument camera view that frames the display (view 1 for the PFD, ND and EAD, view 3 for
+  the SD, view 4 for the standby) and captures, within a second. It stays in that view - press
+  your own view key to go back, for example to a cabin or wing view. The app does not try to
+  put the view back itself: the simulator reports a saved custom camera in a form it then
+  refuses to switch to, so a restore worked only for the built-in views and silently did
+  nothing for a custom one. If the simulator is in an external or drone camera the app says
+  "Switch to a cockpit view first" and does nothing.
   If the view could not be switched (the simulator is paused or on a menu) the app says "Could
   not switch the cockpit view, reading the current view" and reads whatever is on screen. One
   read runs at a time: a second key while one is in progress is refused out loud.

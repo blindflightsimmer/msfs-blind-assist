@@ -23,47 +23,23 @@ public interface ICameraViewIo
 public sealed record InstrumentViewRequest(ICameraViewIo Camera, int ViewIndex);
 
 /// <summary>
-/// The result of <see cref="InstrumentViewSwitcher.EnterAsync"/>, and the way back. Created by
-/// the switcher only.
+/// The result of <see cref="InstrumentViewSwitcher.EnterAsync"/>. Created by the switcher only.
+/// There is no way back on purpose — see <see cref="InstrumentViewPlan"/>: the sim will not
+/// accept a user-saved custom camera's own reading as a write, so the pilot returns to their
+/// view with their own view key.
 /// </summary>
 public sealed class InstrumentViewSession
 {
-    private readonly ICameraViewIo _io;
-    private bool _restored;
-
-    internal InstrumentViewSession(ICameraViewIo io, InstrumentViewOutcome outcome, bool verified, (int Type, int Index)? restoreTo)
+    internal InstrumentViewSession(InstrumentViewOutcome outcome, bool verified)
     {
-        _io = io;
         Outcome = outcome;
         Verified = verified;
-        RestoreTo = restoreTo;
     }
 
     public InstrumentViewOutcome Outcome { get; }
 
     /// <summary>True when the camera was seen on the wanted view — including when it was there already.</summary>
     public bool Verified { get; }
-
-    /// <summary>The view to put back, or null when nothing was known to restore (already there, refused, or unreadable).</summary>
-    public (int Type, int Index)? RestoreTo { get; }
-
-    /// <summary>
-    /// Puts the previous view back. Idempotent and never throws: a failed restore is logged, the
-    /// display read that owns this session must not die of it.
-    /// </summary>
-    public void Restore()
-    {
-        if (_restored || RestoreTo is not { } back) return;
-        _restored = true;
-        try
-        {
-            _io.Set(back.Type, back.Index);
-        }
-        catch (Exception ex)
-        {
-            Log.Debug("Camera", $"Restoring camera view type {back.Type} index {back.Index} failed: {ex.Message}");
-        }
-    }
 }
 
 /// <summary>
@@ -116,13 +92,9 @@ public sealed class InstrumentViewSwitcher
     /// </summary>
     public async Task<InstrumentViewSession> EnterAsync(int wantedIndex)
     {
-        var current = await TryReadAsync();
-        // A transient miss must not become a silent, unrestored move: a second read is cheap on
-        // a path that is already degraded, and turns most Unknowns into a Switch with a way back.
-        current ??= await TryReadAsync();
-        var plan = InstrumentViewPlan.For(current, wantedIndex);
+        var plan = InstrumentViewPlan.For(await TryReadAsync(), wantedIndex);
         if (plan.Writes is not { } writes)
-            return new InstrumentViewSession(_io, plan.Outcome, plan.Outcome == InstrumentViewOutcome.AlreadyThere, null);
+            return new InstrumentViewSession(plan.Outcome, plan.Outcome == InstrumentViewOutcome.AlreadyThere);
 
         try
         {
@@ -152,10 +124,10 @@ public sealed class InstrumentViewSwitcher
         if (verified) await _delay(_settleMs);
         else Log.Debug("Camera", $"Instrument view {wantedIndex} did not verify within {_verifyCapMs} ms (outcome {plan.Outcome})");
 
-        return new InstrumentViewSession(_io, plan.Outcome, verified, plan.Restore);
+        return new InstrumentViewSession(plan.Outcome, verified);
     }
 
-    /// <summary>A read that throws is a read that returned nothing: the caller must always get its session, or the camera is never restored.</summary>
+    /// <summary>A read that throws is a read that returned nothing: the caller must always get its session.</summary>
     private async Task<CameraViewReading?> TryReadAsync()
     {
         try

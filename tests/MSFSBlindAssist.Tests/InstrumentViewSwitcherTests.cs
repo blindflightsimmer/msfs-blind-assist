@@ -3,8 +3,9 @@ using MSFSBlindAssist.Services;
 namespace MSFSBlindAssist.Tests;
 
 /// <summary>
-/// The switch-verify-settle-restore sequence against a fake camera. The delays are recorded, not
-/// slept, so "gives up after the cap" is a count of poll steps rather than a wall clock.
+/// The switch-verify-settle sequence against a fake camera. The delays are recorded, not slept,
+/// and advance a virtual clock, so "gives up after the cap" is elapsed virtual time — the same
+/// wall-clock rule production uses — without a real wait.
 /// </summary>
 public class InstrumentViewSwitcherTests
 {
@@ -16,18 +17,12 @@ public class InstrumentViewSwitcherTests
         public bool ThrowOnRead;
         public long Clock;
         public int ReadCostMs;
-        public int MissReads;
         public readonly List<(int Type, int Index)> Writes = new();
 
         public Task<CameraViewReading?> ReadAsync(int timeoutMs)
         {
             if (ThrowOnRead) throw new InvalidOperationException("SimConnect down");
             Clock += ReadCostMs;
-            if (MissReads > 0)
-            {
-                MissReads--;
-                return Task.FromResult<CameraViewReading?>(null);
-            }
             return Task.FromResult(Current);
         }
 
@@ -52,23 +47,21 @@ public class InstrumentViewSwitcherTests
     }
 
     [Fact]
-    public async Task AlreadyOnTheView_WritesNothing_AndRestoreIsANoOp()
+    public async Task AlreadyOnTheView_WritesNothing()
     {
         var camera = new FakeCamera { Current = new CameraViewReading(2, 2, 2) };
         var (switcher, delays, _) = Make(camera);
 
         var session = await switcher.EnterAsync(2);
-        session.Restore();
 
         Assert.Equal(InstrumentViewOutcome.AlreadyThere, session.Outcome);
         Assert.True(session.Verified);
-        Assert.Null(session.RestoreTo);
         Assert.Empty(camera.Writes);
         Assert.Empty(delays);
     }
 
     [Fact]
-    public async Task FromThePilotView_Switches_VerifiesOnTheFirstRead_SettlesOnce_AndRestoresOnce()
+    public async Task FromThePilotView_Switches_VerifiesOnTheFirstRead_AndSettlesOnce()
     {
         var camera = new FakeCamera { Current = new CameraViewReading(2, 1, 0) };
         var (switcher, delays, _) = Make(camera);
@@ -77,18 +70,26 @@ public class InstrumentViewSwitcherTests
 
         Assert.Equal(InstrumentViewOutcome.Switch, session.Outcome);
         Assert.True(session.Verified);
-        Assert.Equal((1, 0), session.RestoreTo);
         Assert.Equal(new[] { (2, 2) }, camera.Writes);
         Assert.Equal(new[] { 250 }, delays);
-
-        session.Restore();
-        session.Restore();
-
-        Assert.Equal(new[] { (2, 2), (1, 0) }, camera.Writes);
     }
 
     [Fact]
-    public async Task AWriteTheSimIgnores_GivesUpAfterTheCap_ReportsUnverified_AndStillRestores()
+    public async Task NothingIsWrittenAfterTheSwitch_ThePilotKeepsTheInstrumentView()
+    {
+        // A saved cabin view reads as a pilot-view index the sim would refuse on the way back
+        // (measured 2026-09-09), so the switcher never tries to put a previous view back.
+        var camera = new FakeCamera { Current = new CameraViewReading(2, 1, 7) };
+        var (switcher, _, _) = Make(camera);
+
+        await switcher.EnterAsync(0);
+
+        Assert.Equal(new[] { (2, 0) }, camera.Writes);
+        Assert.Equal(new CameraViewReading(2, 2, 0), camera.Current);
+    }
+
+    [Fact]
+    public async Task AWriteTheSimIgnores_GivesUpAfterTheCap_AndReportsUnverified()
     {
         var camera = new FakeCamera { Current = new CameraViewReading(2, 1, 0), HonoursWrites = false };
         var (switcher, delays, _) = Make(camera);
@@ -98,11 +99,7 @@ public class InstrumentViewSwitcherTests
         Assert.Equal(InstrumentViewOutcome.Switch, session.Outcome);
         Assert.False(session.Verified);
         Assert.Equal(Enumerable.Repeat(100, 10), delays);   // 1000 ms cap / 100 ms steps, no settle
-        Assert.Equal((1, 0), session.RestoreTo);
-
-        session.Restore();
-
-        Assert.Equal((1, 0), camera.Writes.Last());
+        Assert.Equal(new[] { (2, 2) }, camera.Writes);
     }
 
     [Fact]
@@ -124,7 +121,6 @@ public class InstrumentViewSwitcherTests
         var (switcher, delays, _) = Make(camera);
 
         var session = await switcher.EnterAsync(2);
-        session.Restore();
 
         Assert.Equal(InstrumentViewOutcome.NotInCockpit, session.Outcome);
         Assert.False(session.Verified);
@@ -133,63 +129,41 @@ public class InstrumentViewSwitcherTests
     }
 
     [Fact]
-    public async Task AnUnreadableCamera_WritesTheView_ReportsUnverified_AndHasNothingToRestore()
+    public async Task AnUnreadableCamera_WritesTheView_AndReportsUnverified()
     {
         var camera = new FakeCamera { Current = null };
         var (switcher, _, _) = Make(camera);
 
         var session = await switcher.EnterAsync(3);
-        session.Restore();
 
         Assert.Equal(InstrumentViewOutcome.Unknown, session.Outcome);
         Assert.False(session.Verified);
-        Assert.Null(session.RestoreTo);
         Assert.Equal(new[] { (2, 3) }, camera.Writes);
     }
 
     [Fact]
-    public async Task ATransientFirstMiss_IsRetried_SoTheViewCanBeRestored()
-    {
-        var camera = new FakeCamera { Current = new CameraViewReading(2, 1, 0), MissReads = 1 };
-        var (switcher, _, _) = Make(camera);
-
-        var session = await switcher.EnterAsync(2);
-        session.Restore();
-
-        Assert.Equal(InstrumentViewOutcome.Switch, session.Outcome);
-        Assert.True(session.Verified);
-        Assert.Equal((1, 0), session.RestoreTo);
-        Assert.Equal(new[] { (2, 2), (1, 0) }, camera.Writes);
-    }
-
-    [Fact]
-    public async Task AThrowingWrite_DoesNotEscape_OnEntryOrOnRestore()
+    public async Task AThrowingWrite_DoesNotEscape()
     {
         var camera = new FakeCamera { Current = new CameraViewReading(2, 1, 0), ThrowOnSet = true };
         var (switcher, _, _) = Make(camera);
 
         var session = await switcher.EnterAsync(2);
-        var restore = Record.Exception(session.Restore);
 
         Assert.Equal(InstrumentViewOutcome.Switch, session.Outcome);
         Assert.False(session.Verified);
-        Assert.Null(restore);
     }
 
     [Fact]
-    public async Task AThrowingRead_DoesNotEscape_AndLeavesNothingToRestore()
+    public async Task AThrowingRead_DoesNotEscape()
     {
         var camera = new FakeCamera { Current = new CameraViewReading(2, 1, 0), ThrowOnRead = true };
         var (switcher, _, _) = Make(camera);
 
         var session = await switcher.EnterAsync(2);
-        var restore = Record.Exception(session.Restore);
 
         Assert.Equal(InstrumentViewOutcome.Unknown, session.Outcome);
         Assert.False(session.Verified);
-        Assert.Null(session.RestoreTo);
         Assert.Equal(new[] { (2, 2) }, camera.Writes);
-        Assert.Null(restore);
     }
 
     [Fact]
