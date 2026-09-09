@@ -174,4 +174,25 @@ public class Md11ControlMapTests
         Assert.NotNull(c);
         Assert.Equal("Engine and APU Fire Test", c!.Label);
     }
+
+    /// <summary>
+    /// The EFIS minimums caps' tooltips read their own value and then the mode SWITCH's var for the
+    /// Baro/Radio word. The generator once lifted that word as the cap's positions, giving a
+    /// 0-15000 ft value knob a {Radio, Baro} map. The words belong to the switch, which keeps them.
+    /// </summary>
+    [Theory]
+    [InlineData("MD11_LECP_MINIMUMS_CAP", "MD11_LECP_MINIMUMS_KB")]
+    [InlineData("MD11_RECP_MINIMUMS_CAP", "MD11_RECP_MINIMUMS_KB")]
+    public void MinimumsCap_CarriesNoPositions_TheModeWordsBelongToTheSwitch(string cap, string modeSwitch)
+    {
+        var c = Find(cap);
+        var s = Find(modeSwitch);
+
+        Assert.NotNull(c);
+        Assert.NotNull(s);
+        Assert.Empty(c!.ValueMap);
+        Assert.Equal(2, s!.ValueMap.Count);
+        Assert.Equal("Radio", s.ValueMap["0"]);
+        Assert.Equal("Baro", s.ValueMap["1"]);
+    }
 }

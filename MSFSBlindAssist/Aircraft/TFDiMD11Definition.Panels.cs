@@ -227,8 +227,8 @@ public partial class TFDiMD11Definition
         // rows ("200 feet, radio") and by the typed entry's read-back. The switch's own key stays
         // OnRequest: it is a walkable combo, and a batch-covered var has no individual definition,
         // which downgrades the walker to the legacy cache-poll protocol that can call a real move
-        // "did not move". Same shape as MD11_CAP_MINIMUMS beside the walkable minimums knob — two
-        // keys, one Name, only one of them batched. No ValueDescriptions, so ProcessSimVarUpdate
+        // "did not move". Same shape as MD11_CAP_MINIMUMS beside the minimums cap's read-only row —
+        // two keys, one Name, only one of them batched. No ValueDescriptions, so ProcessSimVarUpdate
         // consumes it silently with the other Export-style read-outs; never a panel row.
         foreach (var side in Md11Minimums.Sides)
         {

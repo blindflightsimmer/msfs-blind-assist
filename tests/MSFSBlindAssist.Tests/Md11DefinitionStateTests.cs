@@ -209,9 +209,63 @@ public class Md11DefinitionStateTests
     }
 
     /// <summary>
-    /// A position control with no value map renders as a bare BUTTON (RenderAsReadOnlyStatus with
-    /// no units falls through MainForm's branches to the plain button). That is what hid the
-    /// third IRS switch. Every IRS switch must be a two-position combo.
+    /// No control reading one of TFDi's read-only EXPORTS may render as a walkable combo. The FCP
+    /// mode knobs read MD11_AP_HDG_TRK / IAS_MACH / VS_FPA and the EFIS minimums caps read
+    /// MD11_CAP/FO_MINIMUMS, but their wheel moves the VALUE, never the mode: as combos their walk
+    /// stalled and the direct-write fallback zeroed the export. Stated over the whole map, so a
+    /// future export-backed knob is caught too; the set is computed here without the helper so the
+    /// test compiles and fails at the pre-fix definition on exactly the offending ids.
+    /// </summary>
+    [Fact]
+    public void NoControlReadingAnExport_IsRenderedAsAWalkableCombo()
+    {
+        var map = Md11ControlMap.Load();
+        var exports = new HashSet<string>(map.ExportVars, StringComparer.OrdinalIgnoreCase);
+        string[] positional = { Md11Kinds.Switch, Md11Kinds.Knob, Md11Kinds.KnobPush, Md11Kinds.KnobPushPull, Md11Kinds.Lever, Md11Kinds.Handle };
+        var backed = map.Controls
+            .Where(c => positional.Contains(c.Kind) && !string.IsNullOrEmpty(c.StateVar) && exports.Contains(c.StateVar))
+            .Select(c => c.NodeId).ToList();
+
+        Assert.Contains("MD11_CGS_HDG_KB", backed);          // the rule has teeth: the FCP knobs are in the set
+        Assert.Contains("MD11_LECP_MINIMUMS_CAP", backed);
+        var walkable = backed.Where(id => !Vars[id].RenderAsReadOnlyStatus).ToList();
+        Assert.Empty(walkable);
+    }
+
+    /// <summary>The FCP mode rows stay readable: a status field that still names the mode.</summary>
+    [Theory]
+    [InlineData("MD11_CGS_HDG_KB", "Heading", "Track")]
+    [InlineData("MD11_CGS_SPD_KB", "IAS", "MACH")]
+    [InlineData("MD11_CGS_VS_KB", "VS", "FPA")]
+    public void FcpModeKnobRow_IsReadOnly_AndStillNamesBothModes(string key, string zero, string one)
+    {
+        var d = Vars[key];
+        Assert.True(d.RenderAsReadOnlyStatus);
+        Assert.Equal(zero, d.ValueDescriptions[0]);
+        Assert.Equal(one, d.ValueDescriptions[1]);
+        Assert.Equal(UpdateFrequency.OnRequest, d.UpdateFrequency);
+    }
+
+    /// <summary>
+    /// The minimums caps show the FEET as a read-only number (MainForm's numeric TextBox branch —
+    /// Units defaults to "number"), never the mode switch's Radio/Baro words the generator once
+    /// lifted from a companion var in their tooltip.
+    /// </summary>
+    [Theory]
+    [InlineData("MD11_LECP_MINIMUMS_CAP")]
+    [InlineData("MD11_RECP_MINIMUMS_CAP")]
+    public void MinimumsCapRow_IsAReadOnlyNumber_NotAModeCombo(string key)
+    {
+        var d = Vars[key];
+        Assert.True(d.RenderAsReadOnlyStatus);
+        Assert.Empty(d.ValueDescriptions);
+        Assert.Equal("number", d.Units);
+    }
+
+    /// <summary>
+    /// A position control with no value map renders as a read-only numeric field (RenderAsReadOnlyStatus
+    /// with no ValueDescriptions and the default Units "number" takes MainForm's read-only TextBox
+    /// branch). That is what hid the third IRS switch. Every IRS switch must be a two-position combo.
     /// </summary>
     [Theory]
     [InlineData("MD11_OVHD_IRS_1_KB")]

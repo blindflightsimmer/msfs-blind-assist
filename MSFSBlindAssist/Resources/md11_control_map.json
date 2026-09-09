@@ -3340,10 +3340,7 @@
    "label": "Captain Minimums Setting",
    "label_source": "tooltip",
    "state_var": "MD11_CAP_MINIMUMS",
-   "value_map": {
-    "1": "Baro",
-    "0": "Radio"
-   },
+   "value_map": {},
    "num_states": 3,
    "events": {
     "LEFT_BUTTON_DOWN": 86062,
@@ -8833,10 +8830,7 @@
    "label": "First Officer Minimums Setting",
    "label_source": "tooltip",
    "state_var": "MD11_FO_MINIMUMS",
-   "value_map": {
-    "1": "Baro",
-    "0": "Radio"
-   },
+   "value_map": {},
    "num_states": 3,
    "events": {
     "LEFT_BUTTON_DOWN": 86132,
@@ -24745,10 +24739,7 @@
    "label": "ECON Mode",
    "label_source": "tooltip",
    "state_var": "MD11_OVHD_PNEU_SYSTEM_SEL_BT",
-   "value_map": {
-    "1": "Off",
-    "0": "On"
-   },
+   "value_map": {},
    "num_states": null,
    "events": {
     "LEFT_BUTTON_DOWN": 90297,
@@ -25457,10 +25448,7 @@
    "label": "Trim Air",
    "label_source": "tooltip",
    "state_var": "MD11_OVHD_PNEU_SYSTEM_SEL_BT",
-   "value_map": {
-    "1": "Off",
-    "0": "On"
-   },
+   "value_map": {},
    "num_states": null,
    "events": {
     "LEFT_BUTTON_DOWN": 90303,

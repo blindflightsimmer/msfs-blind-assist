@@ -81,6 +81,9 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     private readonly Md11FlapSystem _flaps;
     private readonly Dictionary<string, Md11Control> _byNodeId;
 
+    /// <summary>The map's read-only exports (<c>export_vars</c>), for <see cref="Md11ExportBacked"/>.</summary>
+    private readonly HashSet<string> _exportVars;
+
     /// <summary>Stock DC bus voltage: half of the "annunciators have power" gate. Silent; read from the cache by the hook.</summary>
     public const string DcPowerKey = "MD11_DC_BUS_VOLTAGE";
 
@@ -119,6 +122,7 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     public TFDiMD11Definition()
     {
         _map = Md11ControlMap.Load();
+        _exportVars = new HashSet<string>(_map.ExportVars, StringComparer.OrdinalIgnoreCase);
         _byNodeId = new Dictionary<string, Md11Control>(StringComparer.OrdinalIgnoreCase);
         foreach (var c in _map.Controls) _byNodeId[c.NodeId] = c;
         // TWO PASSES, and the order is load-bearing. A control whose state var IS its own node id
@@ -529,7 +533,14 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                     ValueDescriptions = c.NodeId == Md11SpeedbrakeSystem.LeverKey ? Md11SpeedbrakeSystem.TravelValues : values,
                     // No ValueDescriptions means a bare number with no meaning to speak — render
                     // it read-only rather than offering an empty combo the user cannot use.
-                    RenderAsReadOnlyStatus = values.Count == 0,
+                    // So does a state var that is one of TFDi's read-only EXPORTS: the FCP mode
+                    // knobs read MD11_AP_HDG_TRK / IAS_MACH / VS_FPA and the EFIS minimums caps
+                    // read MD11_CAP/FO_MINIMUMS, but their wheel moves the heading/speed/V-S/
+                    // minimums VALUE, never that var — a combo on it can only stall its walk, and
+                    // the direct-write fallback then zeroed the export. The FCP rows keep the mode
+                    // words as a status field ("Heading"/"Track"); the mode is switched by its own
+                    // button beside the row. See Md11ExportBacked.
+                    RenderAsReadOnlyStatus = values.Count == 0 || Md11ExportBacked.IsReadOnly(c, _exportVars),
                 };
             }
 

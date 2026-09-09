@@ -360,6 +360,21 @@ public partial class TFDiMD11Definition
         // the State partial.
         _uiContext ??= SynchronizationContext.Current;
 
+        // A control whose state var is one of TFDi's read-only EXPORTS (the FCP mode knobs, the
+        // EFIS minimums caps) has no walkable axis here: its wheel moves the heading/speed/V-S/
+        // minimums VALUE, never the mode a combo would name, so the walk could only stall and
+        // TryDirectSetAsync would then raw-write the export — WriteExternal("MD11_CAP_MINIMUMS", 0)
+        // zeroed the captain's minimums silently. Those rows render read-only (BuildControlVariable),
+        // so no panel path reaches this, and Md11AutopilotWindow's two SetControl callers (the bank
+        // limiter MD11_CGS_HDG_BASE_KB and the Dial-A-Flap) are not export-backed: the guard is
+        // dormant by construction and exists so a future caller cannot write an export by accident.
+        // The mode is switched by its own button (MD11_CGS_*_BT, Md11Minimums.ModeSwitch).
+        if (Md11ExportBacked.IsReadOnly(control, _exportVars))
+        {
+            Log.Debug("MD11", $"{control.NodeId}: refused set to {value} — its state var {control.StateVar} is a read-only export.");
+            return true;
+        }
+
         switch (control.Kind)
         {
             // Momentary: press AND release. A press-only pulse leaves the button held for the

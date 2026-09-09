@@ -70,6 +70,42 @@ class StrayPercentTests(unittest.TestCase):
         self.assertEqual({}, value_map)
 
 
+class CompanionVarTests(unittest.TestCase):
+    """A trailing if/else keyed on a SECOND L:var describes that var, not this control. The EFIS
+    minimums caps read their own value and then the mode switch's var for the Baro/Radio word;
+    lifting that word gave a 0-15000 ft value knob a {Radio, Baro} map and MSFSBA a two-entry
+    combo whose wheel moved the minimums, never the mode."""
+
+    def test_if_else_words_keyed_on_a_second_var_are_not_this_controls_positions(self):
+        label, var, value_map = g.parse_tooltip(
+            "Captain Minimums Setting (%((L:MD11_CAP_MINIMUMS))%!d! "
+            "%((L:MD11_LECP_MINIMUMS_KB))%{if}Baro%{else}Radio%{end})")
+        self.assertEqual("Captain Minimums Setting", label)
+        self.assertEqual("MD11_CAP_MINIMUMS", var)
+        self.assertEqual({}, value_map)
+
+    def test_if_else_words_on_the_state_var_itself_are_still_positions(self):
+        # The mode switch's own tooltip: one var, and the words are its positions.
+        label, var, value_map = g.parse_tooltip(
+            "Captain Minimums Mode (%((L:MD11_LECP_MINIMUMS_KB))%{if}Baro%{else}Radio%{end})")
+        self.assertEqual("Captain Minimums Mode", label)
+        self.assertEqual("MD11_LECP_MINIMUMS_KB", var)
+        self.assertEqual({"1": "Baro", "0": "Radio"}, value_map)
+
+    def test_a_nested_two_var_expression_also_yields_no_positions(self):
+        # The third and fourth controls the rule touches, deliberately: the ECON and TRIM AIR
+        # buttons' tooltips NEST the air-system selector around their own var, so the expression
+        # names two L:vars and the Off/On words are dropped with the caps'. Nothing consumes
+        # them — a button never reads `values`, and the `state` block that composes its spoken
+        # position is generated separately and is unchanged.
+        label, var, value_map = g.parse_tooltip(
+            "ECON Mode (%((L:MD11_OVHD_PNEU_SYSTEM_SEL_BT))%{if}"
+            "%((L:MD11_OVHD_PNEU_ECON_BT))%{if}Off%{else}On%{end}%{else}Auto%{end})")
+        self.assertEqual("ECON Mode", label)
+        self.assertEqual("MD11_OVHD_PNEU_SYSTEM_SEL_BT", var)
+        self.assertEqual({}, value_map)
+
+
 class FinalizeTests(unittest.TestCase):
     def test_guard_is_named_after_the_control_it_covers(self):
         out = g.finalize_controls([

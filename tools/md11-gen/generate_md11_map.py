@@ -1008,7 +1008,18 @@ def parse_tooltip(tooltip):
         value_map = _cases(expr)
         if not value_map:
             m = re.search(r"%\{if\}([^%]*)%\{else\}([^%]*)%\{end\}", expr)
-            if m:
+            # The if/else words are THIS control's positions only when the expression reads ONE
+            # L:var -- the state var. The EFIS minimums caps read two: their own value first
+            # ('%((L:MD11_CAP_MINIMUMS))%!d!'), then the mode SWITCH's var for the Baro/Radio
+            # word. Lifting that word gave a 0-15000 ft value knob a {0 Radio, 1 Baro} map, so
+            # MSFSBA offered a two-entry combo whose wheel moved the minimums, never the mode.
+            # A companion's words belong to the companion: its own tooltip carries them.
+            #
+            # Two more controls are touched, deliberately: the ECON and TRIM AIR buttons NEST the
+            # air-system selector around their own var, so their expressions name two L:vars too
+            # and lose an {Off, On} map that nothing consumed (a button never reads `values`, and
+            # the `state` block that composes its spoken position is generated separately).
+            if m and len(re.findall(r"L:[A-Za-z0-9_]+", expr)) == 1:
                 on, off = m.group(1).strip(), m.group(2).strip()
                 if on and off:
                     value_map = {"1": on, "0": off}

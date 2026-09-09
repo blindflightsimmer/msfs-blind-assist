@@ -30,7 +30,8 @@ public sealed record Md11MinimumsSide(string Name, string SetKey, string ReadKey
 /// <c>SimConnectManager.SupportsFreshReads</c> to choose its read protocol — false for a batch-covered
 /// var with no individual def, which downgrades the walk to the legacy cache-poll protocol that can
 /// call a real movement "did not move". Same shape as <c>MD11_CAP_MINIMUMS</c> sharing its Name with
-/// the walkable minimums knob: two keys, one underlying L:var, only one of them batched.
+/// the minimums cap's read-only row (<see cref="Md11ExportBacked"/>): two keys, one underlying
+/// L:var, only one of them batched.
 /// </summary>
 public static class Md11Minimums
 {
