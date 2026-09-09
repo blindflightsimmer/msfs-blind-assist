@@ -232,7 +232,8 @@ public partial class SimConnectManager
     public bool IsMobiFlightConnected => mobiFlightWasm?.IsConnected == true;
 
     // End-to-end calc-path verification: MainForm's bridge probe calc-writes a nonce
-    // L:var (MSFSBA_BRIDGE_PROBE, registered by the FBW defs) and reads it back over
+    // L:var (MSFSBA_BRIDGE_PROBE, registered by the aircraft that opt in — the FBW defs
+    // and the TFDi MD-11; MainForm's timer gates on that registration) and reads it back over
     // the independent data-def channel. A match PROVES the WASM module executed our
     // RPN — the only presence signal that works when the module's response side is
     // silent (IsMobiFlightConnected is true even when no WASM module is installed,
@@ -259,7 +260,7 @@ public partial class SimConnectManager
     /// <summary>
     /// Called by MainForm's bridge probe when verification cannot succeed: either the
     /// probe gave up (module absent or data-def read failing) or the loaded aircraft
-    /// doesn't register the probe var (non-FBW). Queued dotted events are released to
+    /// doesn't register the probe var (an aircraft with its own transport). Queued dotted events are released to
     /// the legacy TransmitClientEvent transport; queued H: events are fired at the
     /// MobiFlight channel anyway (there is no alternative transport for H: events).
     /// </summary>

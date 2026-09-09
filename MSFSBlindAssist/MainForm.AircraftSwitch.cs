@@ -44,9 +44,12 @@ public partial class MainForm
                 simConnectManager.ResetCalcPathProbe();
             }
             if (simConnectManager.CalcPathVerified || simConnectManager.CalcPathProbeConcluded) return;
-            // Only the FBW defs register the probe var; other aircraft can never verify —
-            // conclude immediately so dotted events route via the legacy transport.
-            if (currentAircraft is not (Aircraft.FlyByWireA320Definition or Aircraft.FlyByWireA380Definition))
+            // Only an aircraft whose definition registers the probe target can ever verify —
+            // the registration is the opt-in (the FBW defs, the Headwind A330 through the A320's
+            // set, and the TFDi MD-11, whose every control write is a calculator-path CEVENT).
+            // Anything else concludes immediately and silently so dotted events route via the
+            // legacy transport. GetVariables() is cached, so this is a dictionary lookup.
+            if (currentAircraft?.GetVariables().ContainsKey("MSFSBA_BRIDGE_PROBE") != true)
             {
                 simConnectManager.MarkCalcPathProbeConcluded();
                 return;

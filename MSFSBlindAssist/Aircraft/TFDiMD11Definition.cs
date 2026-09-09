@@ -400,6 +400,24 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
             RenderAsReadOnlyStatus = true,
         };
 
+        // End-to-end MobiFlight probe target — the same var the FBW defs register. MainForm
+        // calc-writes a nonce here and reads it back over the data-def path; a match is the ONLY
+        // signal that the WASM module is actually executing our RPN. Every control write on this
+        // aircraft is a calculator-path write (Md11EventBus: CEVENT and the direct-write family),
+        // and with no module installed each one lands in a dead client-data area with nothing
+        // to say so: MobiFlightWasmModule.IsConnected is true without a module (Initialize is
+        // purely local setup) and the bus writes quiet. Registering this var is what opts the
+        // MD-11 into the probe and its verdict — CalcPathVerdict.LogLine in debug.log, and the
+        // spoken PilotWarning when the round-trip never succeeds. OnRequest (one individual def),
+        // in no panel, never announced. NOT in SeededScalarKeys: the nonce is ours, not the
+        // aircraft's, and the seed gate's IsSeededFromCache whitelist is what keeps it out —
+        // IsAircraftOwned would say yes, since it is an L:var in this dictionary.
+        vars["MSFSBA_BRIDGE_PROBE"] = new SimVarDefinition
+        {
+            Name = "MSFSBA_BRIDGE_PROBE", DisplayName = "Bridge Probe",
+            Type = SimVarType.LVar, UpdateFrequency = UpdateFrequency.OnRequest
+        };
+
         // Silent read-outs: every Export() var is Continuous+IsAnnounced+LVar with NO
         // ValueDescriptions (a bare number, meaningless spoken). That signature is also the
         // generic auto-announce condition, so without consuming them they narrate on every batch

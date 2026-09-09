@@ -251,6 +251,19 @@ public class Md11SeedGateTests
         Assert.False(def.IsSeededFromCache(Md11FlapSystem.LeverKey));       // the flap pair dedups on its spoken text instead
     }
 
+    // The calc-path probe target is an L:var in the dictionary, so IsAircraftOwned says yes — the
+    // nonce MainForm writes there would count as "the aircraft has published" if it ever reached
+    // NoteValue. It cannot: the var is aircraft-owned by shape yet off the seed whitelist; the gate
+    // at Interaction.cs consults IsSeededFromCache first — stated here, not pinned by this test.
+    // Both predicates are pinned so neither can quietly become true for the probe var.
+    [Fact]
+    public void TheProbeTarget_IsAircraftOwnedByShape_ButNeverSeedEvidence()
+    {
+        var def = new TFDiMD11Definition();
+        Assert.True(def.IsAircraftOwned(CalcPathProbeOptInTests.ProbeVar));     // registered as an L:var
+        Assert.False(def.IsSeededFromCache(CalcPathProbeOptInTests.ProbeVar));  // and kept off the whitelist
+    }
+
     [Fact]
     public void TheAircraftsOwnVars_AreTheOnesThatSayItHasPublished_TheStockRadiosAreNot()
     {

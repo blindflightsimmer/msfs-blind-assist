@@ -1,0 +1,1 @@
+The MD-11 now tells you when the MobiFlight WASM module is missing — you hear "MobiFlight calculator path unavailable. Some cockpit controls may not respond." once after the aircraft loads, so you know in advance why no switch responds.
