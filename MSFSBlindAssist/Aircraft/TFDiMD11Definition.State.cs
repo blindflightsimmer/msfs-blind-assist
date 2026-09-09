@@ -286,14 +286,15 @@ public partial class TFDiMD11Definition
     /// first COM tune, the first altimeter wind, the pilot's first perf entry of a reconnected
     /// session; review, 2026-09-08). Those move to <see cref="OnSimContextReset"/>. What belongs
     /// here is what must not survive into the new session whatever the ordering: the roll's arm,
-    /// the take-off cue's latch, the pending timers.
+    /// the pending timers. The N1 take-off cue is NOT reset here: its arm is dropped by
+    /// <see cref="OnSimContextReset"/>, which precedes every reconnect, and its samples are kept
+    /// there too (see <see cref="Md11N1Cue.Reset"/>) — a wipe here would lose the IAS the batch
+    /// has just delivered and never re-delivers to an aircraft standing still on the runway.
     /// </summary>
     public override void ResetAnnouncementBaselines()
     {
         base.ResetAnnouncementBaselines();
         _takeoffCallouts.Reset();               // drops the arm, keeps the speeds: the batch has just re-fed them
-        _n1SeventyAnnounced = false;            // the take-off cue re-arms with the session
-        Array.Fill(_n1, double.NaN);
         _vSpeeds.DropPending();                 // a sentence still pending here dies with its tail below; it must not ride into a later one
         _announceGeneration++;                  // drops any dark transition, settle or read-back still waiting
     }
@@ -326,6 +327,7 @@ public partial class TFDiMD11Definition
         _squawk.Reset();
         _altimeter.Reset();
         _vSpeeds.Reset();
+        _n1Cue.Reset();                         // drops the arm only — a gate arm must not fire on the cruise N1 a load delivers; the samples are re-fired or still true
         _spdbrkHandle = double.NaN;
         _lastSpoilerSpoken = string.Empty;
         _announceGeneration++;                  // nothing scheduled before the drop may speak after it

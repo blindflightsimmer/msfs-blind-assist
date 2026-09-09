@@ -882,6 +882,9 @@ public partial class TFDiMD11Definition
     /// <summary>Take-off roll "V1" / "Rotate" / "V2" — see <see cref="Md11TakeoffCallouts"/>. Reset on a reconnect.</summary>
     private readonly TakeoffVSpeedCallouts _takeoffCallouts = new();
 
+    /// <summary>"N1 70 percent" once per take-off roll — see <see cref="Md11N1Cue"/>. Fed IAS per frame and N1 per delivery below; its arm is dropped on a context reset, never on the reconnect.</summary>
+    private readonly Md11N1Cue _n1Cue = new();
+
     /// <summary>"V1 145, VR 150, V2 158 … knots" as the FMS sets the take-off speeds — see <see cref="Md11VSpeedAnnouncer"/> (wiped on a context reset, never on the reconnect: see its summary).</summary>
     private readonly Md11VSpeedAnnouncer _vSpeeds = new();
 
@@ -948,6 +951,7 @@ public partial class TFDiMD11Definition
         // V1 / Rotate speed / V2 rows, the way the iFly does it.
         if (varName == Md11TakeoffCallouts.IasKey)
         {
+            _n1Cue.OnIas(value, _calloutOnGround);      // arms/disarms the N1 cue; never speaks from here
             var callouts = _takeoffCallouts.ProcessSample(value, _calloutOnGround);
             if (callouts.Count > 0 && !announcer.Suppressed)
             {
@@ -1063,10 +1067,18 @@ public partial class TFDiMD11Definition
 
         // Silent numeric read-outs: cached for the hotkeys, never narrated on change. Consuming
         // them here suppresses the generic auto-announce (an N1/fuel stream spoken every second).
-        // The single exception is the take-off cue: engine N1 first reaching 70% (ATS takeover).
+        // The single exception is the take-off cue: engine N1 first reaching 70% (ATS takeover) on
+        // the take-off ROLL — Md11N1Cue arms only on the ground, slow and idle, and fires only on
+        // the ground, so reverse on the rollout, a go-around and an approach swing stay silent.
+        // Spoken from here, inside ProcessSimVarUpdate, so MainForm's Suppressed wrap mutes it
+        // through the three N1 rows in Ctrl+M.
         if (_silentReadouts.Contains(varName))
         {
-            HandleN1Callout(varName, value, announcer);
+            if (_n1Cue.OnN1(varName, value, _calloutOnGround))
+            {
+                announcer.Announce(Md11N1Cue.Sentence);
+                Log.Debug("MD11", $"Take-off cue spoken: {Md11N1Cue.Sentence} — {varName} at {value.ToString("F1", CultureInfo.InvariantCulture)} percent on the ground.");
+            }
             return true;
         }
 
@@ -1162,41 +1174,6 @@ public partial class TFDiMD11Definition
         while (q.Count > 0 && now - q.Peek() > LampFlapWindowMs) q.Dequeue();
 
         return q.Count >= LampFlapThreshold;
-    }
-
-    // Engine N1 take-off cue. The read-outs otherwise stream silently; the ONE moment worth
-    // speaking is N1 reaching 70% — where the MD-11's autothrottle takes over on the take-off
-    // roll. One combined call-out on the first engine to cross 70%, latched until N1 falls well
-    // back (hysteresis) so the next take-off re-arms without jitter re-firing it.
-    private readonly double[] _n1 = { double.NaN, double.NaN, double.NaN };
-    private bool _n1SeventyAnnounced;
-
-    private void HandleN1Callout(string varName, double value, ScreenReaderAnnouncer announcer)
-    {
-        int idx = varName switch
-        {
-            "MD11_ENG1_N1" => 0,
-            "MD11_ENG2_N1" => 1,
-            "MD11_ENG3_N1" => 2,
-            _ => -1,
-        };
-        if (idx < 0) return;
-
-        _n1[idx] = value;
-        double max = double.NegativeInfinity;
-        foreach (var n in _n1)
-            if (!double.IsNaN(n) && n > max) max = n;
-        if (double.IsNegativeInfinity(max)) return;
-
-        if (!_n1SeventyAnnounced && max >= 70.0)
-        {
-            _n1SeventyAnnounced = true;
-            announcer.Announce("N1 70 percent");
-        }
-        else if (_n1SeventyAnnounced && max < 60.0)
-        {
-            _n1SeventyAnnounced = false;   // re-arm for the next take-off
-        }
     }
 
     /// <summary>
