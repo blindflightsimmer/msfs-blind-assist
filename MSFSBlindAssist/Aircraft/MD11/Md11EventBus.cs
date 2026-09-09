@@ -69,10 +69,36 @@ public sealed class Md11EventBus : IDisposable
     /// </summary>
     private const int MaxQueued = 256;
 
-    private readonly SimConnectManager _sim;
+    private readonly Action<string> _write;
     private readonly BlockingCollection<int> _queue = new(new ConcurrentQueue<int>(), MaxQueued);
     private readonly Task _pump;
     private readonly CancellationTokenSource _cts = new();
+
+    /// <summary>
+    /// Bound on how long <see cref="Dispose"/> lets the pump write what is already queued before
+    /// cancelling it. Sixteen ids — every held test button's UP plus a guard lift and a walker
+    /// burst — drain inside it at <see cref="MinGapMs"/> pacing. It sits on the UI thread (an
+    /// aircraft switch, or window close when the definition is disposed at exit), so it is a
+    /// bound, not a target: an idle bus returns within one pacing gap.
+    /// </summary>
+    internal const int DrainTimeoutMs = 1000;
+
+    /// <summary>
+    /// Buttons whose DOWN has been queued and whose UP has not: UP id → how many holds are in
+    /// flight on it. <see cref="PressAndHoldAsync"/> registers before the DOWN and takes back
+    /// after the hold; <see cref="Dispose"/> takes everything still owed and fires those UPs, so
+    /// a hold that outlives the bus never leaves the button held in the aircraft (constraint 3).
+    /// Guarded by its own lock — a hold ends on a pool thread while Dispose runs on the UI thread.
+    /// </summary>
+    private readonly Dictionary<int, int> _heldUps = new();
+
+    /// <summary>
+    /// Set by <see cref="TakeAllHeld"/> under the <see cref="_heldUps"/> lock: the release sweep
+    /// has run and no further hold may register. The guarded test button (the hydraulic test) lifts
+    /// its cover on a pool thread first, so its DOWN can be queued AFTER the sweep — a DOWN accepted
+    /// there would leave the button held with no UP owed to anyone.
+    /// </summary>
+    private bool _closed;
 
     /// <summary>
     /// Makes each calc string unique — see constraint 1. Only ever incremented, never read for
@@ -83,11 +109,29 @@ public sealed class Md11EventBus : IDisposable
     private int _dropped;
 
     /// <summary>CEVENTs queued and not yet written. The walker adds <see cref="Pending"/> × <see cref="MinGapMs"/> to a click's timestamp so a click behind a burst is judged when it lands, not when it was queued.</summary>
-    public int Pending => _queue.Count;
+    public int Pending
+    {
+        get
+        {
+            // Same disposal tolerance Fire gets, for the same reason: a walk or a hold can outlive
+            // the bus by a tick, and reading Pending on the way out must not surface as an Error-level
+            // "set threw" line from SafeWalk's generic catch for a benign shutdown race.
+            try { return _queue.Count; }
+            catch (ObjectDisposedException) { return 0; }
+        }
+    }
 
     public Md11EventBus(SimConnectManager sim)
+        : this(rpn => sim.ExecuteCalculatorCode(rpn, quiet: true)) { }
+
+    /// <summary>
+    /// The write seam. Production wires it to <c>ExecuteCalculatorCode(…, quiet: true)</c>; the
+    /// tests hand in a recorder so the real pump, its pacing and <see cref="Dispose"/> can be
+    /// driven without a sim. Every calc string still carries the <c>{seq} 0 *</c> prefix.
+    /// </summary>
+    internal Md11EventBus(Action<string> write)
     {
-        _sim = sim;
+        _write = write;
         _pump = Task.Run(PumpAsync);
     }
 
@@ -98,7 +142,19 @@ public sealed class Md11EventBus : IDisposable
     public void Fire(int eventId)
     {
         if (eventId <= 0) return;
-        if (!_queue.TryAdd(eventId))
+        bool queued;
+        try
+        {
+            queued = _queue.TryAdd(eventId);
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+        {
+            // The bus has been disposed (or is closing): a hold or walk that outlived it. Dropped,
+            // not thrown — Dispose has already released whatever it was holding.
+            Log.Debug("MD11", $"CEVENT id {eventId} fired after the bus closed — dropped.");
+            return;
+        }
+        if (!queued)
         {
             // Log the first drop only; a flooding producer would otherwise flood the log too.
             if (Interlocked.Increment(ref _dropped) == 1)
@@ -157,7 +213,7 @@ public sealed class Md11EventBus : IDisposable
     private void Write(int eventId)
     {
         var seq = Interlocked.Increment(ref _seq);
-        _sim.ExecuteCalculatorCode($"{seq} 0 * {eventId} (>L:{CEventVar})", quiet: true);
+        _write($"{seq} 0 * {eventId} (>L:{CEventVar})");
     }
 
     /// <summary>Fires a press/release pair and waits for the queue to drain past it.</summary>
@@ -182,9 +238,20 @@ public sealed class Md11EventBus : IDisposable
         var down = control.Event("LEFT_BUTTON_DOWN");
         var up = control.Event("LEFT_BUTTON_UP");
         var backlogMs = Pending * MinGapMs;   // sampled before the DOWN joins the queue
+        // Tracked only when there is a DOWN to release: a button with no DOWN was never pressed,
+        // and Dispose must not release — or log — one that was not.
+        var tracked = down is > 0 && up is > 0;
+        // Refused once Dispose has swept the held table: a DOWN queued after the sweep owes an UP
+        // nobody is left to fire, so neither half is written at all.
+        if (tracked && !TrackHeld(up!.Value)) return;
         if (down is > 0) Fire(down.Value);
         await Task.Delay(HoldDelayMs(holdMs, backlogMs)).ConfigureAwait(false);
-        if (up is > 0) Fire(up.Value);
+        // Dispose may have released this button already (and closed the queue): whoever takes the
+        // entry back fires the UP, so it is written exactly once either way.
+        if (!tracked || ReleaseHeld(up!.Value))
+        {
+            if (up is > 0) Fire(up.Value);
+        }
     }
 
     /// <summary>
@@ -195,6 +262,40 @@ public sealed class Md11EventBus : IDisposable
     /// share a tick with the DOWN — kept so a zero hold still reads as "one paced press".
     /// </summary>
     internal static int HoldDelayMs(int holdMs, int backlogMs) => Math.Max(holdMs, MinGapMs) + backlogMs;
+
+    /// <summary>Registers one hold on <paramref name="upId"/>; false once <see cref="Dispose"/>'s release sweep has run.</summary>
+    private bool TrackHeld(int upId)
+    {
+        lock (_heldUps)
+        {
+            if (_closed) return false;
+            _heldUps[upId] = _heldUps.TryGetValue(upId, out var n) ? n + 1 : 1;
+            return true;
+        }
+    }
+
+    /// <summary>Takes one hold back off <paramref name="upId"/>; false when <see cref="Dispose"/> already released it.</summary>
+    private bool ReleaseHeld(int upId)
+    {
+        lock (_heldUps)
+        {
+            if (!_heldUps.TryGetValue(upId, out var n)) return false;
+            if (n <= 1) _heldUps.Remove(upId); else _heldUps[upId] = n - 1;
+            return true;
+        }
+    }
+
+    /// <summary>Every UP still owed, taken back so the holds in flight fire nothing more — and the table closed.</summary>
+    private List<int> TakeAllHeld()
+    {
+        lock (_heldUps)
+        {
+            _closed = true;
+            var ids = _heldUps.Keys.ToList();
+            _heldUps.Clear();
+            return ids;
+        }
+    }
 
     /// <summary>
     /// Writes one L:var directly through the calc path — the shared channel for the three writes on
@@ -225,14 +326,27 @@ public sealed class Md11EventBus : IDisposable
         // comma-decimal, both of which the MSFS RPN parser rejects. Six decimals carries Mach
         // (0.820) and FPA (-3.00) without ever reaching an exponent.
         var literal = value.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
-        _sim.ExecuteCalculatorCode($"{seq} 0 * {literal} (>L:{varName})", quiet: true);
+        _write($"{seq} 0 * {literal} (>L:{varName})");
     }
 
     public void Dispose()
     {
         try
         {
+            // Release FIRST, while the queue still accepts: a DOWN whose UP has not been queued yet
+            // would otherwise leave the button held in the aircraft (constraint 3). Overlapping
+            // holds on one button owe one UP between them — one release is enough.
+            var held = TakeAllHeld();
+            foreach (var up in held) Fire(up);
+            if (held.Count > 0)
+                Log.Info("MD11", $"CEVENT bus disposing with {held.Count} held button(s) — releasing UP {string.Join(", ", held)}.");
+
+            // Stop accepting, then let the pump write what is queued — bounded, this sits on the UI
+            // thread — and only THEN cancel. Cancelling straight after CompleteAdding discarded
+            // every queued id, a held button's UP and a walk's last click among them.
             _queue.CompleteAdding();
+            if (!_pump.Wait(TimeSpan.FromMilliseconds(DrainTimeoutMs)))
+                Log.Warn("MD11", $"CEVENT bus did not drain within {DrainTimeoutMs} ms — {_queue.Count} id(s) discarded.");
             _cts.Cancel();
             // Bounded wait: a hung pump must not hold up an aircraft switch.
             _pump.Wait(TimeSpan.FromMilliseconds(500));

@@ -510,6 +510,11 @@ public partial class TFDiMD11Definition
         await Task.Delay(200).ConfigureAwait(false);   // let the final value settle and stream in
         sim.RequestVariable(Md11FlapSystem.DialKey, forceUpdate: true);
         await Task.Delay(120).ConfigureAwait(false);
+        // Re-check AFTER the settle delays, not only before them: the two waits above are 320 ms in
+        // which a newer selection can supersede this one — or Dispose can bump the generation — and
+        // past this point the value read is `sim`'s cache, which after a switch belongs to the NEXT
+        // aircraft. Announcing then speaks a real angle for a wheel this walk never touched.
+        if (gen != _dialSetGen) return;
         var raw = sim.GetCachedVariableValue(Md11FlapSystem.DialKey);
         if (raw == null) return;
 
@@ -578,6 +583,24 @@ public partial class TFDiMD11Definition
             // "did not move" message. A superseded walk leaves the re-sync to the walk that owns it.
             if (mine && !cancelled) sim.RequestVariable(varKey, forceUpdate: true);
         }
+    }
+
+    /// <summary>
+    /// Cancels every walk in flight — the detented walks in <see cref="_walkCts"/> and the
+    /// Dial-A-Flap walk — so none finishes against the NEXT aircraft's cleared registrations and
+    /// speaks "did not move" for a control that was never asked to move there. Called from
+    /// <c>Dispose</c> only. A cancelled walk leaves through SafeWalk's ct checks (silent),
+    /// DebouncedWalk's finally removes its own entry and skips the combo re-sync, and the
+    /// generation bump makes a Dial-A-Flap walk already past its cancellable await return before
+    /// its announce. The <see cref="_walkCts"/> snapshot can carry a source its walk disposed a
+    /// moment ago — the helper tolerates that.
+    /// </summary>
+    private void CancelWalks()
+    {
+        _dialSetGen++;
+        var sources = _walkCts.Values.Cast<CancellationTokenSource?>().Append(_dialWalkCts);
+        var n = Md11WalkCancellation.CancelAll(sources);
+        if (n > 0) Log.Info("MD11", $"Definition disposed with {n} walk(s) in flight — cancelled.");
     }
 
     private async Task SafeWalk(Func<Task<bool>> walk, Md11Control control, double target,

@@ -594,8 +594,10 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     {
         _announceGeneration++;   // a deferred dark transition must not speak for a disposed definition
         _seedGate.Disarm();      // nor may a pending seed pass run for one
-        _bus?.Dispose();
+        CancelWalks();           // nor may a walk in flight finish — and speak — against the next aircraft
+        _bus?.Dispose();         // writes what is queued and releases any held test button (Md11EventBus.Dispose)
         _bus = null;
+        _sim = null;             // every reader null-checks; a late callback must not read the next aircraft's cache
         DisposeTrackedWindows();
         GC.SuppressFinalize(this);
     }

@@ -675,7 +675,10 @@ public partial class MainForm
         // into L:CEVENT. Left running it would keep actuating controls on whatever aircraft is
         // loaded NEXT (the sim stays connected across a switch), which is the same failure the
         // A380 motion-timer teardown above exists to prevent — except CEVENT ids are meaningless
-        // on another airframe, so the writes would be arbitrary. Dispose drains and stops it.
+        // on another airframe, so the writes would be arbitrary. Dispose writes what is already
+        // queued (bounded), releases any test button still held, cancels every walk in flight,
+        // and only then stops the pump — so re-selecting the MD-11 mid-hold never leaves a button
+        // held, and no walk speaks "did not move" against the aircraft that follows.
         if (oldAircraft is TFDiMD11Definition oldMd11 && !ReferenceEquals(oldAircraft, newAircraft))
             oldMd11.Dispose();
 
