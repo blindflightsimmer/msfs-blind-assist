@@ -53,7 +53,13 @@ public class Md11McduForm : Form
     private Md11McduUnit _unit = Md11McduUnit.Left;
     private Md11McduScreen? _screen;
     private object? _lastRendered;
-    private string _lastAnnouncedTitle = "";
+
+    /// <summary>
+    /// The last title adopted and the row the cursor was last on, PER UNIT. One slot for all
+    /// three compared a unit's title against whichever unit was shown before it, so every switch
+    /// read as a page change and threw the cursor to line 1: see <see cref="Md11McduUnitMemory"/>.
+    /// </summary>
+    private readonly Md11McduUnitMemory _memory = new();
 
     /// <summary>
     /// When each UNIT went continuously blank, or null while it has content — one clock per
@@ -76,13 +82,6 @@ public class Md11McduForm : Form
     /// is put back after a redraw: see <see cref="Md11McduRows.Restore"/>.
     /// </summary>
     private IReadOnlyList<Md11McduRow>? _rows;
-
-    /// <summary>
-    /// The row the cursor was on when the list last went over to an advisory (a blank, or no
-    /// data), so a return to the SAME page puts the pilot back on the line they were reading —
-    /// the advisory replaces <see cref="_rows"/>, and without this the return landed on "Title:".
-    /// </summary>
-    private Md11McduRow? _cursorBeforeAdvisory;
 
     public Md11McduForm(TFDiMD11Definition definition, SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
@@ -221,6 +220,12 @@ public class Md11McduForm : Form
     {
         unitSelector.SelectedIndexChanged += (s, e) =>
         {
+            // Leave the unit being switched AWAY from with its cursor remembered, and drop its
+            // rows: CursorRow() reads the list's selection against _rows, so the next Render
+            // would otherwise hand the OLD unit's row identity to the new unit as "where the
+            // cursor was". The new unit's own remembered row is what Render restores instead.
+            _memory.RememberCursor(_unit, CursorRow());
+            _rows = null;
             _unit = (Md11McduUnit)unitSelector.SelectedIndex;
             // Re-render the newly selected unit at once rather than waiting for the next tick.
             // Suppress the title announce: the screen reader already spoke the combo change, and
@@ -556,30 +561,29 @@ public class Md11McduForm : Form
         // back on that row below — never by index, which handed a pilot reading line 6 the
         // scratchpad after a few slews.
         var rows = Md11McduRows.Build(screen);
-        var cursor = CursorRow() ?? _cursorBeforeAdvisory;   // content back after an advisory: the row from before it
+        var cursor = CursorRow() ?? _memory.Cursor(_unit);   // content back after an advisory or a unit switch: this unit's own last row
 
         // Shared in-place reconcile. Its content-based restore cannot follow an LSK line (the
         // number is part of the text, so a slewed line is a different string); this form's own
         // row restore runs below and overrides it.
         Forms.DisplayList.UpdateInPlace(mcduDisplay, rows.Select(r => r.Text).ToList());
         _rows = rows;
-        _cursorBeforeAdvisory = null;
 
         UpdateStatus(screen);
 
         var title = screen.Title.Trim();
-        bool titleChanged = !string.IsNullOrEmpty(title) && title != _lastAnnouncedTitle;
-        if (titleChanged)
+        // Judged against THIS unit's own last title: a switch to another unit and back is not a
+        // page change on either of them, and each keeps the line its pilot was reading.
+        var change = _memory.Adopt(_unit, title);
+        if (change.TitleChanged)
         {
             // Two decisions, not one. A changed title is ANNOUNCED — the pilot cannot see that
             // the key worked. But the cursor goes to line 1 only when the PAGE changed: MD-11
             // titles carry their page counter ("ACT F-PLN     1/2"), and a slew across a page
             // boundary changes the text while the pilot is still reading the same page.
-            bool pageChanged = !Md11McduTitle.SamePage(_lastAnnouncedTitle, title);
-            _lastAnnouncedTitle = title;
             if (!silentTitle) _announcer.Announce(title);
 
-            if (pageChanged)
+            if (change.PageChanged)
             {
                 if (mcduDisplay.Items.Count > 1) mcduDisplay.SelectedIndex = 1;
             }
@@ -653,7 +657,7 @@ public class Md11McduForm : Form
                 withContent.Add(u);
 
         var advisory = Md11McduPresence.Describe(_unit, presence, withContent).ToList();
-        if (_rows != null) _cursorBeforeAdvisory = CursorRow();   // only on the way OVER, never on a later tick
+        if (_rows != null) _memory.RememberCursor(_unit, CursorRow());   // only on the way OVER, never on a later tick
         Forms.DisplayList.UpdateInPlace(mcduDisplay, advisory);
         _rows = null;
 

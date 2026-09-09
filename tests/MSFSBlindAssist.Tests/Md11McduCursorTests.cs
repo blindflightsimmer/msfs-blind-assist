@@ -252,4 +252,102 @@ public class Md11McduCursorTests
         // The window opens with no title adopted; the first page must still land on line 1.
         Assert.False(Md11McduTitle.SamePage("", "          MENU".Trim()));
     }
+
+    // ---------------------------------------------------------- Unit memory
+
+    /// <summary>
+    /// Found in review of PR #189: reading line 5 of ACT F-PLN on the Left, Ctrl+Shift+C to
+    /// glance at the Center's MENU, Ctrl+Shift+L back — and the cursor was on line 1. The window
+    /// kept ONE last title for all three units, so the Left's title was judged against the
+    /// Center's ("MENU" vs "ACT F-PLN 1/2"), which is a page change. Each unit now remembers its
+    /// own last title and its own cursor row.
+    /// </summary>
+    [Fact]
+    public void Switching_units_and_back_restores_that_units_own_line()
+    {
+        var memory = new Md11McduUnitMemory();
+        var fpln = Md11McduRows.Build(LiveFplnPage1());
+        var menu = Md11McduRows.Build(LiveMenuPage());
+
+        // Left: first page, reading line 5.
+        Assert.True(memory.Adopt(Md11McduUnit.Left, "ACT F-PLN     1/2").PageChanged);
+        memory.RememberCursor(Md11McduUnit.Left, fpln[IndexOf(fpln, Md11McduRowKind.Value, 5)]);
+
+        // A glance at the Center's MENU, reading line 3 there.
+        var center = memory.Adopt(Md11McduUnit.Center, "MENU");
+        Assert.True(center.TitleChanged);
+        Assert.True(center.PageChanged);
+        memory.RememberCursor(Md11McduUnit.Center, menu[IndexOf(menu, Md11McduRowKind.Value, 3)]);
+
+        // Back to the Left: the same page it last showed — nothing to announce, no jump to
+        // line 1, and its own remembered row is what the cursor goes back to.
+        var back = memory.Adopt(Md11McduUnit.Left, "ACT F-PLN     1/2");
+        Assert.False(back.TitleChanged);
+        Assert.False(back.PageChanged);
+        Assert.Equal(IndexOf(fpln, Md11McduRowKind.Value, 5), Md11McduRows.Restore(fpln, memory.Cursor(Md11McduUnit.Left)));
+
+        // The Center's line survives the round trip too.
+        Assert.Equal(IndexOf(menu, Md11McduRowKind.Value, 3), Md11McduRows.Restore(menu, memory.Cursor(Md11McduUnit.Center)));
+    }
+
+    [Fact]
+    public void A_unit_is_judged_against_its_own_last_title_not_the_unit_shown_before_it()
+    {
+        var memory = new Md11McduUnitMemory();
+        memory.Adopt(Md11McduUnit.Left, "ACT F-PLN     1/2");
+        memory.Adopt(Md11McduUnit.Center, "MENU");
+
+        // While away the Left paged: the title text changed, the page did not — the caller
+        // announces it, the cursor is kept. Against the Center's "MENU" it would have read as a
+        // page change.
+        var back = memory.Adopt(Md11McduUnit.Left, "ACT F-PLN     2/2");
+        Assert.True(back.TitleChanged);
+        Assert.False(back.PageChanged);
+        Assert.Equal("ACT F-PLN     2/2", memory.LastTitle(Md11McduUnit.Left));
+        Assert.Equal("MENU", memory.LastTitle(Md11McduUnit.Center));
+    }
+
+    [Fact]
+    public void The_first_look_at_a_unit_is_a_page_change_with_no_row_to_return_to()
+    {
+        var memory = new Md11McduUnitMemory();
+        memory.Adopt(Md11McduUnit.Left, "ACT F-PLN     1/2");
+
+        var right = memory.Adopt(Md11McduUnit.Right, "MENU");
+        Assert.True(right.TitleChanged);
+        Assert.True(right.PageChanged);
+        Assert.Null(memory.Cursor(Md11McduUnit.Right));
+        Assert.Equal(-1, Md11McduRows.Restore(Md11McduRows.Build(LiveMenuPage()), memory.Cursor(Md11McduUnit.Right)));
+    }
+
+    [Fact]
+    public void An_empty_title_is_never_adopted()
+    {
+        // A frame whose title row is blank is not a page — the window's rule since the title
+        // latch existed, now per unit. Adopting it would announce the page that follows as new.
+        var memory = new Md11McduUnitMemory();
+        memory.Adopt(Md11McduUnit.Left, "MENU");
+
+        var blank = memory.Adopt(Md11McduUnit.Left, "");
+        Assert.False(blank.TitleChanged);
+        Assert.False(blank.PageChanged);
+        Assert.Equal("MENU", memory.LastTitle(Md11McduUnit.Left));
+        Assert.False(memory.Adopt(Md11McduUnit.Left, "MENU").TitleChanged);
+    }
+
+    [Fact]
+    public void An_advisory_does_not_overwrite_the_row_the_pilot_was_on()
+    {
+        // The form records CursorRow() at every transition, and CursorRow() is null while the
+        // list shows the blank / no-data advisory. Recording that null would lose the row a
+        // return to the page must land on.
+        var memory = new Md11McduUnitMemory();
+        var fpln = Md11McduRows.Build(LiveFplnPage1());
+        var line5 = fpln[IndexOf(fpln, Md11McduRowKind.Value, 5)];
+
+        memory.RememberCursor(Md11McduUnit.Left, line5);
+        memory.RememberCursor(Md11McduUnit.Left, null);
+
+        Assert.Equal<Md11McduRow?>(line5, memory.Cursor(Md11McduUnit.Left));
+    }
 }
