@@ -59,8 +59,10 @@ jobs:
           node-version: '20'
 
       # The in-page EFB readers (the JS MSFSBA injects into the PMDG tablet and the TFDi MD-11 EFB)
-      # are pure DOM logic, replayed against captured pages under jsdom. Until this job existed
-      # they only ran by hand, so a reader regression could reach a pilot unnoticed.
+      # and the shared WebView2 shell's keyed reconcile (the flyPad shell mirror, whose baseLabel
+      # rule FbwEfbForm shares across every EFB) are pure DOM logic, replayed under jsdom. Until
+      # this job existed they only ran by hand, so a reader regression could reach a pilot unnoticed.
+      # Each suite has its own lockfile, so each gets its own npm ci.
       - name: MD-11 EFB reader
         working-directory: tools/md11-efb-test
         run: |
@@ -69,6 +71,12 @@ jobs:
 
       - name: PMDG EFB reader
         working-directory: tools/pmdg-efb-test
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+
+      - name: flyPad shell reconcile
+        working-directory: tools/flypad-shell-test
         run: |
           npm ci --no-audit --no-fund
           npm test
