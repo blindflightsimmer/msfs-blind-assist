@@ -1,0 +1,1 @@
+MD-11: the MCDU (Shift+M) and Flight Control Panel (Ctrl+P) windows no longer keep the app alive when it exits for an update, so the updater's restart completes instead of waiting on a program that never closed.

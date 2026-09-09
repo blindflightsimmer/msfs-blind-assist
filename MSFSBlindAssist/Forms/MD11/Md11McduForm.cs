@@ -190,12 +190,14 @@ public class Md11McduForm : Form
         this.AccessibleName = "MD-11 MCDU";
         this.AccessibleDescription = "TFDi Design MD-11 MCDU display and controls";
 
-        FormClosing += (sender, e) =>
+        // Hide on close so the unit selection, the current page and the window position survive
+        // between opens — but let a real process shutdown through. The house wiring gates on
+        // CloseReason: an unconditional cancel here made Application.Exit abort AFTER MainForm's
+        // own teardown had run, and the updater's restart then waited on an exe that never closed.
+        MonitorManagerShared.HideOnClose(this, () =>
         {
-            e.Cancel = true;
-            Hide();
             if (previousWindow != IntPtr.Zero) SetForegroundWindow(previousWindow);
-        };
+        });
 
         _scratchpadDebounceTimer = new System.Windows.Forms.Timer { Interval = 300 };
         _scratchpadDebounceTimer.Tick += (s, e) =>

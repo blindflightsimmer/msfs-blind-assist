@@ -219,12 +219,14 @@ public class Md11AutopilotWindow : Form
         // Auto/5/10/15/20/25 — the aircraft's own value map for the limiter knob.
         _bankLimit.Items.AddRange(new object[] { "Auto", "5 degrees", "10 degrees", "15 degrees", "20 degrees", "25 degrees" });
 
-        FormClosing += (s, e) =>
+        // Hide on close (Escape and &Close both route through Close()) — but let a real process
+        // shutdown through. The house wiring gates on CloseReason: an unconditional cancel here
+        // made Application.Exit abort after MainForm's own teardown had run, and the updater's
+        // restart then waited on an exe that never closed.
+        MonitorManagerShared.HideOnClose(this, () =>
         {
-            e.Cancel = true;
-            Hide();
             if (_previousWindow != IntPtr.Zero) SetForegroundWindow(_previousWindow);
-        };
+        });
 
         _refresh = new System.Windows.Forms.Timer { Interval = 500 };
         _refresh.Tick += (s, e) => RefreshStates();
