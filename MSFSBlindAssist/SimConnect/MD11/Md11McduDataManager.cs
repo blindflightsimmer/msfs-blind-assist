@@ -84,6 +84,37 @@ public sealed class Md11McduDataManager : IDisposable
         _simConnect = simConnect;
     }
 
+    /// <summary>
+    /// Test seam: a manager with no SimConnect handle. Only the receive/cache half
+    /// (<see cref="Deliver"/>, <see cref="Reset"/>, <see cref="GetScreen"/>) is usable on it —
+    /// the test project cannot name the SimConnect type and never calls Register/RequestAll.
+    ///
+    /// The body must not MENTION <c>_simConnect</c>, not even to assign it null: a single stfld
+    /// against that field makes the JIT resolve its type, which loads the mixed-mode
+    /// <c>Microsoft.FlightSimulator.SimConnect</c> wrapper — and that wrapper cannot load in the
+    /// test process, whose bin has no native SimConnect DLL beside it (the app renames one of the
+    /// two shipped copies at startup). Written as <c>_simConnect = null!;</c> all three tests
+    /// failed with FileNotFoundException before ever reaching an assertion. It is left at its
+    /// default null, which is what that line said anyway.
+    /// </summary>
+#pragma warning disable CS8618 // _simConnect is deliberately left null — see above; nothing on this seam reads it.
+    internal Md11McduDataManager()
+    {
+    }
+#pragma warning restore CS8618
+
+    /// <summary>
+    /// True when this manager registered against <paramref name="handle"/>. ONE manager lives
+    /// per SimConnect connection: <c>SimConnectManager.InitializePMDG</c> reuses the manager
+    /// bound to the live handle and creates a new one only for a new handle (a reconnect),
+    /// because a second MapClientDataNameToID / AddToClientDataDefinition of the same name and
+    /// ids on one connection is what SimConnect answers with DUPLICATE_ID — or, with the first
+    /// load's subscriptions still live on those ids, a definition changed under a live request.
+    /// A null handle is never "bound": the test-seam manager holds none.
+    /// </summary>
+    public bool IsBoundTo(Microsoft.FlightSimulator.SimConnect.SimConnect handle) =>
+        handle != null && ReferenceEquals(_simConnect, handle);
+
     /// <summary>Latest decoded screen for a unit, or null if none has arrived yet.</summary>
     public Md11McduScreen? GetScreen(Md11McduUnit unit)
     {
@@ -95,9 +126,12 @@ public sealed class Md11McduDataManager : IDisposable
     // ------------------------------------------------------------------
 
     /// <summary>
-    /// Maps the area and defines the three per-MCDU windows into it. Safe to call once per
-    /// connection; re-registering the same name is what an aircraft switch would do and SimConnect
-    /// does not like it, hence the latch.
+    /// Maps the area and defines the three per-MCDU windows into it. Runs ONCE per connection:
+    /// the latch below makes a second call a no-op, and the manager itself is kept for the life
+    /// of the connection (see <see cref="IsBoundTo"/>), so an aircraft switch back to the MD-11
+    /// calls this on the SAME instance instead of re-mapping the name on a fresh one. Before
+    /// that, every switch constructed a new manager, so the latch was per-instance and the
+    /// re-registration it was written to prevent happened on every second MD-11 load.
     /// </summary>
     public void Register()
     {
@@ -201,24 +235,35 @@ public sealed class Md11McduDataManager : IDisposable
         var unit = UnitForRequest(data.dwRequestID);
         if (unit == null) return false;
 
+        if (data.dwData == null || data.dwData.Length == 0) return true;
+        if (data.dwData[0] is not Md11McduExportData raw) return true;
+
+        Deliver(unit.Value, raw);
+        return true;
+    }
+
+    /// <summary>
+    /// Decodes one delivery and caches it. Separated from the SimConnect envelope so the cache's
+    /// lifecycle — first delivery, identical repeat, <see cref="Reset"/> — is testable without
+    /// a SimConnect handle (pinned by <c>Md11McduManagerReuseTests</c>).
+    /// </summary>
+    internal void Deliver(Md11McduUnit unit, Md11McduExportData raw)
+    {
         try
         {
-            if (data.dwData == null || data.dwData.Length == 0) return true;
-            if (data.dwData[0] is not Md11McduExportData raw) return true;
-
-            var screen = Decode(unit.Value, raw);
+            var screen = Decode(unit, raw);
 
             bool changed;
             bool firstEver;
             lock (_lock)
             {
-                var prev = _screens[(int)unit.Value];
+                var prev = _screens[(int)unit];
                 firstEver = prev == null;
                 changed = prev == null || !SameContent(prev, screen);
                 // An identical repeat — the start-up snapshot echoing what the subscription just
                 // delivered — keeps the OLD object, so the form's reference shortcut skips it
                 // instead of re-rendering a page that did not change.
-                if (changed) _screens[(int)unit.Value] = screen;
+                if (changed) _screens[(int)unit] = screen;
             }
 
             // First delivery per unit is logged: on a fresh (unverified) install this line is the
@@ -249,8 +294,6 @@ public sealed class Md11McduDataManager : IDisposable
         {
             Log.Debug("MD11", $"Failed to decode MCDU {unit}: {ex.Message}");
         }
-
-        return true;
     }
 
     /// <summary>
@@ -322,9 +365,27 @@ public sealed class Md11McduDataManager : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Forgets every cached screen and the readiness gate, keeping the registration, the
+    /// subscriptions and the listeners. Called when the MD-11 is loaded again on a connection
+    /// this manager already serves, right before <see cref="RequestAll"/> re-issues the
+    /// snapshot: the aircraft was unloaded in between, so what is cached is the PREVIOUS load's
+    /// page. It buys two things — a later-opened window cannot read that page as current if the
+    /// re-issued snapshot never answers, and the snapshot that does answer lands as a FIRST
+    /// delivery again (a fresh "first delivery" log line, the evidence of a healthy reuse)
+    /// instead of being dropped as an identical repeat. The MCDU window is disposed on every
+    /// aircraft switch, so in practice nothing is reading the cache across this call.
+    /// </summary>
+    public void Reset()
+    {
+        lock (_lock) Array.Clear(_screens);
+        IsReady = false;
+    }
+
+    /// <summary>Teardown for the CONNECTION going away — the only time this manager is let go.</summary>
     public void Dispose()
     {
         ScreenUpdated = null;
-        lock (_lock) Array.Clear(_screens);
+        Reset();
     }
 }

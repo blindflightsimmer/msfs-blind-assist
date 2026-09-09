@@ -22,9 +22,10 @@ namespace MSFSBlindAssist.Forms.MD11;
 /// selector rather than being hardwired to the Captain's. The three key sets are identical
 /// (74 nodes each), so one layout serves all three; only the node-id prefix changes.
 ///
-/// WHY IT POLLS. The manager is recreated on every aircraft switch and only exists once SimConnect
-/// is connected, so subscribing to its event would bind this form to one instance and silently go
-/// deaf if the user opened the window before connecting. Reading the manager's cached screen on a
+/// WHY IT POLLS. The manager only exists once SimConnect is connected and is replaced on every
+/// reconnect (one per connection), so subscribing to its event would bind this form to one
+/// instance and silently go deaf if the user opened the window before connecting, or across a
+/// reconnect. Reading the manager's cached screen on a
 /// timer is immune to both, costs a reference compare per tick when nothing has changed, and is
 /// what the PMDG CDU form already does. The underlying request is ON_SET/CHANGED, so the sim only
 /// delivers on a real change regardless.
