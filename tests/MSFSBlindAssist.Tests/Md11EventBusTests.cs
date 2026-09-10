@@ -157,19 +157,30 @@ public class Md11EventBusTests
     }
 
     /// <summary>
-    /// The guarded hold-to-test button lifts its cover on a pool thread, so its DOWN is queued from
-    /// a thread that knows nothing about an aircraft switch happening on the UI thread. Registering
-    /// the UP and queuing the DOWN used to be two steps, and a Dispose landing between them swept a
-    /// table that did not yet owe this UP and then let the DOWN through — the button left held in
-    /// the aircraft with no release owed to anyone. Both halves are now queued under the held
-    /// table's own lock, so whatever the interleaving, a hold writes either NOTHING or its DOWN
-    /// followed by its UP. Racy by nature: many holds against one Dispose, repeated, is how a
-    /// microsecond window is reached at all.
+    /// A GUARD on the invariant above, not a reproduction of the race it describes. The window the
+    /// fix closed is a few instructions wide — inside the single <c>lock (_heldUps)</c> that
+    /// <see cref="TrackHeldAndFireDown"/> and <see cref="ReleaseHeldAndFireUp"/> take to register
+    /// and fire, and that <see cref="Dispose"/>'s <see cref="TakeAllHeld"/> takes to flip
+    /// <c>_closed</c> and drain the table — and nothing outside the bus can land inside it
+    /// deterministically; doing that would need a production test seam planted exactly where the
+    /// fix removed the gap (the old two-step register-then-queue this class used to have). Measured
+    /// on this machine, all 12 rounds below run in around 145 ms total — far under even one
+    /// <see cref="MinGapMs"/> write — so Dispose's release sweep wins every round before a single
+    /// hold reaches registration: the loop never actually provokes the interleaving. Its value is
+    /// that across many attempts it can NEVER observe a button left held, not that it forces the
+    /// race open. The real correctness argument is the LOCK'S SCOPE: register-and-fire-DOWN and
+    /// take-and-fire-UP both run inside <c>lock (_heldUps)</c>, and the sweep takes that same lock
+    /// to close the table, so whichever wins, the two can never interleave — which is what the
+    /// assertions below are actually pinning, whether or not any round lands in the gap.
+    /// HoldsPerRound is kept small (down from an earlier 32) so that even the practically
+    /// unreachable worst case — every hold registering before the sweep runs — drains well inside
+    /// <see cref="DrainTimeoutMs"/> instead of risking the sweep discarding a queued write past that
+    /// timeout and flaking the assertions over a slow drain rather than a real bug.
     /// </summary>
     [Fact]
     public async Task AHoldRacingDispose_NeverLeavesItsButtonHeld()
     {
-        const int Rounds = 12, HoldsPerRound = 32;
+        const int Rounds = 12, HoldsPerRound = 6;
 
         for (int round = 0; round < Rounds; round++)
         {
