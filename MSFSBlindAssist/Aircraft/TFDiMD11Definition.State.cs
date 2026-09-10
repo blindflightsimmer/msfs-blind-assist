@@ -66,6 +66,33 @@ public partial class TFDiMD11Definition
     internal const int PressSettleMs = 1200;
 
     /// <summary>
+    /// What the feedback must leave itself after the wait: the latch's fresh read
+    /// (<see cref="GuardReadTimeoutMs"/>) plus a margin, so the sentence lands inside the echo
+    /// window rather than exactly on its edge.
+    /// </summary>
+    internal const int FeedbackReserveMs = GuardReadTimeoutMs + 100;
+
+    /// <summary>
+    /// The feedback's wait: the lamps' settle measured from the press's WRITE
+    /// (<see cref="Md11EventBus.ReadBackDelayMs"/>), capped at whatever the echo window has left
+    /// (<see cref="Md11AnnouncementGate.RemainingFeedbackBudgetMs"/>).
+    ///
+    /// The cap is the finding this method exists for: the chain absorbs the bus backlog TWICE —
+    /// once in EnsureGuardOpenAsync's cover settle, again here — and the term is Pending × MinGapMs,
+    /// bounded only by the queue (256 ids ⇒ 15 s). A guarded press queued behind a real burst (an
+    /// MCDU scratchpad send, ~1.4 s) would otherwise speak after the window had closed, and the
+    /// press's own lamp echo would be spoken beside it — the doubled announcement the window exists
+    /// to prevent, and one the pre-branch fixed 1700 ms could not produce. Only the WAIT is cut, and
+    /// cutting it is the safe direction: the feedback may then read the pre-press state, and a lamp
+    /// landing later with a different text is the correction (which is why Feedback closes the
+    /// window). The guard's own settle is NOT clamped — that one paces two writes at the aircraft,
+    /// and shortening it is how a covered control fails to actuate at all.
+    /// </summary>
+    internal static int FeedbackDelayMs(int backlogMs, long elapsedSincePressMs)
+        => Math.Min(Md11EventBus.ReadBackDelayMs(PressSettleMs, backlogMs),
+                    Md11AnnouncementGate.RemainingFeedbackBudgetMs(elapsedSincePressMs, FeedbackReserveMs));
+
+    /// <summary>
     /// Only the hold-to-test path still ESTIMATES its guard chain — a fresh guard read (a frame or
     /// two, <see cref="GuardReadTimeoutMs"/> at worst), the guard's click and its 250 ms settle:
     /// its feedback must speak at the settle, not after the 3 s hold, so it cannot wait for the
@@ -225,14 +252,17 @@ public partial class TFDiMD11Definition
     /// The whole chain has to finish inside <see cref="Md11AnnouncementGate.EchoWindowMs"/>, or
     /// the window closes on its own and the press's lamp echo is spoken beside this feedback.
     /// That is why the latch read below is bounded by the short <see cref="GuardReadTimeoutMs"/>
-    /// rather than the walker's ceiling — pinned by Md11AnnouncementGateTests.
+    /// rather than the walker's ceiling, and why the settle wait goes through
+    /// <see cref="FeedbackDelayMs"/> against <paramref name="pressedAtMs"/> — the moment the gate
+    /// stamped, which is where the window is measured from. Pinned by Md11AnnouncementGateTests.
     /// </summary>
-    private async Task PressFeedbackAsync(Md11Control c, SimConnectManager sim, ScreenReaderAnnouncer announcer, Task<int> queued)
+    private async Task PressFeedbackAsync(Md11Control c, SimConnectManager sim, ScreenReaderAnnouncer announcer,
+        Task<int> queued, long pressedAtMs)
     {
         try
         {
             int backlogMs = await queued.ConfigureAwait(false);
-            await Task.Delay(Md11EventBus.ReadBackDelayMs(PressSettleMs, backlogMs)).ConfigureAwait(false);
+            await Task.Delay(FeedbackDelayMs(backlogMs, Environment.TickCount64 - pressedAtMs)).ConfigureAwait(false);
             // A latched button's own var has its own data definition: the read completes on the
             // PERIOD.ONCE delivery, which lands in the cache Compose reads below (the old fixed
             // 300 ms sleep read whatever the cache held). Nothing delivered leaves the cache as it

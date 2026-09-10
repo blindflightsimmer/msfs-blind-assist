@@ -98,7 +98,7 @@ public partial class TFDiMD11Definition
         if (_bus == null || !_byNodeId.TryGetValue(Md11SpeedbrakeSystem.LeverKey, out var lever)) return;
         var click = lever.Event("LEFT_BUTTON_DOWN");
         if (click is not > 0) return;
-        int backlogMs = _bus.Pending * Md11EventBus.MinGapMs;   // sampled before the click joins the queue
+        int backlogMs = _bus.BacklogMs;   // sampled before the click joins the queue
         _bus.Fire(click.Value);
         _ = VerifyGroundSpoilersAsync(target, backlogMs, simConnect, announcer);
     }
@@ -428,7 +428,8 @@ public partial class TFDiMD11Definition
             case Md11Kinds.Button:
             {
                 bool guarded = !string.IsNullOrEmpty(control.GuardId);
-                _gate.NotePress(control.NodeId, Environment.TickCount64);
+                long pressedAt = Environment.TickCount64;
+                _gate.NotePress(control.NodeId, pressedAt);
                 // The feedback's clock starts when the press is QUEUED and adds the bus backlog it
                 // then waits behind (Pending × MinGapMs — the stamp every walker click and
                 // PressAndHoldAsync carry). A guarded press is queued only after its guard chain
@@ -438,7 +439,7 @@ public partial class TFDiMD11Definition
                 Task<int> queued;
                 if (Md11TestButtons.IsHoldToTest(control.NodeId))
                 {
-                    queued = Task.FromResult(_bus.Pending * Md11EventBus.MinGapMs + (guarded ? GuardedPressExtraMs : 0));
+                    queued = Task.FromResult(_bus.BacklogMs + (guarded ? GuardedPressExtraMs : 0));
                     _ = HoldTestButtonAsync(control, simConnect, guarded);   // held, so its lights get seen
                 }
                 else if (guarded)
@@ -447,10 +448,10 @@ public partial class TFDiMD11Definition
                 }
                 else
                 {
-                    queued = Task.FromResult(_bus.Pending * Md11EventBus.MinGapMs);
+                    queued = Task.FromResult(_bus.BacklogMs);
                     _bus.Press(control);
                 }
-                _ = PressFeedbackAsync(control, simConnect, announcer, queued);
+                _ = PressFeedbackAsync(control, simConnect, announcer, queued, pressedAt);
                 return true;
             }
 
@@ -755,8 +756,9 @@ public partial class TFDiMD11Definition
     /// The trade is real and is accepted: past this ceiling the state is unreadable and
     /// <see cref="Md11Guard.Decide"/> leaves the cover alone (exactly as an undelivered value did),
     /// so the control is actuated UNGATED and a covered fire handle may then report "did not move"
-    /// — retry the pick. And until the timed-out-waiter finding lands, a late delivery answering
-    /// this read's abandoned waiter can satisfy the NEXT guard read on the same key.
+    /// — retry the pick. A read that times out is ABANDONED, so its late answer cannot satisfy the
+    /// next guard read on the same key (<c>FreshReadWaiters</c> releases the request on every exit
+    /// and only that request's answer completes it — PR #189 X1).
     /// </summary>
     internal const int GuardReadTimeoutMs = 300;
 
@@ -803,7 +805,7 @@ public partial class TFDiMD11Definition
             // press or walk that follows is queued behind it in the same FIFO, so this is the only
             // thing that keeps the two writes GuardOpenSettleMs apart (a guard click written right
             // beside its button's press was ignored, live).
-            int backlogMs = _bus.Pending * Md11EventBus.MinGapMs;
+            int backlogMs = _bus.BacklogMs;
             _bus.Fire(openEvent.Value);
             await Task.Delay(Md11EventBus.ReadBackDelayMs(GuardOpenSettleMs, backlogMs)).ConfigureAwait(false);
 
@@ -846,7 +848,7 @@ public partial class TFDiMD11Definition
     private async Task<int> GuardedPressAsync(Md11Control control, SimConnectManager sim)
     {
         await EnsureGuardOpenAsync(control, sim).ConfigureAwait(false);
-        int backlogMs = (_bus?.Pending ?? 0) * Md11EventBus.MinGapMs;
+        int backlogMs = _bus?.BacklogMs ?? 0;
         _bus?.Press(control);
         return backlogMs;
     }

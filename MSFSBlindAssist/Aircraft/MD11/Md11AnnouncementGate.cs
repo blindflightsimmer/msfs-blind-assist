@@ -31,6 +31,23 @@ public sealed class Md11AnnouncementGate
 
     public void NotePress(string owner, long nowMs) => _pressedAt[owner] = nowMs;
 
+    /// <summary>
+    /// How long a press's feedback may still WAIT before it has to speak: the echo window minus
+    /// what has already elapsed since the press was noted, minus the <paramref name="reserveMs"/>
+    /// the steps after the wait still need (the latch's own fresh read). Never negative — a chain
+    /// that has already overrun speaks at once.
+    ///
+    /// The constraint the feedback lives under is a DEADLINE, not a budget per step: every term
+    /// ahead of it (the guard's decision read, the cover's settle, and above all the bus backlog,
+    /// which is bounded only by the queue) is elapsed time against this same window, and if the
+    /// window closes first the press's own lamp echo is spoken and then the feedback says the same
+    /// thing again. Speaking EARLY is the safe direction: it may read the pre-press state, and a
+    /// later lamp carrying a different text is the correction — which <see cref="Feedback"/>
+    /// closing the window is precisely what allows.
+    /// </summary>
+    public static int RemainingFeedbackBudgetMs(long elapsedMs, int reserveMs)
+        => (int)Math.Clamp(EchoWindowMs - elapsedMs - reserveMs, 0, EchoWindowMs);
+
     public bool IsInEchoWindow(string owner, long nowMs)
         => _pressedAt.TryGetValue(owner, out var t) && nowMs - t < EchoWindowMs;
 

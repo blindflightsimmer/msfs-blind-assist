@@ -114,7 +114,9 @@ public class Md11ControlMapTests
     /// The aircraft has THREE IRS switches — IRS 1, IRS 2 and the one TFDi call "Auxiliary IRS" —
     /// and all three are Off/Nav. The third shipped with no positions because TFDi's tooltip for
     /// it has a stray '%' ('%{if}%Nav') that the generator's if/else parser tripped over, so the
-    /// app showed a bare button named "Auxiliary IRS" and a pilot counted two IRS switches.
+    /// app showed a read-only numeric field named "Auxiliary IRS" and a pilot counted two IRS
+    /// switches (a position control with no value map takes MainForm's read-only TextBox branch —
+    /// see Md11DefinitionStateTests.IrsSwitch_RendersAsAnOffNavCombo).
     /// </summary>
     [Theory]
     [InlineData("MD11_OVHD_IRS_1_KB", "IRS 1")]

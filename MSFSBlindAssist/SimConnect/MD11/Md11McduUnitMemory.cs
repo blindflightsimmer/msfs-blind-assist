@@ -27,9 +27,10 @@ public sealed class Md11McduUnitMemory
     private readonly Md11McduRow?[] _cursors = new Md11McduRow?[3];
 
     /// <summary>
-    /// The title last adopted for <paramref name="unit"/>, or empty before its first page. Read
-    /// by the tests, so a per-unit slot is observable at all; the form only ever asks
-    /// <see cref="Adopt"/>.
+    /// The title last adopted for <paramref name="unit"/>, or empty before its first page. Read by
+    /// the window's <c>ShowForm</c> — once either side of its silent re-sync — to tell a re-show
+    /// onto a NEW page (cursor to the title row, so the screen reader's own read names the page)
+    /// from a re-show onto the same one (cursor left where the pilot was), and by the tests.
     /// </summary>
     public string LastTitle(Md11McduUnit unit) => _titles[(int)unit];
 

@@ -124,18 +124,46 @@ public class Md11AnnouncementGateTests
     /// a GUARDED press: the guard's decision read, the cover's settle, the bus backlog the press is
     /// queued behind, the lamps' settle, and the latch's own fresh read — has to fit inside it.
     /// This is why the latch read is bounded by the short guard ceiling rather than the walker's.
+    ///
+    /// The chain absorbs the bus backlog TWICE — once in EnsureGuardOpenAsync's cover settle and
+    /// again in the feedback's own lamp settle — and each term is Pending × MinGapMs, which is
+    /// bounded only by the queue (256 ids ⇒ 15 s). A guarded press queued behind a real burst (an
+    /// MCDU scratchpad send is ~24 CEVENTs, 1.4 s) therefore cannot be budgeted for by fixed
+    /// numbers; both rows below use one, and the feedback's own wait is what gives, clamped by
+    /// TFDiMD11Definition.FeedbackDelayMs to whatever the window has left.
     /// </summary>
-    [Fact]
-    public void AGuardedPressFeedback_FitsInsideTheEchoWindow()
+    [Theory]
+    // Idle queue: nothing is truncated — the feedback still waits the full lamp settle.
+    [InlineData(0, TFDiMD11Definition.PressSettleMs)]
+    // One MCDU scratchpad send ahead of the guard lift AND another ahead of the press.
+    [InlineData(24 * Md11EventBus.MinGapMs, -1)]
+    public void AGuardedPressFeedback_FitsInsideTheEchoWindow(int backlogMs, int expectedWait)
     {
-        int worstCase = TFDiMD11Definition.GuardReadTimeoutMs     // the guard's decision read
-                      + TFDiMD11Definition.GuardOpenSettleMs      // the cover's settle, from the click's write
-                      + 2 * Md11EventBus.MinGapMs                 // the backlog a live path can hold (walker: one click per step)
-                      + TFDiMD11Definition.PressSettleMs          // the lamps' settle after the press is written
-                      + TFDiMD11Definition.GuardReadTimeoutMs;    // the latch's fresh read
+        long beforeTheWait = TFDiMD11Definition.GuardReadTimeoutMs   // the guard's decision read
+                           + TFDiMD11Definition.GuardOpenSettleMs    // the cover's settle, from the click's write
+                           + backlogMs;                              // …which absorbs the backlog once
+        int wait = TFDiMD11Definition.FeedbackDelayMs(backlogMs, beforeTheWait);   // …and the lamps' settle again
+        long worstCase = beforeTheWait + wait + TFDiMD11Definition.GuardReadTimeoutMs;   // the latch's fresh read
 
+        if (expectedWait >= 0)
+            Assert.Equal(expectedWait, wait);
         Assert.True(worstCase < Md11AnnouncementGate.EchoWindowMs,
-            $"A guarded press's feedback can take {worstCase} ms, which does not fit inside the " +
-            $"{Md11AnnouncementGate.EchoWindowMs} ms echo window — the lamp echo would be spoken too.");
+            $"A guarded press's feedback can take {worstCase} ms behind a {backlogMs} ms backlog, which does not " +
+            $"fit inside the {Md11AnnouncementGate.EchoWindowMs} ms echo window — the lamp echo would be spoken too.");
+    }
+
+    /// <summary>
+    /// The budget is what the window has LEFT, never negative: a chain that has already overrun
+    /// speaks at once (reading the state early, which the lamp's later correction covers — that is
+    /// why Feedback closes the window) rather than waiting past the window and doubling the sentence.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 0, Md11AnnouncementGate.EchoWindowMs)]
+    [InlineData(500, 300, Md11AnnouncementGate.EchoWindowMs - 800)]
+    [InlineData(Md11AnnouncementGate.EchoWindowMs, 300, 0)]
+    [InlineData(99_000, 300, 0)]
+    public void TheFeedbackBudget_IsWhatTheWindowHasLeft(long elapsedMs, int reserveMs, int expected)
+    {
+        Assert.Equal(expected, Md11AnnouncementGate.RemainingFeedbackBudgetMs(elapsedMs, reserveMs));
     }
 }

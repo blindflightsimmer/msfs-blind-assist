@@ -85,10 +85,13 @@ public sealed class Md11EventBus : IDisposable
 
     /// <summary>
     /// Buttons whose DOWN has been queued and whose UP has not: UP id → how many holds are in
-    /// flight on it. <see cref="PressAndHoldAsync"/> registers before the DOWN and takes back
-    /// after the hold; <see cref="Dispose"/> takes everything still owed and fires those UPs, so
-    /// a hold that outlives the bus never leaves the button held in the aircraft (constraint 3).
-    /// Guarded by its own lock — a hold ends on a pool thread while Dispose runs on the UI thread.
+    /// flight on it. <see cref="PressAndHoldAsync"/> registers as it queues the DOWN and takes back
+    /// as it queues the UP; <see cref="Dispose"/> takes everything still owed and fires those UPs,
+    /// so a hold that outlives the bus never leaves the button held in the aircraft (constraint 3).
+    /// Guarded by its own lock — a hold ends on a pool thread while Dispose runs on the UI thread —
+    /// and BOTH halves of each pair happen under it (<see cref="TrackHeldAndFireDown"/>,
+    /// <see cref="ReleaseHeldAndFireUp"/>), which is what makes the register and the write atomic
+    /// with respect to the sweep.
     /// </summary>
     private readonly Dictionary<int, int> _heldUps = new();
 
@@ -120,6 +123,14 @@ public sealed class Md11EventBus : IDisposable
             catch (ObjectDisposedException) { return 0; }
         }
     }
+
+    /// <summary>
+    /// How long the next write has to wait for the queue ahead of it: <see cref="Pending"/> ×
+    /// <see cref="MinGapMs"/>. The one spelling of the write-time stamp — it was written out at
+    /// half a dozen call sites, one of which is the guarded press's echo-window budget, where the
+    /// term has to be recognisable as the same quantity in both places it is added.
+    /// </summary>
+    public int BacklogMs => Pending * MinGapMs;
 
     public Md11EventBus(SimConnectManager sim)
         : this(rpn => sim.ExecuteCalculatorCode(rpn, quiet: true)) { }
@@ -237,21 +248,24 @@ public sealed class Md11EventBus : IDisposable
     {
         var down = control.Event("LEFT_BUTTON_DOWN");
         var up = control.Event("LEFT_BUTTON_UP");
-        var backlogMs = Pending * MinGapMs;   // sampled before the DOWN joins the queue
-        // Tracked only when there is a DOWN to release: a button with no DOWN was never pressed,
-        // and Dispose must not release — or log — one that was not.
-        var tracked = down is > 0 && up is > 0;
-        // Refused once Dispose has swept the held table: a DOWN queued after the sweep owes an UP
-        // nobody is left to fire, so neither half is written at all.
-        if (tracked && !TrackHeld(up!.Value)) return;
-        if (down is > 0) Fire(down.Value);
-        await Task.Delay(HoldDelayMs(holdMs, backlogMs)).ConfigureAwait(false);
-        // Dispose may have released this button already (and closed the queue): whoever takes the
-        // entry back fires the UP, so it is written exactly once either way.
-        if (!tracked || ReleaseHeld(up!.Value))
+        // A button with no DOWN was never pressed, so it cannot be released: writing its UP alone
+        // sends the aircraft a release for a press that never happened. (Nothing is tracked either
+        // — Dispose must not release, or log, a button it never held.)
+        if (down is not > 0) return;
+        var backlogMs = BacklogMs;   // sampled before the DOWN joins the queue
+        var tracked = up is > 0;
+        if (tracked)
         {
-            if (up is > 0) Fire(up.Value);
+            // Registered AND queued under the held table's lock, so the release sweep can neither
+            // miss this DOWN nor be beaten by it. Refused once the sweep has run: a DOWN accepted
+            // then owes an UP nobody is left to fire, so neither half is written at all.
+            if (!TrackHeldAndFireDown(up!.Value, down.Value)) return;
         }
+        else Fire(down.Value);   // no UP id at all: pressed, with nothing owed to release
+        await Task.Delay(HoldDelayMs(holdMs, backlogMs)).ConfigureAwait(false);
+        // Dispose may have released this button already: whoever takes the entry back fires the
+        // UP, so it is written exactly once either way.
+        if (tracked) ReleaseHeldAndFireUp(up!.Value);
     }
 
     /// <summary>
@@ -278,24 +292,46 @@ public sealed class Md11EventBus : IDisposable
     /// </summary>
     internal static int ReadBackDelayMs(int settleMs, int backlogMs) => settleMs + backlogMs;
 
-    /// <summary>Registers one hold on <paramref name="upId"/>; false once <see cref="Dispose"/>'s release sweep has run.</summary>
-    private bool TrackHeld(int upId)
+    /// <summary>
+    /// Registers one hold on <paramref name="upId"/> and queues its <paramref name="downId"/> under
+    /// the same lock; false once <see cref="Dispose"/>'s release sweep has run.
+    ///
+    /// The two used to be separate steps, and the gap between them was a real window rather than a
+    /// theoretical one: the guarded hold-to-test button lifts its cover on a POOL thread, so a
+    /// <see cref="Dispose"/> on the UI thread (an aircraft switch) could sweep a table that did not
+    /// yet owe this UP and then let the DOWN through — the button held in the aircraft with no
+    /// release owed to anyone, which is exactly what <see cref="_closed"/> exists to prevent. Under
+    /// one lock the pair is atomic against the sweep: either the sweep is first and this refuses, or
+    /// the DOWN is queued and its UP is in the table for the sweep to fire BEHIND it (the sweep
+    /// still fires before <c>CompleteAdding</c>, so the queue takes it and the FIFO keeps the order).
+    ///
+    /// <see cref="Fire"/> under the lock is safe: it only does the queue's non-blocking TryAdd, and
+    /// the sole other holder of this lock is Dispose, which takes nothing else.
+    /// </summary>
+    private bool TrackHeldAndFireDown(int upId, int downId)
     {
         lock (_heldUps)
         {
             if (_closed) return false;
             _heldUps[upId] = _heldUps.TryGetValue(upId, out var n) ? n + 1 : 1;
+            Fire(downId);
             return true;
         }
     }
 
-    /// <summary>Takes one hold back off <paramref name="upId"/>; false when <see cref="Dispose"/> already released it.</summary>
-    private bool ReleaseHeld(int upId)
+    /// <summary>
+    /// Takes one hold back off <paramref name="upId"/> and queues that UP, under the same lock and
+    /// for the mirror-image reason: taking the entry and then firing outside the lock let Dispose
+    /// reach <c>CompleteAdding</c> in between — its sweep found nothing owed, and the UP the hold
+    /// then fired was dropped, leaving the button held. False when Dispose already released it.
+    /// </summary>
+    private bool ReleaseHeldAndFireUp(int upId)
     {
         lock (_heldUps)
         {
             if (!_heldUps.TryGetValue(upId, out var n)) return false;
             if (n <= 1) _heldUps.Remove(upId); else _heldUps[upId] = n - 1;
+            Fire(upId);
             return true;
         }
     }

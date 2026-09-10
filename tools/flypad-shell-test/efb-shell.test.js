@@ -31,7 +31,7 @@ function shippingShellHtml() {
     .replace(/\{\{NOUN\}\}/g, 'EFB');
 }
 
-function loadShell() {
+function loadShell(t) {
   const html = shippingShellHtml();
   const dom = new JSDOM(html, { runScripts: 'outside-only' });
   const { window } = dom;
@@ -45,8 +45,18 @@ function loadShell() {
   // where those bare identifiers resolve against the Node global instead — so the Node globals are
   // pointed at this window too. Harmless when the realm eval is in force, and the difference stops
   // being a silent nothing-defined failure if a jsdom upgrade changes which one applies.
+  //
+  // Put them back when the test ends: this window is jsdom's, not Node's, and a leaked one
+  // outliving its test is exactly the failure the assignment above exists to make visible.
+  const prev = { window: global.window, document: global.document, had: 'window' in global };
   global.window = window;
   global.document = window.document;
+  if (t && typeof t.after === 'function') {
+    t.after(() => {
+      if (prev.had) { global.window = prev.window; global.document = prev.document; }
+      else { delete global.window; delete global.document; }
+    });
+  }
   window.eval(scripts[0]);
   assert.strictEqual(typeof window.__render, 'function', 'shell did not define window.__render');
   return {
@@ -66,8 +76,8 @@ function loadShell() {
 const btn = (idx, text, extra) => Object.assign({ idx, kind: 'button', controlType: '', text, clickable: true, level: 0, live: '', disabled: false }, extra || {});
 const tab = (idx, text) => ({ idx, kind: 'tab', controlType: '', text, clickable: true, level: 0, live: '', disabled: false });
 
-test('a control flagged announceChange speaks its new label after the pilot\'s own press', async () => {
-  const s = loadShell();
+test('a control flagged announceChange speaks its new label after the pilot\'s own press', async (t) => {
+  const s = loadShell(t);
   s.render('Perf', [btn(5, 'Runway next (now 06L)', { announceChange: true })]);
   assert.strictEqual(await s.spoken(), 'EFB page: Perf');
   const b = s.buttonByLabel('Runway next');
@@ -84,8 +94,8 @@ test('a control flagged announceChange speaks its new label after the pilot\'s o
 
 // The MD-11 door/GPU/chocks tiles carry their state after a colon, and the flip a press produces is
 // the OUTCOME the pilot asked for — the same class as the stepper, and flagged the same way.
-test('a flagged tile speaks the state its own press produced', async () => {
-  const s = loadShell();
+test('a flagged tile speaks the state its own press produced', async (t) => {
+  const s = loadShell(t);
   s.render('Services', [btn(9, 'Passenger 1L: Closed', { announceChange: true })]);
   assert.strictEqual(await s.spoken(), 'EFB page: Services');
   const door = s.buttonByLabel('Passenger 1L');
@@ -96,8 +106,8 @@ test('a flagged tile speaks the state its own press produced', async () => {
   assert.strictEqual(await s.spoken(), 'Passenger 1L: Open');
 });
 
-test('a control without the flag stays silent when its label changes after a press', async () => {
-  const s = loadShell();
+test('a control without the flag stays silent when its label changes after a press', async (t) => {
+  const s = loadShell(t);
   // The PMDG tablet's nav bar: the pressed tab gains ' (current page)' on the next scrape.
   s.render('Dashboard', [tab(1, 'Dashboard (current page)'), tab(2, 'Performance'), btn(7, 'Baggage')]);
   assert.strictEqual(await s.spoken(), 'EFB page: Dashboard');

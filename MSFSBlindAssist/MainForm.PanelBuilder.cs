@@ -611,9 +611,12 @@ public partial class MainForm
                             Log.Debug("MainForm", $"{varKey} received value: {currentValue}");
                         }
 
-                        if (varDef.ValueDescriptions.ContainsKey(varDef.DescriptionKeyFor(currentValue)))
+                        // One classifier call, as at the sibling site below: DescriptionKeyFor is a
+                        // definition-supplied delegate, and this runs per combo row per panel build.
+                        double descriptionKey = varDef.DescriptionKeyFor(currentValue);
+                        if (varDef.ValueDescriptions.ContainsKey(descriptionKey))
                         {
-                            string description = varDef.ValueDescriptions[varDef.DescriptionKeyFor(currentValue)];
+                            string description = varDef.ValueDescriptions[descriptionKey];
                             combo.SelectedItem = description;
 
                             // Additional debug for landing lights

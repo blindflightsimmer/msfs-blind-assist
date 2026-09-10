@@ -18,12 +18,12 @@ public class Md11DirectSetTests
     private static readonly Md11ControlMap Map = Md11ControlMap.Load();
     private static readonly TFDiMD11Definition Def = new();
 
-    /// <summary>The kinds SetControl routes through DebouncedWalk → SafeWalk → the fallback.</summary>
-    private static readonly string[] SafeWalkKinds =
-    {
-        Md11Kinds.Switch, Md11Kinds.Knob, Md11Kinds.KnobPush, Md11Kinds.KnobPushPull,
-        Md11Kinds.Lever, Md11Kinds.Handle,
-    };
+    /// <summary>
+    /// The kinds SetControl routes through DebouncedWalk → SafeWalk → the fallback. The production
+    /// predicate, not a fourth copy of the list: this file used to spell it out itself, which meant
+    /// a kind added to one and not the other silently changed what these tests measured.
+    /// </summary>
+    private static bool IsSafeWalkKind(string kind) => Md11ExportBacked.IsPositional(kind);
 
     /// <summary>What a read-back of the node id actually reads: the definition's Name.</summary>
     private static string? RegisteredVar(string nodeId)
@@ -85,7 +85,7 @@ public class Md11DirectSetTests
     public void TheSpeedbrakeLever_IsTheOnlyWalkableRowRePointedOffItsStateVar()
     {
         var repointed = Map.Controls
-            .Where(c => SafeWalkKinds.Contains(c.Kind))
+            .Where(c => IsSafeWalkKind(c.Kind))
             .Where(c => c.NodeId != Md11FlapSystem.DialKey)
             .Where(c => !string.Equals(RegisteredVar(c.NodeId), c.StateVar, StringComparison.OrdinalIgnoreCase))
             .Select(c => c.NodeId)
@@ -102,7 +102,7 @@ public class Md11DirectSetTests
     public void EveryOtherWalkableControl_KeepsItsFallback()
     {
         var walkable = Map.Controls
-            .Where(c => SafeWalkKinds.Contains(c.Kind))
+            .Where(c => IsSafeWalkKind(c.Kind))
             .Where(c => c.NodeId != Md11FlapSystem.DialKey)
             .ToList();
         var refused = walkable
@@ -115,5 +115,31 @@ public class Md11DirectSetTests
         Assert.Equal(expected, refused);
         Assert.True(walkable.Count > expected.Count + 100,
             "the shipped map should carry well over a hundred walkable controls that keep their fallback");
+    }
+
+    /// <summary>
+    /// <see cref="Md11ExportBacked.IsPositional"/> spells the walkable kinds a third time —
+    /// SetControl's case group and BuildControlVariable's are the other two — and a C# switch case
+    /// group cannot be built from a list, so nothing can make the three literally one. This is the
+    /// tripwire instead: the only way they can drift is a kind ADDED to <see cref="Md11Kinds"/>,
+    /// and that fails here, which is the moment to visit both switches and decide which arm the new
+    /// kind belongs in. Reflection over the constants, so a new one cannot be missed by a list.
+    /// </summary>
+    [Fact]
+    public void EveryKindTheMapCanCarry_IsClassifiedByIsPositional()
+    {
+        var kinds = typeof(Md11Kinds)
+            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+            .ToDictionary(f => f.Name, f => (string)f.GetRawConstantValue()!);
+
+        var positional = kinds.Where(k => Md11ExportBacked.IsPositional(k.Value))
+                              .Select(k => k.Key).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+
+        Assert.Equal(new[] { "Handle", "Knob", "KnobPush", "KnobPushPull", "Lever", "Switch" }, positional);
+        // Button, Annunciator, Guard and Option are the four that are deliberately NOT walked.
+        Assert.Equal(10, kinds.Count);
+        // And every kind the shipped map actually uses is one of them.
+        Assert.Empty(Map.Controls.Select(c => c.Kind).Distinct().Except(kinds.Values));
     }
 }

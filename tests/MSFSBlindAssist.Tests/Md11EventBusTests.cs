@@ -126,6 +126,23 @@ public class Md11EventBusTests
         Assert.Equal(1, rec.CountOf(101));        // and does not write a second UP
     }
 
+    /// <summary>
+    /// A button with no DOWN was never pressed, so it can never be released — on a LIVE bus, which
+    /// is where the property has to hold. The disposal case below cannot pin it: there, Fire is
+    /// disposal-tolerant, so the UP is absent whether or not the hold tried to write it.
+    /// </summary>
+    [Fact]
+    public async Task AHoldWithNoDown_WritesNeitherHalf()
+    {
+        var rec = new Recorder();
+        using var bus = new Md11EventBus(rec.Write);
+
+        await bus.PressAndHoldAsync(TestButton(down: null, up: 201), holdMs: 50);
+
+        Assert.False(await rec.WaitFor(201, 300),
+            "an UP was written for a button that was never pressed — the aircraft sees a release with no press");
+    }
+
     [Fact]
     public async Task Dispose_DoesNotReleaseAButtonThatWasNeverPressed()
     {
@@ -137,6 +154,43 @@ public class Md11EventBusTests
 
         await hold;                               // no DOWN was queued, so no UP is owed — and no throw
         Assert.Equal(0, rec.CountOf(201));
+    }
+
+    /// <summary>
+    /// The guarded hold-to-test button lifts its cover on a pool thread, so its DOWN is queued from
+    /// a thread that knows nothing about an aircraft switch happening on the UI thread. Registering
+    /// the UP and queuing the DOWN used to be two steps, and a Dispose landing between them swept a
+    /// table that did not yet owe this UP and then let the DOWN through — the button left held in
+    /// the aircraft with no release owed to anyone. Both halves are now queued under the held
+    /// table's own lock, so whatever the interleaving, a hold writes either NOTHING or its DOWN
+    /// followed by its UP. Racy by nature: many holds against one Dispose, repeated, is how a
+    /// microsecond window is reached at all.
+    /// </summary>
+    [Fact]
+    public async Task AHoldRacingDispose_NeverLeavesItsButtonHeld()
+    {
+        const int Rounds = 12, HoldsPerRound = 32;
+
+        for (int round = 0; round < Rounds; round++)
+        {
+            var rec = new Recorder();
+            var bus = new Md11EventBus(rec.Write);
+            var holds = Enumerable.Range(0, HoldsPerRound)
+                .Select(i => Task.Run(() => bus.PressAndHoldAsync(TestButton(down: 400 + i, up: 500 + i), holdMs: 1)))
+                .ToArray();
+
+            bus.Dispose();                        // races every registration above
+            await Task.WhenAll(holds);
+
+            var ids = rec.Ids.ToList();
+            for (int i = 0; i < HoldsPerRound; i++)
+            {
+                int down = ids.IndexOf(400 + i), up = ids.IndexOf(500 + i);
+                if (down < 0 && up < 0) continue;              // refused outright: neither half written
+                Assert.True(down >= 0, $"round {round}: UP {500 + i} was written for a DOWN that never was");
+                Assert.True(up > down, $"round {round}: DOWN {400 + i} was written with no UP behind it — button left held");
+            }
+        }
     }
 
     /// <summary>
