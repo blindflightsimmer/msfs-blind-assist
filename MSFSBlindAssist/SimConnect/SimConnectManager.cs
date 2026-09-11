@@ -886,9 +886,10 @@ public partial class SimConnectManager
             GsxCouatlStartedLVar = false;
 
             // The MD-11 MCDU manager ends with its connection — here exactly as in Disconnect, and
-            // as there before ConnectionLost — so the MCDU window reports "not connected" instead
-            // of holding the dead connection's last page. The next connection's InitializePMDG
-            // builds a new one.
+            // as there before ConnectionLost — so the window's status text changes to "not
+            // connected" (Md11McduForm.Poll returns on a null manager without touching the list, so
+            // the last rendered page stays showing under that status). The next connection's
+            // InitializePMDG builds a new one.
             md11McduDataManager?.Dispose();
             md11McduDataManager = null;
 

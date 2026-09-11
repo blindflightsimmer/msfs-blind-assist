@@ -4,11 +4,12 @@ namespace MSFSBlindAssist.Tests;
 
 /// <summary>
 /// Pins the MCDU area registration's resume rule (review round 2, B7). Register() used to be one
-/// all-or-nothing block behind a latch: a call that failed part-way had already mapped the area
-/// name on the connection, so every retry re-issued MapClientDataNameToID — which SimConnect
-/// answers with DUPLICATE_ID — and the registration could never complete on that connection. The
-/// tracker records each step the moment its call returns, and a retry resumes at the one that
-/// failed.
+/// all-or-nothing block behind a latch: a call that failed part-way had already made some of its
+/// SimConnect calls, so the next retry re-ran the whole block, re-issuing those against a
+/// connection where they had already succeeded — including mapping the area name again, which
+/// SimConnect answers with DUPLICATE_ID, but only later and asynchronously; nothing in the retry
+/// throws, so the old latch still completed. The tracker records each step the moment its call
+/// returns, so a retry resumes at the one that failed instead of redoing what already succeeded.
 /// </summary>
 public class Md11McduRegistrationStepsTests
 {
