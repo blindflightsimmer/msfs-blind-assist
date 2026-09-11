@@ -1,7 +1,13 @@
-namespace MSFSBlindAssist.Tests.IFly;
+using MSFSBlindAssist.Forms;
 
-using MSFSBlindAssist.Forms.IFly737;
+namespace MSFSBlindAssist.Tests;
 
+/// <summary>
+/// The poll-driven CDU scratchpad read-back shared by the iFly 737 CDU window and the MD-11 MCDU
+/// window (it moved out of the iFly's folder when the MD-11 adopted it). The first six tests are
+/// the iFly's originals, unchanged; the last two pin the one thing the MD-11 needed added — its
+/// own wording for an emptied scratchpad.
+/// </summary>
 public class CduScratchpadAnnouncerTests
 {
     private static readonly DateTime T0 = new(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
@@ -62,5 +68,29 @@ public class CduScratchpadAnnouncerTests
         a.OnPoll("", T0);
         Assert.Equal("2500", a.OnPoll("2500", T0.AddSeconds(1)));
         Assert.Null(a.OnPoll("2500", T0.AddSeconds(2)));
+    }
+
+    /// <summary>
+    /// The MD-11 MCDU window says "Scratchpad cleared"; the iFly keeps "Cleared", the default,
+    /// exactly as it shipped.
+    /// </summary>
+    [Fact]
+    public void ClearedText_IsTheCallersWording()
+    {
+        var a = new CduScratchpadAnnouncer("Scratchpad cleared");
+        a.OnPoll("KJFK", T0);
+        Assert.Equal("Scratchpad cleared", a.OnPoll("", T0.AddSeconds(1)));
+    }
+
+    /// <summary>The wording is the ONLY thing the parameter changes: seeding, verbatim text and suppression are untouched.</summary>
+    [Fact]
+    public void ClearedText_ChangesOnlyTheEmptiedCase()
+    {
+        var a = new CduScratchpadAnnouncer("Scratchpad cleared");
+        Assert.Null(a.OnPoll("", T0));                                      // still seeds silently
+        Assert.Equal("KJFK", a.OnPoll("KJFK", T0.AddSeconds(1)));           // text still read verbatim
+        a.SuppressUntil = T0.AddSeconds(3);
+        Assert.Null(a.OnPoll("", T0.AddSeconds(2)));                        // still held while suppressed
+        Assert.Equal("Scratchpad cleared", a.OnPoll("", T0.AddSeconds(4))); // read once the hold ends
     }
 }
