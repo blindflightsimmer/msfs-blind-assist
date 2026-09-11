@@ -404,8 +404,12 @@ public partial class TFDiMD11Definition
     // Shared
     // ---------------------------------------------------------------------------------
 
-    private static double Val(SimConnectManager sim, string varKey)
-        => sim.GetCachedVariableValue(varKey) ?? 0;
+    /// <summary>
+    /// The cached value, or null while it has not been delivered (after a SimConnect drop the cache
+    /// is empty) — the composers then say "not available", never read a stand-in 0 as a setting.
+    /// </summary>
+    private static double? Val(SimConnectManager sim, string varKey)
+        => sim.GetCachedVariableValue(varKey);
 
     private static bool Mode(SimConnectManager sim, string varKey)
         => (sim.GetCachedVariableValue(varKey) ?? 0) > 0.5;

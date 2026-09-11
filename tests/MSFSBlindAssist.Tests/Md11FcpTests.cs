@@ -52,25 +52,36 @@ public class Md11FcpTests
     }
 
     /// <summary>
-    /// The read-side dash sentinels are EXACT values, not a range: -999 (speed/heading) and -9999
-    /// (vertical speed). A live aircraft with no V/S selected reads MD11_AFS_VS = -9999, which must
-    /// render as "dashed" rather than as a descent of nine thousand feet a minute — but a real
-    /// vertical speed runs anywhere in ±6000 fpm, and none of that range, including the round
-    /// number -1000, may ever read as dashed.
+    /// The read-side dash sentinels are EXACT values, not a range, and each belongs to ONE window:
+    /// -999 on speed and heading, -9999 on vertical speed. A live aircraft with no V/S selected
+    /// reads MD11_AFS_VS = -9999, which must render as "dashed" rather than as a descent of nine
+    /// thousand feet a minute — but a real vertical speed runs anywhere in ±6000 fpm, and none of
+    /// that range, the round -1000 and a selected -999 included, may ever read as dashed.
     /// </summary>
     [Theory]
     [InlineData(-999, true)]
-    [InlineData(-9999, true)]
-    [InlineData(-1000, false)]   // a real 1000 fpm descent, NOT a dash
-    [InlineData(-1500, false)]
-    [InlineData(-6000, false)]
-    [InlineData(-998.7, true)]   // float32 noise around the sentinel
+    [InlineData(-998.7, true)]    // float32 noise around the sentinel
+    [InlineData(-9999, false)]    // the V/S window's sentinel is not this window's
+    [InlineData(-1000, false)]
     [InlineData(0, false)]
     [InlineData(250, false)]
-    [InlineData(-500, false)]   // a real 500 fpm descent, NOT a dash
-    public void IsDashed_RecognisesTheReadbackSentinels(double value, bool expected)
+    public void IsDashedSpeedHeading_IsExactlyMinus999(double value, bool expected)
     {
-        Assert.Equal(expected, Md11Fcp.IsDashed(value));
+        Assert.Equal(expected, Md11Fcp.IsDashedSpeedHeading(value));
+    }
+
+    [Theory]
+    [InlineData(-9999, true)]
+    [InlineData(-9998.7, true)]   // float32 noise around the sentinel
+    [InlineData(-999, false)]     // a selected 999 fpm descent is a VALUE on this window
+    [InlineData(-1000, false)]    // a real 1000 fpm descent, NOT a dash
+    [InlineData(-1500, false)]
+    [InlineData(-6000, false)]
+    [InlineData(-500, false)]     // a real 500 fpm descent, NOT a dash
+    [InlineData(0, false)]
+    public void IsDashedVerticalSpeed_IsExactlyMinus9999(double value, bool expected)
+    {
+        Assert.Equal(expected, Md11Fcp.IsDashedVerticalSpeed(value));
     }
 
     /// <summary>

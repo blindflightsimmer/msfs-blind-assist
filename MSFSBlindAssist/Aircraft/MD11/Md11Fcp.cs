@@ -27,15 +27,19 @@ public static class Md11Fcp
     public const double Idle = -1;
 
     /// <summary>
-    /// TFDi's "this window is showing dashes" read-back sentinels: EXACTLY -999 on speed/heading,
-    /// EXACTLY -9999 on vertical speed (their Variables page). Both are float32-exact, so a half-unit
-    /// tolerance is the honest compare. Nothing else counts: a real vertical speed runs anywhere in
-    /// ±6000 fpm, so "anything at or below -999" — the rule this used to be — called a genuine
-    /// -1000 fpm descent "dashed". Documented as READ-side only — whether writing a sentinel dashes
-    /// the window is not documented and was not probed, so nothing here writes them.
+    /// TFDi's "this window is showing dashes" read-back sentinels, EACH ON ITS OWN WINDOW (their
+    /// Variables page): EXACTLY -999 on speed and heading, EXACTLY -9999 on vertical speed. Both are
+    /// float32-exact, so a half-unit tolerance is the honest compare, and a caller names the window
+    /// it reads. Nothing else counts: a real vertical speed runs anywhere in ±6000 fpm, so "anything
+    /// at or below -999" — the rule this once was — called a genuine -1000 fpm descent "dashed", and
+    /// one test for both sentinels called a selected -999 fpm "dashed, not engaged". Documented as
+    /// READ-side only — whether writing a sentinel dashes the window is not documented and was not
+    /// probed, so nothing here writes them.
     /// </summary>
-    public static bool IsDashed(double readback)
-        => Math.Abs(readback - DashedSpeedHeading) < 0.5 || Math.Abs(readback - DashedVerticalSpeed) < 0.5;
+    public static bool IsDashedSpeedHeading(double readback) => Math.Abs(readback - DashedSpeedHeading) < 0.5;
+
+    /// <summary>The V/S-FPA window's dash sentinel, -9999 — see <see cref="IsDashedSpeedHeading"/>.</summary>
+    public static bool IsDashedVerticalSpeed(double readback) => Math.Abs(readback - DashedVerticalSpeed) < 0.5;
 
     public const double DashedSpeedHeading = -999;
     public const double DashedVerticalSpeed = -9999;

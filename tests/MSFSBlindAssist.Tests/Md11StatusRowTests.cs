@@ -76,7 +76,7 @@ public class Md11StatusRowTests
         Assert.Equal("dashed, NAV engaged", Md11StatusRow.Readout(Md11Fcp.ReadHeading, -999, None));
         Assert.Equal("FPA -3.0 degrees", Md11StatusRow.Readout(Md11Fcp.ReadVerticalSpeed, -3, Fpa));
         Assert.Equal("-1500 feet per minute", Md11StatusRow.Readout(Md11Fcp.ReadVerticalSpeed, -1500, None));
-        Assert.Equal("Mach 0.82", Md11StatusRow.Readout(Md11Fcp.ReadSpeed, 0.82, Mach));
+        Assert.Equal("Mach 0.820", Md11StatusRow.Readout(Md11Fcp.ReadSpeed, 0.82, Mach));
         Assert.Equal("dashed, FMS speed engaged", Md11StatusRow.Readout(Md11Fcp.ReadSpeed, -999, None));
     }
 
