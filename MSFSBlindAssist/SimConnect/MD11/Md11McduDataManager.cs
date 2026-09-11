@@ -71,7 +71,10 @@ public sealed class Md11McduDataManager : IDisposable
     private readonly Md11McduScreen?[] _screens = new Md11McduScreen?[3];
     private readonly object _lock = new();
 
-    private bool _registered;
+    // How far Register got on this connection (one manager per connection, so per instance is
+    // per connection). It names no SimConnect type, so the test-seam constructor below may run
+    // this initializer — see that constructor for why that matters.
+    private readonly Md11McduRegistrationSteps _steps = new();
 
     /// <summary>Raised when a screen's CONTENT changes (not on every delivery).</summary>
     public event EventHandler<Md11McduScreen>? ScreenUpdated;
@@ -127,15 +130,19 @@ public sealed class Md11McduDataManager : IDisposable
 
     /// <summary>
     /// Maps the area and defines the three per-MCDU windows into it. Runs ONCE per connection:
-    /// the latch below makes a second call a no-op, and the manager itself is kept for the life
-    /// of the connection (see <see cref="IsBoundTo"/>), so an aircraft switch back to the MD-11
-    /// calls this on the SAME instance instead of re-mapping the name on a fresh one. Before
+    /// <c>_steps</c> makes a completed registration a no-op, and the manager itself is kept for
+    /// the life of the connection (see <see cref="IsBoundTo"/>), so an aircraft switch back to the
+    /// MD-11 calls this on the SAME instance instead of re-mapping the name on a fresh one. Before
     /// that, every switch constructed a new manager, so the latch was per-instance and the
-    /// re-registration it was written to prevent happened on every second MD-11 load.
+    /// re-registration it was written to prevent happened on every second MD-11 load. A call that
+    /// fails part-way keeps the steps it made, and the next call (the next MD-11 load on this
+    /// connection) resumes at the step that failed — never re-issuing a call that already stands
+    /// on the server, which the old all-or-nothing latch did on every retry
+    /// (<see cref="Md11McduRegistrationSteps"/>).
     /// </summary>
     public void Register()
     {
-        if (_registered) return;
+        if (_steps.IsComplete) return;
 
         // Fail loudly and early if the struct ever stops matching TFDi's declaration. Getting
         // this wrong does not throw — it silently reads misaligned bytes and renders the CDU as
@@ -153,23 +160,49 @@ public sealed class Md11McduDataManager : IDisposable
 
         try
         {
-            _simConnect.MapClientDataNameToID(Md11McduLayout.AreaName, ClientDataId.Mcdu);
-
-            const uint size = Md11McduLayout.DataSize;
-            _simConnect.AddToClientDataDefinition(DefineId.LMcdu, Md11McduLayout.OffsetLeft, size, 0, 0);
-            _simConnect.AddToClientDataDefinition(DefineId.CMcdu, Md11McduLayout.OffsetCenter, size, 0, 0);
-            _simConnect.AddToClientDataDefinition(DefineId.RMcdu, Md11McduLayout.OffsetRight, size, 0, 0);
-
-            _simConnect.RegisterStruct<SIMCONNECT_RECV_CLIENT_DATA, Md11McduExportData>(DefineId.LMcdu);
-            _simConnect.RegisterStruct<SIMCONNECT_RECV_CLIENT_DATA, Md11McduExportData>(DefineId.CMcdu);
-            _simConnect.RegisterStruct<SIMCONNECT_RECV_CLIENT_DATA, Md11McduExportData>(DefineId.RMcdu);
-
-            _registered = true;
-            Log.Info("MD11", $"MCDU client data area '{Md11McduLayout.AreaName}' registered ({size} bytes x3).");
+            _steps.RunRemaining(PerformRegistrationStep);
+            Log.Info("MD11", $"MCDU client data area '{Md11McduLayout.AreaName}' registered ({Md11McduLayout.DataSize} bytes x3).");
         }
         catch (Exception ex)
         {
-            Log.Error("MD11", $"Failed to register the MCDU client data area: {ex.Message}");
+            Log.Error("MD11", $"Failed to register the MCDU client data area at step {_steps.Next}: {ex.Message} " +
+                "The next MD-11 load on this connection resumes from that step.");
+        }
+    }
+
+    /// <summary>
+    /// One registration call against the live handle — the calls <see cref="Register"/> once made
+    /// in a single block, now one per <see cref="Md11McduRegistrationStep"/> so a partial failure
+    /// resumes after the last one that returned.
+    /// </summary>
+    private void PerformRegistrationStep(Md11McduRegistrationStep step)
+    {
+        const uint size = Md11McduLayout.DataSize;
+        switch (step)
+        {
+            case Md11McduRegistrationStep.NameMapped:
+                _simConnect.MapClientDataNameToID(Md11McduLayout.AreaName, ClientDataId.Mcdu);
+                break;
+            case Md11McduRegistrationStep.LeftDefined:
+                _simConnect.AddToClientDataDefinition(DefineId.LMcdu, Md11McduLayout.OffsetLeft, size, 0, 0);
+                break;
+            case Md11McduRegistrationStep.CenterDefined:
+                _simConnect.AddToClientDataDefinition(DefineId.CMcdu, Md11McduLayout.OffsetCenter, size, 0, 0);
+                break;
+            case Md11McduRegistrationStep.RightDefined:
+                _simConnect.AddToClientDataDefinition(DefineId.RMcdu, Md11McduLayout.OffsetRight, size, 0, 0);
+                break;
+            case Md11McduRegistrationStep.LeftStructRegistered:
+                _simConnect.RegisterStruct<SIMCONNECT_RECV_CLIENT_DATA, Md11McduExportData>(DefineId.LMcdu);
+                break;
+            case Md11McduRegistrationStep.CenterStructRegistered:
+                _simConnect.RegisterStruct<SIMCONNECT_RECV_CLIENT_DATA, Md11McduExportData>(DefineId.CMcdu);
+                break;
+            case Md11McduRegistrationStep.RightStructRegistered:
+                _simConnect.RegisterStruct<SIMCONNECT_RECV_CLIENT_DATA, Md11McduExportData>(DefineId.RMcdu);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(step), step, "Unknown MCDU registration step.");
         }
     }
 
@@ -198,7 +231,7 @@ public sealed class Md11McduDataManager : IDisposable
     /// </summary>
     public void RequestAll()
     {
-        if (!_registered) return;
+        if (!_steps.IsComplete) return;
 
         foreach (var unit in new[] { Md11McduUnit.Left, Md11McduUnit.Center, Md11McduUnit.Right })
         {

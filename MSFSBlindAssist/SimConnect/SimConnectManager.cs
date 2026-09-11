@@ -305,7 +305,8 @@ public partial class SimConnectManager
     // instead of PMDG's area-per-CDU. NOT the PMDG manager's lifecycle: there is ONE per
     // SimConnect connection — created by the first MD-11 InitializePMDG on a handle, reused by
     // every later one (its client-data name and definition ids can be mapped only once per
-    // connection), untouched by DisposePMDG, and torn down only in Disconnect with the handle.
+    // connection), untouched by DisposePMDG, and torn down only when the connection ends —
+    // Disconnect with the handle, or the drop path in Connect's catch.
     private MD11.Md11McduDataManager? md11McduDataManager;
     public MD11.Md11McduDataManager? Md11McduDataManager => md11McduDataManager;
 
@@ -884,6 +885,13 @@ public partial class SimConnectManager
             IsConnected = false;
             GsxCouatlStartedLVar = false;
 
+            // The MD-11 MCDU manager ends with its connection — here exactly as in Disconnect, and
+            // as there before ConnectionLost — so the MCDU window reports "not connected" instead
+            // of holding the dead connection's last page. The next connection's InitializePMDG
+            // builds a new one.
+            md11McduDataManager?.Dispose();
+            md11McduDataManager = null;
+
             if (hadConnection) ConnectionLost?.Invoke(this, EventArgs.Empty);   // a drop, not a failed attempt
 
             // Only announce disconnection if we were previously connected
@@ -1109,8 +1117,9 @@ public partial class SimConnectManager
             // MapClientDataNameToID / AddToClientDataDefinition already stand on the server and
             // must not be issued again (DUPLICATE_ID, or a definition changed under the first
             // load's still-live subscriptions). A manager left over from a dead handle is
-            // replaced — Disconnect nulls it, so this arm guards a future ordering change
-            // rather than a path in use today.
+            // replaced — both ends of a connection (Disconnect, and the drop path in Connect's
+            // catch) null it, so this arm guards a future ordering change rather than a path in
+            // use today.
             if (md11McduDataManager == null || !md11McduDataManager.IsBoundTo(simConnect))
             {
                 md11McduDataManager?.Dispose();
@@ -1124,7 +1133,7 @@ public partial class SimConnectManager
                 md11McduDataManager.Reset();
                 Log.Debug("SimConnect", "MD-11 MCDU manager reused; re-issuing the snapshot");
             }
-            md11McduDataManager.Register();     // latched: a no-op once it has succeeded on this connection
+            md11McduDataManager.Register();     // a no-op once complete on this connection; resumes a partial one
             md11McduDataManager.RequestAll();   // same ids = a replacement of the subscriptions, plus a fresh ONCE snapshot
         }
     }
@@ -1137,7 +1146,8 @@ public partial class SimConnectManager
         // The MD-11 MCDU manager is deliberately NOT disposed here. Its registration is
         // once-per-connection, so it stays on the connection across a switch away from the
         // MD-11 (its subscriptions are idle — nothing writes MD11MCDU with the aircraft unloaded)
-        // and is reused by the next MD-11 InitializePMDG. Disconnect tears it down.
+        // and is reused by the next MD-11 InitializePMDG. The end of the connection tears it
+        // down: Disconnect, or the drop path in Connect's catch.
     }
 
     public void Disconnect()
