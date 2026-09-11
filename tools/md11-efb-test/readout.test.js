@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { scrape } = require('./run');
+const { load, scrape } = require('./run');
 
 const statics = fx => scrape(fx).filter(e => e.kind === 'static').map(e => e.text);
 
@@ -47,4 +47,22 @@ test('only a text field is a read-out: a disabled checkbox or range stays its ow
 
   for (const t of ['Deflected Ailerons: on', 'Screen Brightness: 80'])
     assert.ok(!els.some(e => e.kind === 'static' && e.text === t), t + ' read as a read-out');
+});
+
+// A read-out's label carries its value, so the label is no identity. The caption is the key, and a
+// changed value is patched into the same line. (A harness edit is no React render, so the test
+// forces the full scrape the dirty gate would run.)
+test('a read-out keeps its key across a value change', () => {
+  const { A, document } = load('payload-locked');
+  assert.equal(JSON.parse(A.scrape()).elements.find(e => e.text === 'Load: 35%').key, 'readout:Load');
+  [...document.querySelectorAll('label')].find(l => l.textContent.trim() === 'Load').nextElementSibling.value = '40%';
+  A._dirty = true;
+  assert.equal(JSON.parse(A.scrape()).elements.find(e => e.key === 'readout:Load').text, 'Load: 40%');
+});
+
+test('every read-out shape is keyed by its caption', () => {
+  const keyFor = (fx, text, opts) => scrape(fx, opts).find(e => e.text === text).key;
+  assert.equal(keyFor('perf-landing', 'Estimated Landing Distance: ---- ft'), 'readout:Estimated Landing Distance');   // pair row
+  assert.equal(keyFor('payload-locked', 'GW (x1000 LBS): 507.9'), 'readout:GW (x1000 LBS)');                          // read-out row
+  assert.equal(keyFor('readout-loose', 'Note: 42', { autoVis: true }), 'readout:Note');                                // a locked field met loose
 });

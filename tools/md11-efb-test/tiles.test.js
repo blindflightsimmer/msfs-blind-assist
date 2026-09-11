@@ -15,9 +15,12 @@ test('Services tiles read their name with the action', () => {
   assert.ok(els.filter(e => e.kind === 'button').every(e => !e.disabled), 'on the ground nothing is dimmed');
 });
 
+// The default marker is a BUTTON (B5, review round 2 of PR 189). It takes the place of the
+// "Set as default" button the pilot pressed, so it keeps that button's kind and key, and the shell
+// patches it in place.
 test('State tiles: the load button, then the default marker or the set-default button', () => {
   const ls = lines(scrape('state-ground')).slice(7);
-  assert.deepStrictEqual(ls, ['button|Cold and Dark', 'static|Cold and Dark is the default',
+  assert.deepStrictEqual(ls, ['button|Cold and Dark', 'button|Cold and Dark is the default',
     'button|Ready to Start', 'button|Ready to Start: Set as default',
     'button|Ready to Fly', 'button|Ready to Fly: Set as default',
     'button|Load Last Save', 'button|Load Last Save: Set as default']);
@@ -44,11 +47,73 @@ test('exactly the Services tiles ask the shell to speak their post-press label',
   assert.ok(els.some(e => e.announceChange !== true), 'the page also carries unflagged elements');
 });
 
-// A state tile's ACTION button carries its state the same way ("Ready to Fly: Set as default"); the
-// load button beside it ("Ready to Fly") and the static default marker do not change on a press, so
-// neither asks for anything.
-test('a state tile flags its action button only', () => {
+// A state tile's ACTION button carries its state the same way ("Ready to Fly: Set as default"). So
+// does the default marker that takes its place, because "Ready to Fly is the default" is the outcome
+// the pilot's press asked for. The load button beside it ("Ready to Fly") never changes, so it asks
+// for nothing.
+test('a state tile flags its action button, default marker included, and never its load button', () => {
   const els = scrape('state-ground');
   assert.deepStrictEqual(els.filter(e => e.announceChange === true).map(e => e.text),
-    ['Ready to Start: Set as default', 'Ready to Fly: Set as default', 'Load Last Save: Set as default']);
+    ['Cold and Dark is the default', 'Ready to Start: Set as default', 'Ready to Fly: Set as default', 'Load Last Save: Set as default']);
+});
+
+// A harness edit is no React render, so the dirty gate never sees it: force the full scrape the
+// live window's next poll would run.
+const rescrape = (A) => { A._dirty = true; return JSON.parse(A.scrape()).elements; };
+
+// The shell keys a node by the agent's key (B5). A reconcile needs the SAME key before and after a
+// flip and a different one for everything else on the page; both halves are pinned on the real
+// captures.
+test('exactly the Services tiles carry a key, each named after its tile', () => {
+  assert.deepStrictEqual(scrape('services-ground').filter(e => e.key).map(e => [e.key, e.text]), [
+    ['tile:Passenger 1L', 'Passenger 1L: Closed'], ['tile:Passenger 1R', 'Passenger 1R: Closed'],
+    ['tile:Cargo Main', 'Cargo Main: Closed'], ['tile:Cargo 1R', 'Cargo 1R: Closed'], ['tile:Cargo 2R', 'Cargo 2R: Closed'],
+    ['tile:Bulk Cargo', 'Bulk Cargo: Closed'], ['tile:Nose Weight', 'Nose Weight: Set'], ['tile:GPU', 'GPU: Disconnect'],
+    ['tile:ASU', 'ASU: Connect'], ['tile:Wheel Chocks', 'Wheel Chocks: Remove']]);
+});
+
+test('a Services tile keeps its key across the flip its press produces', () => {
+  const { A, document } = load('services-ground');
+  const gpu = JSON.parse(A.scrape()).elements.find(e => e.text === 'GPU: Disconnect');
+  document.querySelector('[data-md11-efb-idx="' + gpu.idx + '"]').textContent = 'Connect';
+  const after = rescrape(A).find(e => e.key === 'tile:GPU');
+  assert.deepStrictEqual([after.kind, after.text], ['button', 'GPU: Connect']);
+});
+
+test('"Set as default": the new default keeps its button\'s kind and key, and the old one gets them back', () => {
+  const { A, document } = load('state-ground');
+  const before = JSON.parse(A.scrape()).elements;
+  assert.deepStrictEqual(before.filter(e => /^tile-action:/.test(e.key || '')).map(e => [e.key, e.kind, e.text]), [
+    ['tile-action:Cold and Dark', 'button', 'Cold and Dark is the default'],
+    ['tile-action:Ready to Start', 'button', 'Ready to Start: Set as default'],
+    ['tile-action:Ready to Fly', 'button', 'Ready to Fly: Set as default'],
+    ['tile-action:Load Last Save', 'button', 'Load Last Save: Set as default']]);
+
+  // The EFB makes Ready to Fly the default: its action button turns into the check mark, and Cold
+  // and Dark's check mark turns back into "Set as default".
+  const actionOf = name => [...document.querySelectorAll('p')].find(p => p.textContent.trim() === name).closest('button').nextElementSibling;
+  const fly = actionOf('Ready to Fly');
+  const cold = actionOf('Cold and Dark');
+  const check = cold.innerHTML;
+  cold.textContent = 'Set as default';
+  fly.innerHTML = check;
+
+  const after = rescrape(A);
+  const f = after.find(e => e.key === 'tile-action:Ready to Fly');
+  assert.deepStrictEqual([f.kind, f.clickable, f.text, f.announceChange], ['button', true, 'Ready to Fly is the default', true]);
+  const c = after.find(e => e.key === 'tile-action:Cold and Dark');
+  assert.deepStrictEqual([c.kind, c.text], ['button', 'Cold and Dark: Set as default']);
+});
+
+// Nothing here knows what the EFB does with a click on its check mark, so the marker is not stamped
+// on it: a press finds nothing to press, and says so.
+test('a press on "is the default" is refused and reaches no EFB button', () => {
+  const { A, document } = load('state-ground');
+  const def = JSON.parse(A.scrape()).elements.find(e => e.text === 'Cold and Dark is the default');
+  const check = [...document.querySelectorAll('svg')].find(s => /lucide-check/.test(s.getAttribute('class') || '')).closest('button');
+  let clicks = 0;
+  check.addEventListener('click', () => clicks++);
+  assert.equal(document.querySelectorAll('[data-md11-efb-idx="' + def.idx + '"]').length, 0, 'no element carries its idx');
+  assert.equal(A.clickElement(def.idx), false);
+  assert.equal(clicks, 0);
 });

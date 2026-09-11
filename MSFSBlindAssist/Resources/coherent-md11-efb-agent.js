@@ -14,6 +14,20 @@
 // Element: {idx,text,value,controlType,kind,clickable,level,live,disabled,options,min,max,step}
 //   kind: 'tab' | 'button' | 'link' | 'heading' (+level) | 'static' | 'alert'
 //   controlType: 'text' | 'checkbox' | 'select' | 'range'
+// Two optional fields ask the shared shell for what only this reader knows. The PMDG agent sends
+// neither, so its elements are keyed and announced exactly as before.
+//   announceChange: true — speak this control's label again after the pilot's own press changed it.
+//   key — a reconcile key, stable across state flips and unique on the page. It sits on every
+//     element whose LABEL carries changing state:
+//       'tile:<name>'           the Services tile;
+//       'tile-action:<name>'    the State tile's action button, check mark included;
+//       'step-prev:<field>', 'step-next:<field>', 'step-value:<field>'   the stepper fallback;
+//       'readout:<caption>'     a read-out.
+//     Without it the shell keys a node by its label, so "GPU: Connect" -> "GPU: Disconnect" would be
+//     a NEW node: the button the pilot just pressed would be rebuilt under their focus, its new label
+//     never spoken. The key is stamped HERE, never inferred by the shell from text: an after-colon
+//     strip in the shell once merged the flyPad ATC page's "UNICOM 122.800: Set Active" /
+//     "...: Set Standby" into one key.
 (function () {
   var A = {};
   A.INSTALLED = 'MSFSBA_MD11_EFB_INSTALLED';
@@ -143,10 +157,13 @@
     };
 
     if (el.tagName === 'INPUT') {
-      // A disabled field the row rules did not reach is still a read-out, never an edit box.
+      // A disabled field the row rules did not reach is still a read-out, never an edit box. Like the
+      // read-out rows, it is keyed by its caption (see the contract at the top).
       if (el.disabled && !A.isStepperInput(el) && A.isReadoutType(el)) {
+        var rl = A.labelFor(el) || 'Value';
         o.kind = 'static';
-        o.text = A.readoutText(A.labelFor(el) || 'Value', el);
+        o.text = A.readoutText(rl, el);
+        o.key = 'readout:' + rl;
         return o;
       }
 
@@ -228,9 +245,11 @@
 
   // A stepper button is named after the field it steps and carries the CURRENT choice —
   // "Runway next (now 09L)" — so the pilot hears what will change and where it stands. The
-  // "(now …)" suffix is dynamic: the shell strips it from its reconcile key (so the button is
-  // patched in place, keeping focus on it) and speaks the new label after the pilot's own
-  // press, which is how "Runway next (now 27R)" reaches them without hunting for the field.
+  // "(now …)" suffix is dynamic, so the stepper block does two things. It stamps the button with a
+  // key that leaves the suffix out (step-next:<field>), so the shell patches the button in place and
+  // focus stays on it. It flags the button announceChange, so the shell speaks the new label after
+  // the pilot's own press. That is how "Runway next (now 27R)" reaches them without hunting for the
+  // field.
   A.iconButtonName = function (el) {
     var icon = A.iconName(el);
     if (!icon) return '';
@@ -552,7 +571,7 @@
     // (empty) marker so the pilot hears that the field is there and holds nothing. readoutText
     // ITSELF is not reused here: it runs the value through spaceUnit, which would split a runway
     // designator like "06L" into the spoken "06 L".
-    els.push(A.el(inp, { kind: 'static', text: (label ? label + ': ' : '') + (cur || '(empty)') }));
+    els.push(A.el(inp, { kind: 'static', text: (label ? label + ': ' : '') + (cur || '(empty)'), key: 'step-value:' + label }));
     // announceChange: the opt-in that asks the shared shell (FbwEfbForm's patchEl) to SPEAK this
     // control's label again once the pilot's own press has changed it. It belongs on exactly those
     // controls whose label carries their own NEW STATE: these two arrows, and the tiles further
@@ -560,8 +579,10 @@
     // the very button the pilot is still focused on, and nothing else would read the new choice to
     // them. Every OTHER control's post-press label change IS the press the screen reader has
     // already spoken — a tab's "(current page)", a flyPad tile's "(called)" — and stays silent.
-    els.push(A.el(cb.up, { kind: 'button', clickable: true, disabled: !!cb.up.disabled, text: A.iconButtonName(cb.up), announceChange: true }));
-    els.push(A.el(cb.down, { kind: 'button', clickable: true, disabled: !!cb.down.disabled, text: A.iconButtonName(cb.down), announceChange: true }));
+    // key: the label carries the current choice, so it is no identity; the field's name is. The up
+    // chevron reads "previous" and the down one "next" (A.ICON_WORDS).
+    els.push(A.el(cb.up, { kind: 'button', clickable: true, disabled: !!cb.up.disabled, text: A.iconButtonName(cb.up), key: 'step-prev:' + label, announceChange: true }));
+    els.push(A.el(cb.down, { kind: 'button', clickable: true, disabled: !!cb.down.disabled, text: A.iconButtonName(cb.down), key: 'step-next:' + label, announceChange: true }));
   });
 
   // ---------------------------------------------------------------------------------
@@ -647,19 +668,21 @@
     return A.readoutText(label, inp);
   };
 
+  // Both rows read "Label: value" with the label in the FIRST child, so that label — never the
+  // changing value — is the row's reconcile key (see the contract at the top).
   A.block('pair-row',
     function (el) { return !!A.pairRow(el); },
-    function (el, els) { els.push(A.el(el, { kind: 'static', text: A.pairRow(el) })); });
+    function (el, els) { els.push(A.el(el, { kind: 'static', text: A.pairRow(el), key: 'readout:' + A.txt(el.children[0]) })); });
 
   A.block('readout-row',
     function (el) { return !!A.readoutRow(el); },
-    function (el, els) { els.push(A.el(el, { kind: 'static', text: A.readoutRow(el) })); });
+    function (el, els) { els.push(A.el(el, { kind: 'static', text: A.readoutRow(el), key: 'readout:' + A.txt(el.children[0]) })); });
 
   // ---------------------------------------------------------------------------------
   // B8: tile — a name above its action.
   //   (a) Services: <div><p>Passenger 1L</p><button>Closed</button></div>  → "Passenger 1L: Closed"
   //   (b) State:    <div><button><svg/><p>Cold and Dark</p></button><button>Set as default | <svg check/></button></div>
-  //       → "Cold and Dark" (load it), then "Cold and Dark: Set as default", or the static
+  //       → "Cold and Dark" (load it), then "Cold and Dark: Set as default", or the BUTTON
   //         "Cold and Dark is the default" when the second button is the green check mark.
   // ---------------------------------------------------------------------------------
 
@@ -673,8 +696,9 @@
     var name = A.txt(el.children[0]), btn = el.children[1];
     // announceChange (see the stepper block): the label carries the tile's own state, so the flip a
     // press produces — "Passenger 1L: Closed" -> "Passenger 1L: Open" — is the OUTCOME the pilot
-    // asked for (did the door open?) and nobody else reads it to them.
-    els.push(A.el(btn, { kind: 'button', clickable: true, disabled: !!btn.disabled, text: name + ': ' + A.txt(btn), announceChange: true }));
+    // asked for (did the door open?) and nobody else reads it to them. For the same reason the label
+    // is no identity: the tile's name is its key.
+    els.push(A.el(btn, { kind: 'button', clickable: true, disabled: !!btn.disabled, text: name + ': ' + A.txt(btn), key: 'tile:' + name, announceChange: true }));
   });
 
   A.isTileB = function (el) {
@@ -686,13 +710,21 @@
   A.block('state-tile', A.isTileB, function (el, els) {
     var a = el.children[0], b = el.children[1], name = A.txt(a.getElementsByTagName('p')[0]);
     // The LOAD button's label is the state's name and never changes on a press, so it asks for
-    // nothing; its ACTION button's label carries the action's own state, so it opts in exactly like
-    // the tile above (announceChange — see the stepper block).
+    // nothing and needs no key: its label already is one. Its ACTION button's label carries the
+    // action's own state, so it opts in exactly like the tile above (announceChange — see the
+    // stepper block). It is keyed by the state's name, whichever face the EFB shows.
+    var actionKey = 'tile-action:' + name;
     els.push(A.el(a, { kind: 'button', clickable: true, disabled: !!a.disabled, text: name }));
     var action = A.txt(b);
-    if (action) els.push(A.el(b, { kind: 'button', clickable: true, disabled: !!b.disabled, text: name + ': ' + action, announceChange: true }));
-    else if (A.iconName(b) === 'check') els.push(A.el(b, { kind: 'static', text: name + ' is the default' }));
-    else els.push(A.el(b, { kind: 'button', clickable: true, disabled: !!b.disabled, text: name + ': ' + A.iconButtonName(b), announceChange: true }));
+    if (action) els.push(A.el(b, { kind: 'button', clickable: true, disabled: !!b.disabled, text: name + ': ' + action, key: actionKey, announceChange: true }));
+    // Once this state IS the default, the EFB swaps "Set as default" for a green check mark. The
+    // reader keeps a BUTTON under the same key, so the node the pilot just pressed survives the swap
+    // and its new label — the outcome of their press — is spoken. A static line in its place was a
+    // different node, destroyed under their focus. It is deliberately NOT stamped on the EFB's
+    // check-mark button (A.el(null, ...)): nothing here knows what the EFB does with a click on its
+    // check mark, so a press on this element finds no node and clickElement refuses it.
+    else if (A.iconName(b) === 'check') els.push(A.el(null, { kind: 'button', clickable: true, disabled: !!b.disabled, text: name + ' is the default', key: actionKey, announceChange: true }));
+    else els.push(A.el(b, { kind: 'button', clickable: true, disabled: !!b.disabled, text: name + ': ' + A.iconButtonName(b), key: actionKey, announceChange: true }));
   });
 
   // ---------------------------------------------------------------------------------

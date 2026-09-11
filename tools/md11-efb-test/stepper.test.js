@@ -109,3 +109,32 @@ test('only the two arrow buttons ask the shell to speak their post-press label',
   assert.deepStrictEqual(hinted(scrape('perf-stepper-empty', { autoVis: true, nav: 'Perf' })),
     ['Runway previous', 'Runway next']);
 });
+
+// The arrows' labels carry the current choice, so a step changes every one of them. The key is the
+// field's name, so the shell patches each in place and never rebuilds it under the pilot's focus.
+// (A harness edit is no React render, so the test forces the full scrape the dirty gate would run.)
+test('the arrows and the value line keep their keys across a step', () => {
+  const { A, document } = load('perf-stepper-fallback', { autoVis: true, nav: 'Perf' });
+  const keyed = els => els.filter(e => e.key).map(e => [e.key, e.text]);
+  assert.deepStrictEqual(keyed(JSON.parse(A.scrape()).elements), [
+    ['step-value:Runway', 'Runway: RW06L'],
+    ['step-prev:Runway', 'Runway previous (now RW06L)'],
+    ['step-next:Runway', 'Runway next (now RW06L)']]);
+  document.querySelector('input[disabled]').value = 'RW06R';
+  A._dirty = true;
+  assert.deepStrictEqual(keyed(JSON.parse(A.scrape()).elements), [
+    ['step-value:Runway', 'Runway: RW06R'],
+    ['step-prev:Runway', 'Runway previous (now RW06R)'],
+    ['step-next:Runway', 'Runway next (now RW06R)']]);
+});
+
+test('a stepper not yet filled in keys its arrows the same way, before and after its first value', () => {
+  const { A, document } = load('perf-stepper-empty', { autoVis: true, nav: 'Perf' });
+  const arrows = els => els.filter(e => /^step-(prev|next):/.test(e.key || '')).map(e => [e.key, e.text]);
+  assert.deepStrictEqual(arrows(JSON.parse(A.scrape()).elements),
+    [['step-prev:Runway', 'Runway previous'], ['step-next:Runway', 'Runway next']]);
+  document.querySelector('input[disabled]').value = 'RW07';
+  A._dirty = true;
+  assert.deepStrictEqual(arrows(JSON.parse(A.scrape()).elements),
+    [['step-prev:Runway', 'Runway previous (now RW07)'], ['step-next:Runway', 'Runway next (now RW07)']]);
+});

@@ -61,13 +61,27 @@ test('Services in flight, top to bottom', () => {
     'button|ASU: Connect', 'button|Wheel Chocks: Set']);
 });
 
+const LIVE = ['dispatch', 'dispatch-ofp', 'payload-locked', 'perf-landing', 'charts-signedout', 'services-locked', 'state-locked',
+  'options-general', 'options-systems', 'options-caws', 'options-perf', 'options-comms', 'options-behavior', 'services-ground', 'state-ground',
+  'payload-form', 'payload-zfw', 'perf-takeoff'];
+
 test('every fixture scrapes without an error and never emits an empty-text control', () => {
-  const live = ['dispatch', 'dispatch-ofp', 'payload-locked', 'perf-landing', 'charts-signedout', 'services-locked', 'state-locked',
-    'options-general', 'options-systems', 'options-caws', 'options-perf', 'options-comms', 'options-behavior', 'services-ground', 'state-ground',
-    'payload-form', 'payload-zfw', 'perf-takeoff'];
-  for (const fx of live) {
+  for (const fx of LIVE) {
     const els = scrape(fx);
     assert.ok(els.length > 7, fx);
     for (const e of els) if (e.kind === 'button' || e.kind === 'tab' || e.controlType) assert.ok(e.text, fx + ': unnamed ' + JSON.stringify(e));
   }
+});
+
+// The shell keys a node by the agent's key when there is one (B5, review round 2 of PR 189). Two
+// elements sharing a key on one page would be held apart by DOM order alone, which is exactly the
+// failure the explicit key replaced.
+test('every reconcile key is unique on its page, and the live pages carry some', () => {
+  let total = 0;
+  for (const fx of LIVE) {
+    const keys = scrape(fx).filter(e => e.key).map(e => e.key);
+    assert.deepStrictEqual(keys, [...new Set(keys)], fx + ': a key is repeated');
+    total += keys.length;
+  }
+  assert.ok(total > 0, 'no live fixture carries a single key');
 });
