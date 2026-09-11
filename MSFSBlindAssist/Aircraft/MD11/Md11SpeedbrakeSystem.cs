@@ -58,11 +58,16 @@ public static class Md11SpeedbrakeSystem
     /// frame and rests wherever the lever stopped, a little off its detent (26.4 for "2/3
     /// extended"), so the combo's exact-key lookup matched nothing: it opened with NO selection,
     /// and in a DropDownList the first Down-arrow selects row 0 and COMMITS it — "Retracted".
-    /// The rule is the read-out's own (<see cref="DescribeTravel"/>), so the combo and the spoken
-    /// detent cannot disagree. Between detents it returns the travel itself, which is never a key
-    /// (every detent is more than <see cref="DetentTolerance"/> away) — the flap handle's
-    /// convention (<c>Md11FlapSystem.LeverDetentKey</c>): the combo shows nothing rather than a
-    /// detent the lever is not in.
+    /// The rule is the read-out's own (<see cref="DescribeTravel"/>), so the detent the combo opens
+    /// on is the one the read-out names. Between detents it returns the travel itself, which is
+    /// never a key (every detent is more than <see cref="DetentTolerance"/> away) — the flap
+    /// handle's convention (<c>Md11FlapSystem.LeverDetentKey</c>): the combo opens with nothing
+    /// selected rather than a detent the lever is not in.
+    ///
+    /// Only the OPENING is classified. MainForm applies this when it builds the panel; its live
+    /// re-sync never sees this var, because ProcessSimVarUpdate consumes every delivery of it. So
+    /// once built, the combo keeps the detent it opened on, or the pilot's last pick, while the
+    /// lever moves on — into a gap or to another detent — and only the spoken detents follow it.
     /// </summary>
     public static double TravelDescriptionKey(double travel)
     {
@@ -131,13 +136,16 @@ public static class Md11SpeedbrakeSystem
 
     /// <summary>
     /// Why a Spoilers selection must be refused before anything is sent, or null when it may go.
-    /// The wheel does nothing while the pull is up, so an EXTENSION there could only walk into a
-    /// generic "did not move"; each pulled state gets its own reason and what to do — armed (1),
-    /// and auto-extended on landing (2), which used to fall through to that walk. Retracting is
-    /// never refused: at 1 the lever is already retracted (arming requires it), and at 2 it is the
-    /// stow <see cref="RefuseArm"/> points the pilot to for the same state — whether the wheel takes
-    /// a retract at 2 is unmeasured (md11.md, Speedbrake), and one it ignores still reports "did
-    /// not move".
+    /// md11.md (Speedbrake) records that the lever template gates the wheel events on the pull
+    /// being DOWN, so while it is up a walk could only end in a generic "did not move"; each pulled
+    /// state gets its own reason and what to do instead. A FULL retraction is never refused. Armed
+    /// (1): every other selection is an extension — arming requires the lever retracted — and is
+    /// refused. Auto-extended on landing (2): a partial detent is refused like an extension,
+    /// whichever way it would move the lever, and only the full retraction may go, the stow
+    /// <see cref="RefuseArm"/> points the pilot to for the same state. That same gate suggests even
+    /// the stow may be ignored at 2; that is unmeasured, and a stow the aircraft ignores still
+    /// reports "did not move". SetControl hands this to DebouncedWalk, which asks it only for the
+    /// selection its debounce settles on, with the pull as it reads at that moment.
     /// </summary>
     public static string? RefuseTravel(double targetTravel, double handle)
     {

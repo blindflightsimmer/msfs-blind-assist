@@ -469,17 +469,19 @@ public partial class TFDiMD11Definition
                 _ = SetDialAndAnnounce(value, simConnect, announcer);
                 return true;
 
-            // The speedbrake lever's wheel is dead while the pull is up (armed) — the aircraft's
-            // own template gates it — so say why instead of walking into "did not move".
+            // The speedbrake lever's wheel is dead while the pull is up — the aircraft's own
+            // template gates it — so a selection it would ignore is refused with the reason
+            // rather than walked into "did not move" (Md11SpeedbrakeSystem.RefuseTravel).
+            // DebouncedWalk judges it after the debounce: only the selection that settles, against
+            // the pull as it reads then. Judged here, on every commit, arrowing through the combo
+            // spoke the refusal once for each row it passed — at pull 2 even on the way to the
+            // Retracted the sentence itself advises.
             case Md11Kinds.Lever when control.NodeId == Md11SpeedbrakeSystem.LeverKey:
-            {
-                double handle = simConnect.GetCachedVariableValue(Md11SpeedbrakeSystem.ArmKey)
-                                ?? (double.IsNaN(_spdbrkHandle) ? 0 : _spdbrkHandle);
-                var why = Md11SpeedbrakeSystem.RefuseTravel(value, handle);
-                if (why != null) { announcer.Announce(why); return true; }
-                _ = DebouncedWalk(control, value, varKey, simConnect, announcer);
+                _ = DebouncedWalk(control, value, varKey, simConnect, announcer,
+                    refuse: target => Md11SpeedbrakeSystem.RefuseTravel(target,
+                        simConnect.GetCachedVariableValue(Md11SpeedbrakeSystem.ArmKey)
+                        ?? (double.IsNaN(_spdbrkHandle) ? 0 : _spdbrkHandle)));
                 return true;
-            }
 
             // Everything detented: closed-loop walk to the target position, debounced so that
             // arrowing through a multi-position combo runs ONE walk (to the final selection),
@@ -599,9 +601,13 @@ public partial class TFDiMD11Definition
     /// on the same control, debounces briefly so rapid arrowing settles, then walks — passing the
     /// cancellation token down so a walk superseded mid-flight stops force-requesting immediately
     /// instead of adding to the SimConnect flood.
+    ///
+    /// <paramref name="refuse"/>, when given, is asked once the debounce has settled, for the
+    /// selection that settled: a reason is spoken, nothing is sent, and the walk ends as one that
+    /// did not move. Only the speedbrake lever passes one (SetControl).
     /// </summary>
     private async Task DebouncedWalk(Md11Control control, double target, string varKey,
-        SimConnectManager sim, ScreenReaderAnnouncer announcer)
+        SimConnectManager sim, ScreenReaderAnnouncer announcer, Func<double, string?>? refuse = null)
     {
         if (_bus == null) return;
         var node = control.NodeId;
@@ -624,6 +630,19 @@ public partial class TFDiMD11Definition
         bool cancelled;
         try
         {
+            // Asked HERE, once the debounce has settled, so a combo arrowed through is judged once,
+            // on the selection it settles on, against the aircraft as it is now — not once per row
+            // passed. A refusal is said once (posted to the UI thread: this continues on a pool
+            // thread), nothing is sent, and the finally ends it like a walk that did not move. It
+            // answers the pilot's own pick, like SafeWalk's "did not move", so no Ctrl+M row mutes
+            // it. It comes after EnsureGuardOpenAsync only nominally: the one caller, the speedbrake
+            // lever, has no guard, so that returned at once.
+            if (refuse?.Invoke(target) is string why)
+            {
+                OnUiThread(() => announcer.Announce(why));
+                return;
+            }
+
             await SafeWalk(
                 () => Md11SelectorWalker.WalkAsync(control, target, varKey, sim, _bus, cts.Token),
                 control, target, sim, announcer, cts.Token).ConfigureAwait(false);
@@ -638,6 +657,11 @@ public partial class TFDiMD11Definition
             // where the control actually is. WinForms ignores a same-index set, so a landed walk
             // stays silent; a failed one snaps the combo to the real position once, beside the
             // "did not move" message. A superseded walk leaves the re-sync to the walk that owns it.
+            // Not for the flap handle or the speedbrake lever (a refused pick leaves through here
+            // too): they stream SIM_FRAME + CHANGED, so this issues no ONCE (RequestVariable leaves
+            // an own subscription alone) and nothing arrives while they stand still; and
+            // ProcessSimVarUpdate consumes every delivery of them, so MainForm never re-syncs their
+            // combos after the panel is built. Each keeps the pilot's pick.
             if (mine && !cancelled) sim.RequestVariable(varKey, forceUpdate: true);
         }
     }

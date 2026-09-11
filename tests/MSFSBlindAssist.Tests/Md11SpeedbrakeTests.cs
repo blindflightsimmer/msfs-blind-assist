@@ -138,6 +138,8 @@ public class Md11SpeedbrakeTests
     [InlineData(26.4, 25)]      // resting a little past 2/3
     [InlineData(1.2, 0)]
     [InlineData(31.0, 32.5)]
+    [InlineData(27.0, 25)]      // the tolerance is inclusive: exactly DetentTolerance (2.0) past 2/3 is still 2/3
+    [InlineData(15.5, 17.5)]    // …and exactly 2.0 short of a middle detent, from below
     public void ATravelAtOrNearADetent_ClassifiesOntoThatDetentsKey(double travel, double expectedKey)
     {
         Assert.Equal(expectedKey, Md11SpeedbrakeSystem.TravelDescriptionKey(travel));
@@ -147,13 +149,15 @@ public class Md11SpeedbrakeTests
     }
 
     /// <summary>
-    /// Between detents the lever is in transit: no key, so the combo shows nothing rather than a
-    /// detent the lever is not in — the flap handle's convention (Md11FlapSystem.LeverDetentKey).
+    /// Between detents the lever is in transit: no key, so the combo opens with nothing selected
+    /// rather than a detent the lever is not in — the flap handle's convention
+    /// (Md11FlapSystem.LeverDetentKey).
     /// </summary>
     [Theory]
     [InlineData(10)]
     [InlineData(21.25)]
     [InlineData(29)]
+    [InlineData(27.01)]         // just past the tolerance on the far side of 2/3: in transit
     public void ATravelBetweenDetents_ClassifiesOntoNoKey(double travel)
     {
         var lever = Vars[Md11SpeedbrakeSystem.LeverKey];
@@ -163,10 +167,11 @@ public class Md11SpeedbrakeTests
     }
 
     /// <summary>
-    /// The wheel does nothing while the pull is up, so an EXTENSION is refused before anything is
+    /// The wheel does nothing while the pull is up, so a selection is refused before anything is
     /// sent, with the state and what to do: armed (1) keeps its sentence; auto-extended on landing
-    /// (2) used to fall through to the walk and a generic "did not move". Retracting is never
-    /// refused — at 2 it is the stow RefuseArm points the pilot to.
+    /// (2) used to fall through to the walk and a generic "did not move". A FULL retraction is
+    /// never refused — at 2 it is the stow RefuseArm points the pilot to — while a partial detent
+    /// at 2 is refused like an extension, whichever way it would move the lever (the 17.5 row).
     /// </summary>
     [Theory]
     [InlineData(17.5, 1, "Disarm the ground spoilers before extending the spoilers.")]

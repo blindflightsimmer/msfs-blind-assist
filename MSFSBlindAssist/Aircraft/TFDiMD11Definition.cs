@@ -578,12 +578,16 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                 // Dial-A-Flap detent is a BAND (FLAP_RNG 38-65 — parked at 46.91 in TFDi's
                 // ReadyToFly state), and the speedbrake's travel (MD11_SPDBRK_RNG) streams every
                 // frame and rests wherever the lever stopped, a little off its detent (26.4 for
-                // "2/3 extended"). None ever matched a key exactly, so each combo opened with NO
-                // selection, and in a DropDownList the first Down-arrow selects row 0 and COMMITS
-                // it: 10 degrees on the wheel, "Flap Up / Slat Retracted" on the handle — a walk
-                // that RETRACTS the flaps — and "Retracted" on the Spoilers row. Each classifies by
-                // the rule its own read-out already uses; the handle and the lever, between
-                // detents, stay unclassified and show nothing rather than a position they are not in.
+                // "2/3 extended"). None of the three reliably rests on an exact key, and a value
+                // that does not matched nothing, so the combo opened with NO selection, and in a
+                // DropDownList the first Down-arrow selects row 0 and COMMITS it: 10 degrees on the
+                // wheel, "Flap Up / Slat Retracted" on the handle — a walk that RETRACTS the flaps —
+                // and "Retracted" on the Spoilers row. Each classifies by the rule its own read-out
+                // already uses. MainForm applies the classifier only when it builds the panel: its
+                // live re-sync never sees these three, because ProcessSimVarUpdate consumes every
+                // delivery of them. So a handle or lever between detents opens with nothing
+                // selected, and once built each combo keeps what it opened on, or the pilot's last
+                // pick, while the control moves on.
                 else if (c.NodeId == Md11FlapSystem.DialKey) def.ValueToDescriptionKey = _flaps.NearestDialChoice;
                 else if (c.NodeId == Md11FlapSystem.LeverKey) def.ValueToDescriptionKey = _flaps.LeverDetentKey;
                 else if (c.NodeId == Md11SpeedbrakeSystem.LeverKey) def.ValueToDescriptionKey = Md11SpeedbrakeSystem.TravelDescriptionKey;
