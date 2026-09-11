@@ -9,11 +9,14 @@ namespace MSFSBlindAssist.Tests;
 /// release it that much early — behind a guard lift or a burst of walker clicks, a 3 s hold
 /// could shrink below what the 1 Hz lamp batch needs to show the lights at all.
 ///
-/// And the bus must END clean: Dispose stops the pump, writes the UP of every button whose DOWN
-/// reached the aircraft FIRST, and only then writes what is still queued, in order, on the calling
-/// thread. Cancelling the pump and discarding the queue once left a test button pressed whenever the
-/// MD-11 was re-selected inside the 3 s hold; draining through the pump then put the release at the
-/// TAIL, where a long backlog (an MCDU scratchpad send, 48 ids) pushed it past the drain bound.
+/// And the bus must END clean. Dispose stops the pump, then writes on the calling thread until the
+/// drain bound: FIRST the UP of every HELD button (<c>PressAndHoldAsync</c>) whose DOWN the pump
+/// wrote, whether the hold was still running when Dispose began or had just ended with its release
+/// still queued; then the rest of the queue in order, less the DOWN of a running hold that never left
+/// the queue. A pump stuck inside a write gets nothing written beside it. Cancelling the pump and
+/// discarding the queue once left a test button pressed whenever the MD-11 was re-selected inside the
+/// 3 s hold; draining through the pump then put the release at the TAIL, where a long backlog (an
+/// MCDU scratchpad send, 48 ids) pushed it past the drain bound.
 /// </summary>
 public class Md11EventBusTests
 {
@@ -301,6 +304,40 @@ public class Md11EventBusTests
         Assert.NotEmpty(drained);                                       // the backlog still drains behind the release…
         Assert.Equal(backlog.Take(drained.Length).ToArray(), drained);  // …in FIFO order, a prefix of what was queued
         Assert.Equal(0, rec.WritesAfterSeal);                           // and nothing lands after Dispose returned
+    }
+
+    /// <summary>
+    /// The same release for a hold that has already ENDED. Its UP was queued when the hold ended — at
+    /// the TAIL, behind a burst queued during the hold — so the held table no longer has it; but its
+    /// DOWN reached the aircraft, so it is owed exactly like a running hold's, and it is the FIRST write
+    /// Dispose makes, once. Left in FIFO order it sat behind 39 ids, the drain bound (sixteen) dropped
+    /// it, and the test button stayed pressed in the aircraft.
+    /// </summary>
+    [Fact]
+    public async Task Dispose_ReleasesAHoldThatJustEnded_First_ItsUpQueuedBehindTheBacklog()
+    {
+        var burst = Enumerable.Range(1000, 40).ToArray();   // an MCDU scratchpad send is 48
+        var rec = new GatedRecorder(gateId: burst[0]);      // the pump is parked inside the burst's FIRST write
+        var bus = new Md11EventBus(rec.Write);
+        rec.Bus = bus;
+        var hold = bus.PressAndHoldAsync(TestButton(down: 100, up: 101), holdMs: 1500);
+        Assert.True(SpinWait.SpinUntil(() => rec.Ids.Contains(100), TimeSpan.FromSeconds(5)), "the pump never wrote the DOWN");
+
+        foreach (var id in burst) bus.Fire(id);             // queued DURING the hold, after its DOWN reached the aircraft
+        Assert.True(rec.Entered.Wait(TimeSpan.FromSeconds(5)), "the pump never took the burst");
+        await hold;                                          // the hold ENDS: its UP joins the queue behind the burst
+        rec.BacklogQueued.Set();
+
+        bus.Dispose();
+        rec.Seal();
+
+        var ids = rec.Ids;
+        Assert.Equal(1, ids.Count(i => i == 101));                            // released, once — not dropped past the drain bound
+        Assert.Equal(new[] { 100, burst[0], 101 }, ids.Take(3).ToArray());   // the DOWN, the parked write, then the UP: Dispose's first
+        var drained = ids.Skip(3).ToArray();
+        Assert.NotEmpty(drained);                                             // the burst still drains behind the release…
+        Assert.Equal(burst.Skip(1).Take(drained.Length).ToArray(), drained);  // …in FIFO order
+        Assert.Equal(0, rec.WritesAfterSeal);
     }
 
     /// <summary>

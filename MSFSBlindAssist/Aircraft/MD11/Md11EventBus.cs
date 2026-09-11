@@ -82,22 +82,28 @@ public sealed class Md11EventBus : IDisposable
     /// id (measured: one disposal in 640 lost it); and a take already past the check can dequeue a
     /// LATER id behind Dispose's back and write it ahead of the ids Dispose took — an UP ahead of its
     /// DOWN. Under this lock a take either finishes first (its id is the queue's head, and the pump
-    /// writes it) or begins after the cancel and takes nothing.
+    /// writes it) or begins after the cancel and takes nothing. The pump holds it through an UNBOUNDED
+    /// wait for the next id and <c>lock</c> has no timeout, so Dispose may take it only after
+    /// <c>_cts.Cancel()</c> (or <c>CompleteAdding</c> on an empty queue) has ended that wait — any
+    /// earlier and the UI thread hangs before any disposal bound applies (<see cref="TakeQueued"/>).
     /// </summary>
     private readonly object _takeLock = new();
 
     /// <summary>
-    /// One queued CEVENT. <see cref="Hold"/> is set only on the DOWN that
-    /// <see cref="PressAndHoldAsync"/> queued, so the pump records exactly THAT write — never an
-    /// identical id some other path queued — and <see cref="Dispose"/> can tell a held button whose
-    /// DOWN reached the aircraft from one whose DOWN never left the queue.
+    /// One queued CEVENT. <see cref="Hold"/> is set only on the two halves
+    /// <see cref="PressAndHoldAsync"/> queued: its DOWN, and the UP it queued when the hold ended,
+    /// flagged <see cref="IsRelease"/>. The pump records the DOWN's write alone — never the release's,
+    /// never an identical id some other path queued — so <see cref="Dispose"/> can tell a held button
+    /// whose DOWN reached the aircraft from one whose DOWN never left the queue, and put a release
+    /// still queued behind a written DOWN first, where the drain bound cannot drop it.
     /// </summary>
-    private readonly record struct QueuedEvent(int Id, HeldPress? Hold);
+    private readonly record struct QueuedEvent(int Id, HeldPress? Hold, bool IsRelease = false);
 
     /// <summary>
     /// One hold in flight: the UP it owes and whether the pump has WRITTEN its DOWN. Compared by
     /// reference — two holds on one button are two entries. <see cref="DownWritten"/> is set by the
-    /// pump and read by <see cref="Dispose"/>, both under the <see cref="_held"/> lock.
+    /// pump under the <see cref="_held"/> lock; <see cref="Dispose"/> reads it under that lock, or once
+    /// the pump has stopped, when it is final.
     /// </summary>
     private sealed class HeldPress
     {
@@ -257,12 +263,12 @@ public sealed class Md11EventBus : IDisposable
                     if (!_queue.TryTake(out item, Timeout.Infinite, _cts.Token)) break;
                 }
 
-                // A hold's DOWN is recorded as written — under the held table's lock, BEFORE the
-                // write. Dispose reads the record only after this pump has stopped, so it is final
-                // by then; and a write that throws still counts, because a release the aircraft did
-                // not need is harmless while a press left unreleased is the stuck button of
-                // constraint 3.
-                if (item.Hold is { } hold)
+                // A hold's DOWN is recorded as written — never its release, which carries the same
+                // record — under the held table's lock, BEFORE the write. Dispose reads the record
+                // only after this pump has stopped, so it is final by then; and a write that throws
+                // still counts, because a release the aircraft did not need is harmless while a press
+                // left unreleased is the stuck button of constraint 3.
+                if (item.Hold is { } hold && !item.IsRelease)
                     lock (_held) hold.DownWritten = true;
                 WriteLogged(item.Id);
                 Volatile.Write(ref _lastWriteAt, Environment.TickCount64);
@@ -405,13 +411,18 @@ public sealed class Md11EventBus : IDisposable
     /// accepting in between, and the UP the hold then fired was dropped, leaving the button held.
     /// False once Dispose has closed the table — from then on the entry is Dispose's, and it writes
     /// the UP only if the pump wrote this hold's DOWN.
+    ///
+    /// The UP is queued carrying the hold, as its release: a Dispose that comes before the pump
+    /// reaches it — behind an MCDU scratchpad send, say — still writes it FIRST when the pump wrote
+    /// this hold's DOWN (<see cref="DisposalOrder"/>). Queued bare, it sat at the tail, the drain bound
+    /// dropped it, and the button stayed held after a hold that had ended just before disposal.
     /// </summary>
     private bool ReleaseHeldAndFireUp(HeldPress hold)
     {
         lock (_held)
         {
             if (_closed || !_held.Remove(hold)) return false;
-            TryEnqueue(new QueuedEvent(hold.UpId, null));
+            TryEnqueue(new QueuedEvent(hold.UpId, hold, IsRelease: true));
             return true;
         }
     }
@@ -499,7 +510,9 @@ public sealed class Md11EventBus : IDisposable
     /// Everything still queued, in FIFO order. Called after <c>CompleteAdding</c>, so nothing can join
     /// behind it, and under <see cref="_takeLock"/>, so the pump is never a second consumer beside it:
     /// its take has either finished — its id is ahead of all of these — or, starting after the cancel,
-    /// takes nothing.
+    /// takes nothing. It MUST come after <c>_cts.Cancel()</c> (or after <c>CompleteAdding</c> on an
+    /// empty queue): the pump holds <see cref="_takeLock"/> through an unbounded wait and <c>lock</c>
+    /// has no timeout, so called any earlier this would hang the UI thread before any bound applies.
     /// </summary>
     private List<QueuedEvent> TakeQueued()
     {
@@ -511,21 +524,25 @@ public sealed class Md11EventBus : IDisposable
 
     /// <summary>
     /// What <see cref="Dispose"/> writes, in order. FIRST the UP of every hold whose DOWN the pump
-    /// wrote — behind a long backlog the drain bound would otherwise drop it and leave the button
-    /// held; overlapping holds on one button owe one UP between them. THEN the rest of the queue in
-    /// FIFO order, less the DOWN of every hold still registered whose DOWN never left the queue:
-    /// never pressed, so nothing is owed, and its UP is not written either. A hold that already ENDED
-    /// is not in the table: its DOWN and its UP are both still queued, in order, and both are written
-    /// — which is why an UP never goes out ahead of its own DOWN.
+    /// wrote — a hold still registered, and a hold that already ENDED whose release is still queued —
+    /// because behind a long backlog the drain bound would otherwise drop it and leave the button
+    /// held; overlapping holds on one button owe one UP between them, so each is written once. THEN
+    /// the rest of the queue in FIFO order, less the DOWN of every hold still registered whose DOWN
+    /// never left the queue: never pressed, so nothing is owed, and its UP is not written either. A
+    /// hold that ENDED with its DOWN still queued keeps both halves there, in order, and both are
+    /// written — which is why an UP never goes out ahead of its own DOWN.
     /// </summary>
     private static List<int> DisposalOrder(List<HeldPress> holds, List<QueuedEvent> queued)
     {
-        var owedUps = holds.Where(h => h.DownWritten).Select(h => h.UpId).Distinct().ToList();
+        var owedUps = holds.Where(h => h.DownWritten).Select(h => h.UpId)
+            .Concat(queued.Where(IsOwedRelease).Select(item => item.Id))
+            .Distinct().ToList();
         var neverPressed = holds.Where(h => !h.DownWritten).ToHashSet();
         var order = new List<int>(owedUps);
         var dropped = 0;
         foreach (var item in queued)
         {
+            if (IsOwedRelease(item)) continue;   // already first, above
             if (item.Hold != null && neverPressed.Contains(item.Hold)) { dropped++; continue; }
             order.Add(item.Id);
         }
@@ -535,6 +552,9 @@ public sealed class Md11EventBus : IDisposable
             Log.Info("MD11", $"CEVENT bus disposing — {dropped} held button(s) whose DOWN never left the queue: neither half written.");
         return order;
     }
+
+    /// <summary>The release of a hold that has ended, still queued behind a DOWN the pump wrote: owed, so it goes out first.</summary>
+    private static bool IsOwedRelease(QueuedEvent item) => item.IsRelease && item.Hold is { DownWritten: true };
 
     /// <summary>
     /// Writes <paramref name="ids"/> on the calling thread, <see cref="MinGapMs"/> apart — the first
