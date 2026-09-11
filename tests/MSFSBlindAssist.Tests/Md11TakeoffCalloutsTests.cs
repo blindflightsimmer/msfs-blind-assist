@@ -88,4 +88,48 @@ public class Md11TakeoffCalloutsTests
         Assert.Empty(m.ProcessSample(157, onGround: true));
         Assert.Equal(new[] { "V2" }, m.ProcessSample(160, onGround: false));
     }
+
+    /// <summary>
+    /// One sentence per sample, and a muted row drops only its own call from it — the MD-11's
+    /// Ctrl+M test (IsMuted, over MuteKeyFor) exactly as the definition hands it to Compose. A
+    /// call with no row is never muted, even by a set that holds an empty key: fail open.
+    /// </summary>
+    [Fact]
+    public void AMutedRow_DropsOnlyItsOwnCall_FromTheOneSentence()
+    {
+        var rotateMuted = new HashSet<string> { Md11TakeoffCallouts.VrKey };
+        Assert.True(Md11TakeoffCallouts.IsMuted("Rotate", rotateMuted));
+        Assert.False(Md11TakeoffCallouts.IsMuted("V1", rotateMuted));
+        Assert.Equal("V1, V2", TakeoffVSpeedCallouts.Compose(new[] { "V1", "Rotate", "V2" },
+            c => Md11TakeoffCallouts.IsMuted(c, rotateMuted)));
+
+        var allMuted = new HashSet<string> { Md11TakeoffCallouts.V1Key, Md11TakeoffCallouts.VrKey, Md11TakeoffCallouts.V2Key, "" };
+        Assert.Null(TakeoffVSpeedCallouts.Compose(new[] { "V1", "Rotate", "V2" }, c => Md11TakeoffCallouts.IsMuted(c, allMuted)));
+        Assert.False(Md11TakeoffCallouts.IsMuted("Vfs", allMuted));   // no row: spoken, whatever is ticked
+    }
+
+    /// <summary>
+    /// A flight load raises the context reset and never ResetAnnouncementBaselines, so the context
+    /// reset is where the roll callouts' ARM must go. Parked with the speeds set (armed), then a
+    /// flight loaded into the cruise: MD11_IAS (per frame) lands before the 1 Hz SIM_ON_GROUND, so
+    /// the first cruise sample still says "on the ground". Before the fix the arm survived the load
+    /// and that one sample called "V1", "Rotate" and "V2" at once.
+    /// </summary>
+    [Fact]
+    public void AContextReset_DropsTheRollArm_SoAFlightLoadedIntoTheCruiseCallsNothing()
+    {
+        var def = new TFDiMD11Definition();
+        var machine = def.TakeoffCallouts;
+        Md11TakeoffCallouts.Feed(machine, Md11TakeoffCallouts.V1Key, 150);
+        Md11TakeoffCallouts.Feed(machine, Md11TakeoffCallouts.VrKey, 155);
+        Md11TakeoffCallouts.Feed(machine, Md11TakeoffCallouts.V2Key, 162);
+        Assert.Empty(machine.ProcessSample(0, onGround: true));    // parked with the speeds set: armed
+
+        def.OnSimContextReset();                                    // the flight load
+
+        Assert.Empty(machine.ProcessSample(280, onGround: true));  // the loaded cruise, stale ground flag
+        // Through the definition's own branch too: its ground flag starts true and only SIM_ON_GROUND
+        // corrects it. Nothing crosses, so the announcer (null here) is never reached.
+        Assert.True(def.ProcessSimVarUpdate(Md11TakeoffCallouts.IasKey, 281, null!));
+    }
 }

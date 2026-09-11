@@ -32,6 +32,18 @@ public static class Md11TakeoffCallouts
         _ => "",
     };
 
+    /// <summary>
+    /// Whether the pilot muted <paramref name="callout"/> in Ctrl+M — its row
+    /// (<see cref="MuteKeyFor"/>) is in <paramref name="muted"/> — the test the definition hands
+    /// <see cref="TakeoffVSpeedCallouts.Compose"/>. A callout with no row is never muted (fail
+    /// open), whatever the set holds.
+    /// </summary>
+    public static bool IsMuted(string callout, IReadOnlySet<string> muted)
+    {
+        var row = MuteKeyFor(callout);
+        return row.Length != 0 && muted.Contains(row);
+    }
+
     /// <summary>True for the three FMS V-speed exports that arm the machine.</summary>
     public static bool IsVSpeedKey(string varName) => varName is V1Key or VrKey or V2Key;
 

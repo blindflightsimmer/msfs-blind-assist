@@ -27,7 +27,10 @@ namespace MSFSBlindAssist.Aircraft;
 ///   "threshold" could re-fire inside the arm band).
 /// - Clearing V1 or VR (FMC route wipe) disarms immediately and silently.
 /// - <see cref="Reset"/> disarms and forgets the last sample but KEEPS the
-///   speeds. The definitions call it on a SimConnect reconnect: the "a landing
+///   speeds. The definitions call it on a SimConnect reconnect, and the MD-11
+///   on every context reset as well — a flight load included, whose per-frame
+///   airspeed lands before the 1 Hz SIM_ON_GROUND, so an arm kept from a
+///   parked aircraft called all three at the loaded cruise. The "a landing
 ///   can never fire" guarantee above holds for a fresh or reset machine, and an
 ///   arm from before the drop would otherwise survive into a later landing
 ///   rollout. The speeds stay because the aircraft does not necessarily send
@@ -35,6 +38,10 @@ namespace MSFSBlindAssist.Aircraft;
 ///   change and its re-seed is an initial snapshot MainForm drops; the MD-11's
 ///   reset runs after its first batch has already delivered them) — clearing
 ///   them silenced every callout for the rest of the session.
+/// - The callouts one sample crosses are spoken as ONE utterance
+///   (<see cref="Compose"/>): both definitions speak them with
+///   AnnounceImmediate, which interrupts, so spoken one by one the first was
+///   cut off by the next — "V1" by "Rotate" on every take-off with V1 = VR.
 /// </summary>
 public sealed class TakeoffVSpeedCallouts
 {
@@ -122,6 +129,23 @@ public sealed class TakeoffVSpeedCallouts
             _armed = false;
 
         return (IReadOnlyList<string>?)fired ?? Array.Empty<string>();
+    }
+
+    /// <summary>
+    /// The callouts one sample crossed (<see cref="ProcessSample"/>'s list, in speaking order) as
+    /// ONE utterance: the ones <paramref name="isMuted"/> lets through, joined with ", " — "V1,
+    /// Rotate" — or null when none remain (all muted, or none crossed). The definitions speak the
+    /// roll calls with AnnounceImmediate, which interrupts: spoken one by one, a second call on the
+    /// same sample cut the first off — V1 = VR is routine on a limiting runway, and a sample gap
+    /// can span all three. <paramref name="isMuted"/> is the definition's Ctrl+M test for one call;
+    /// a call it has no row for must answer false (fail open — a new call is spoken until it has one).
+    /// </summary>
+    public static string? Compose(IReadOnlyList<string> callouts, Func<string, bool> isMuted)
+    {
+        List<string>? spoken = null;
+        foreach (var callout in callouts)
+            if (!isMuted(callout)) (spoken ??= new List<string>(callouts.Count)).Add(callout);
+        return spoken == null ? null : string.Join(", ", spoken);
     }
 
     private static bool Crossed(double last, double now, double threshold) =>

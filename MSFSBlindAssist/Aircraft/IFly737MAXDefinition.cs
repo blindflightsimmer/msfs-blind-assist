@@ -1978,8 +1978,11 @@ public partial class IFly737MAXDefinition : BaseAircraftDefinition
         // Takeoff roll V-speed callouts, fed per SIM_FRAME (hot path — first
         // branch). AnnounceImmediate, deliberately: "V1"/"Rotate" are action
         // cues whose value IS the timing, and a queued announce would wait out
-        // an in-progress ground-speed callout. That bypasses the Suppressed
-        // wrap AND the Ctrl+M mute, so both gates are re-applied explicitly —
+        // an in-progress ground-speed callout. It interrupts, so the calls one
+        // sample crosses go out as ONE utterance (TakeoffVSpeedCallouts.Compose):
+        // spoken one by one, "V1" was cut off by "Rotate" whenever V1 = VR.
+        // That bypasses the Suppressed wrap AND the Ctrl+M mute, so both gates
+        // are re-applied explicitly —
         // per speed, keyed on the listed IFLY_V1/VR/V2 vars, so muting "V1" in
         // Ctrl+M silences its set-announce and its roll callout together.
         if (varName == "IFLY_IAS")
@@ -1988,7 +1991,7 @@ public partial class IFly737MAXDefinition : BaseAircraftDefinition
             if (callouts.Count > 0 && !announcer.Suppressed)
             {
                 var muted = Settings.SettingsManager.Current.IFlyDisabledMonitorVariablesSet;
-                foreach (string callout in callouts)
+                string? calloutSentence = TakeoffVSpeedCallouts.Compose(callouts, callout =>
                 {
                     // An unknown callout maps to no row and is never muted — fail open, as the
                     // MD-11 does for the same shared machine (a new call must be spoken until it
@@ -1996,9 +1999,9 @@ public partial class IFly737MAXDefinition : BaseAircraftDefinition
                     string gateKey = callout == "V1" ? "IFLY_V1"
                                    : callout == "Rotate" ? "IFLY_VR"
                                    : callout == "V2" ? "IFLY_V2" : "";
-                    if (gateKey.Length == 0 || !muted.Contains(gateKey))
-                        announcer.AnnounceImmediate(callout);
-                }
+                    return gateKey.Length != 0 && muted.Contains(gateKey);
+                });
+                if (calloutSentence != null) announcer.AnnounceImmediate(calloutSentence);   // "V1, Rotate": one utterance, never two
             }
             return true;
         }

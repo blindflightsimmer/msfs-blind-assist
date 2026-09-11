@@ -316,7 +316,9 @@ public partial class TFDiMD11Definition
     /// first COM tune, the first altimeter wind, the pilot's first perf entry of a reconnected
     /// session; review, 2026-09-08). Those move to <see cref="OnSimContextReset"/>. What belongs
     /// here is what must not survive into the new session whatever the ordering: the roll's arm,
-    /// the pending timers. The N1 take-off cue is NOT reset here: its arm is dropped by
+    /// the pending timers. The roll's arm is ALSO dropped by <see cref="OnSimContextReset"/>, and
+    /// on a flight load only there: a load never reaches this method. The N1 take-off cue is NOT
+    /// reset here: its arm is dropped by
     /// <see cref="OnSimContextReset"/>, which precedes every reconnect, and its samples are kept
     /// there too (see <see cref="Md11N1Cue.Reset"/>) — a wipe here would lose the IAS the batch
     /// has just delivered and never re-delivers to an aircraft standing still on the runway.
@@ -333,7 +335,12 @@ public partial class TFDiMD11Definition
     /// A disconnect, or a flight load on a live connection: every baseline-first tracker that
     /// would otherwise NARRATE its re-seed is wiped here, so the next delivery of each var seeds
     /// it silently — connecting or loading must not read out the cockpit, the radio stack, the
-    /// altimeter or the speeds — and the change after that speaks. The flap pair is left alone
+    /// altimeter or the speeds — and the change after that speaks. The take-off roll's two ARMS
+    /// are dropped here too, the N1 cue's and the V-speed callouts' (the cue keeps its samples,
+    /// the callouts their speeds): a load delivers the new flight's per-frame airspeed ahead of
+    /// the 1 Hz SIM_ON_GROUND, so an arm kept from a parked aircraft fired at the loaded cruise
+    /// ("V1, Rotate, V2" at FL350), and the Connected branch never runs for a load. The flap
+    /// pair is left alone
     /// on purpose: it dedups on its last spoken text, so an unchanged lever is silent and a
     /// changed one speaks once, truthfully. An aircraft switch constructs a new definition,
     /// which needs none of this.
@@ -358,6 +365,7 @@ public partial class TFDiMD11Definition
         _altimeter.Reset();
         _vSpeeds.Reset();
         _n1Cue.Reset();                         // drops the arm only — a gate arm must not fire on the cruise N1 a load delivers; the samples are re-fired or still true
+        _takeoffCallouts.Reset();               // drops the arm and the last sample, keeps the speeds — a parked arm called V1/Rotate/V2 on the cruise IAS a load delivers ahead of SIM_ON_GROUND
         _spdbrkHandle = double.NaN;
         _lastSpoilerSpoken = string.Empty;
         _announceGeneration++;                  // nothing scheduled before the drop may speak after it

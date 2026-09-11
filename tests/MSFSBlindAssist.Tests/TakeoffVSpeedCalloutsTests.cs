@@ -206,4 +206,63 @@ public class TakeoffVSpeedCalloutsTests
         Assert.Empty(t.ProcessSample(5, onGround: true));            // the fresh arm, with the kept speeds
         Assert.Equal(new[] { "V1", "Rotate", "V2" }, Roll(t, onGround: true, 100, 141, 145, 151));
     }
+
+    // ---- One utterance per sample (Compose) ---------------------------------------------
+    // Both definitions speak the roll calls with AnnounceImmediate, which INTERRUPTS: spoken one
+    // by one, the second call of a sample cut the first off — "V1" by "Rotate" on every take-off
+    // with V1 = VR, routine on a limiting runway.
+
+    [Fact]
+    public void V1_equal_to_VR_crosses_both_on_one_sample_and_composes_one_sentence()
+    {
+        var t = NewArmed(v1: 144, vr: 144, v2: 150);
+        Assert.Empty(t.ProcessSample(120, onGround: true));
+        var crossed = t.ProcessSample(144.5, onGround: true);
+        Assert.Equal(new[] { "V1", "Rotate" }, crossed);
+        Assert.Equal("V1, Rotate", TakeoffVSpeedCallouts.Compose(crossed, _ => false));
+    }
+
+    [Fact]
+    public void A_sample_gap_across_all_three_thresholds_composes_all_three_in_order()
+    {
+        var t = NewArmed(v1: 140, vr: 144, v2: 150);
+        Assert.Empty(t.ProcessSample(120, onGround: true));
+        var crossed = t.ProcessSample(152, onGround: true);
+        Assert.Equal(new[] { "V1", "Rotate", "V2" }, crossed);
+        Assert.Equal("V1, Rotate, V2", TakeoffVSpeedCallouts.Compose(crossed, _ => false));
+    }
+
+    [Theory]
+    [InlineData("V1", "Rotate, V2")]
+    [InlineData("Rotate", "V1, V2")]
+    [InlineData("V2", "V1, Rotate")]
+    public void Compose_leaves_out_only_the_muted_call(string mutedCall, string expected)
+        => Assert.Equal(expected, TakeoffVSpeedCallouts.Compose(new[] { "V1", "Rotate", "V2" }, c => c == mutedCall));
+
+    [Fact]
+    public void Compose_says_nothing_when_every_call_is_muted_or_none_was_crossed()
+    {
+        Assert.Null(TakeoffVSpeedCallouts.Compose(new[] { "V1", "Rotate", "V2" }, _ => true));
+        Assert.Null(TakeoffVSpeedCallouts.Compose(Array.Empty<string>(), _ => false));
+        Assert.Equal("V2", TakeoffVSpeedCallouts.Compose(new[] { "V2" }, _ => false));   // a single call is just itself
+    }
+
+    /// <summary>
+    /// A flight loaded into the cruise from a parked, armed aircraft: the per-frame airspeed lands
+    /// before the 1 Hz SIM_ON_GROUND, so the first cruise sample still carries the parked ground
+    /// flag. Still armed, that one sample crosses every speed on the "ground"; reset (the MD-11's
+    /// context reset now does it), it is silent — and so is the flight that follows.
+    /// </summary>
+    [Fact]
+    public void A_cruise_sample_with_a_stale_ground_flag_fires_everything_while_armed_and_nothing_after_a_reset()
+    {
+        var armed = NewArmed(v1: 150, vr: 155, v2: 162);
+        Assert.Equal(new[] { "V1", "Rotate", "V2" }, armed.ProcessSample(280, onGround: true));   // why the reset must happen
+
+        var reset = NewArmed(v1: 150, vr: 155, v2: 162);
+        reset.Reset();
+        Assert.Empty(reset.ProcessSample(280, onGround: true));    // the stale ground flag
+        Assert.Empty(reset.ProcessSample(281, onGround: false));   // SIM_ON_GROUND catches up
+        Assert.Empty(reset.ProcessSample(240, onGround: false));   // the rest of the flight
+    }
 }

@@ -881,8 +881,11 @@ public partial class TFDiMD11Definition
     // State → speech
     // =================================================================================
 
-    /// <summary>Take-off roll "V1" / "Rotate" / "V2" — see <see cref="Md11TakeoffCallouts"/>. Reset on a reconnect.</summary>
+    /// <summary>Take-off roll "V1" / "Rotate" / "V2" — see <see cref="Md11TakeoffCallouts"/>. Its arm is dropped on every context reset (a flight load included) and on the reconnect.</summary>
     private readonly TakeoffVSpeedCallouts _takeoffCallouts = new();
+
+    /// <summary>The roll callouts' machine, for the tests that pin what a context reset does to it (as <see cref="SeedPassPending"/> is for the seed gate).</summary>
+    internal TakeoffVSpeedCallouts TakeoffCallouts => _takeoffCallouts;
 
     /// <summary>"N1 70 percent" once per take-off roll — see <see cref="Md11N1Cue"/>. Fed IAS per frame and N1 per delivery below; its arm is dropped on a context reset, never on the reconnect.</summary>
     private readonly Md11N1Cue _n1Cue = new();
@@ -948,9 +951,12 @@ public partial class TFDiMD11Definition
         // contract is TakeoffVSpeedCallouts': arms on the ground below 40 kt with V1 and VR set,
         // upward crossings only, once per roll, a rejected take-off re-arms. AnnounceImmediate,
         // deliberately: "V1" and "Rotate" are action cues whose value IS the timing, and a queued
-        // announce would wait out an in-progress "100 knots". That bypasses MainForm's Suppressed
-        // wrap AND the Ctrl+M mute, so both are re-applied here — per speed, keyed on the listed
-        // V1 / Rotate speed / V2 rows, the way the iFly does it.
+        // announce would wait out an in-progress "100 knots". It interrupts, so the calls one
+        // sample crosses go out as ONE utterance (TakeoffVSpeedCallouts.Compose): spoken one by
+        // one, "V1" was cut off by "Rotate" on every take-off with V1 = VR. That bypasses
+        // MainForm's Suppressed wrap AND the Ctrl+M mute, so both are re-applied here — per speed,
+        // keyed on the listed V1 / Rotate speed / V2 rows (Md11TakeoffCallouts.IsMuted), the way
+        // the iFly does it.
         if (varName == Md11TakeoffCallouts.IasKey)
         {
             _n1Cue.OnIas(value, _calloutOnGround);      // arms/disarms the N1 cue; never speaks from here
@@ -958,12 +964,8 @@ public partial class TFDiMD11Definition
             if (callouts.Count > 0 && !announcer.Suppressed)
             {
                 var muted = Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet;
-                foreach (var callout in callouts)
-                {
-                    var row = Md11TakeoffCallouts.MuteKeyFor(callout);
-                    if (row.Length == 0 || !muted.Contains(row))   // no row: never muted
-                        announcer.AnnounceImmediate(callout);
-                }
+                string? calloutSentence = TakeoffVSpeedCallouts.Compose(callouts, callout => Md11TakeoffCallouts.IsMuted(callout, muted));
+                if (calloutSentence != null) announcer.AnnounceImmediate(calloutSentence);   // "V1, Rotate": one utterance, never two
             }
             return true;
         }
