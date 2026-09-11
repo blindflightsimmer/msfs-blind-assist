@@ -76,9 +76,12 @@ function loadShell(t) {
 const btn = (idx, text, extra) => Object.assign({ idx, kind: 'button', controlType: '', text, clickable: true, level: 0, live: '', disabled: false }, extra || {});
 const tab = (idx, text) => ({ idx, kind: 'tab', controlType: '', text, clickable: true, level: 0, live: '', disabled: false });
 
+// The MD-11 reader stamps the arrow's key ('step-next:Runway'). Keyed by its label instead, the
+// button would be a NEW node once '(now 06L)' became '(now 06R)': rebuilt under the pilot's focus,
+// its new label never spoken.
 test('a control flagged announceChange speaks its new label after the pilot\'s own press', async (t) => {
   const s = loadShell(t);
-  s.render('Perf', [btn(5, 'Runway next (now 06L)', { announceChange: true })]);
+  s.render('Perf', [btn(5, 'Runway next (now 06L)', { announceChange: true, key: 'step-next:Runway' })]);
   assert.strictEqual(await s.spoken(), 'EFB page: Perf');
   const b = s.buttonByLabel('Runway next');
   assert.ok(b, 'stepper button not rendered');
@@ -86,22 +89,23 @@ test('a control flagged announceChange speaks its new label after the pilot\'s o
   assert.strictEqual(await s.spoken(), 'Activating Runway next (now 06L)');
   assert.deepStrictEqual(s.posted, [JSON.stringify({ type: 'click', idx: '5' })]);
   // The next scrape shows the field one step on: patched in place (focus kept) and spoken.
-  s.render('Perf', [btn(5, 'Runway next (now 06R)', { announceChange: true })]);
+  s.render('Perf', [btn(5, 'Runway next (now 06R)', { announceChange: true, key: 'step-next:Runway' })]);
   assert.strictEqual(s.buttonByLabel('Runway next'), b, 'stepper button was rebuilt instead of patched');
   assert.strictEqual(b.textContent, 'Runway next (now 06R)', 'visible label did not update');
   assert.strictEqual(await s.spoken(), 'Runway next (now 06R)');
 });
 
 // The MD-11 door/GPU/chocks tiles carry their state after a colon, and the flip a press produces is
-// the OUTCOME the pilot asked for — the same class as the stepper, and flagged the same way.
+// the OUTCOME the pilot asked for — the same class as the stepper, flagged the same way and keyed
+// the same way (by the tile's name, 'tile:Passenger 1L').
 test('a flagged tile speaks the state its own press produced', async (t) => {
   const s = loadShell(t);
-  s.render('Services', [btn(9, 'Passenger 1L: Closed', { announceChange: true })]);
+  s.render('Services', [btn(9, 'Passenger 1L: Closed', { announceChange: true, key: 'tile:Passenger 1L' })]);
   assert.strictEqual(await s.spoken(), 'EFB page: Services');
   const door = s.buttonByLabel('Passenger 1L');
   door.focus(); door.click();
   assert.strictEqual(await s.spoken(), 'Activating Passenger 1L: Closed');
-  s.render('Services', [btn(9, 'Passenger 1L: Open', { announceChange: true })]);
+  s.render('Services', [btn(9, 'Passenger 1L: Open', { announceChange: true, key: 'tile:Passenger 1L' })]);
   assert.strictEqual(s.buttonByLabel('Passenger 1L'), door, 'tile was rebuilt instead of patched');
   assert.strictEqual(await s.spoken(), 'Passenger 1L: Open');
 });
@@ -126,4 +130,58 @@ test('a control without the flag stays silent when its label changes after a pre
   assert.strictEqual(s.buttonByLabel('Baggage'), bag, 'tile was rebuilt instead of patched');
   assert.strictEqual(bag.textContent, 'Baggage (called)', 'visible label did not update');
   assert.strictEqual(await s.spoken(), 'Activating Baggage', 'the press echo "(called)" was announced');
+});
+
+// B5 (review round 2 of PR 189): the reconcile key is EXPLICIT, or it is the label — never a text
+// heuristic. The flyPad ATC page repeats 'Set Active' / 'Set Standby' on every frequency card, so its
+// agent prefixes the card: 'UNICOM 122.800: Set Active'. The after-colon strip this shell briefly
+// carried keyed both buttons 'UNICOM 122.800', held apart only by DOM order, so a re-sort patched the
+// Set Standby label onto the node the pilot was sitting on.
+test('without a key, two labels that differ only after a colon are two keys, and a re-sort keeps each on its own node', (t) => {
+  const s = loadShell(t);
+  s.render('ATC', [btn(3, 'UNICOM 122.800: Set Active'), btn(4, 'UNICOM 122.800: Set Standby')]);
+  const active = s.buttonByLabel('UNICOM 122.800: Set Active');
+  const standby = s.buttonByLabel('UNICOM 122.800: Set Standby');
+  assert.ok(active && standby && active !== standby, 'both ATC buttons rendered');
+  assert.strictEqual(active.getAttribute('data-key'), 'btn|UNICOM 122.800: Set Active#1');
+  assert.strictEqual(standby.getAttribute('data-key'), 'btn|UNICOM 122.800: Set Standby#1');
+  s.render('ATC', [btn(3, 'UNICOM 122.800: Set Standby'), btn(4, 'UNICOM 122.800: Set Active')]);
+  assert.strictEqual(s.buttonByLabel('UNICOM 122.800: Set Active'), active, 'Set Active was re-homed onto another node');
+  assert.strictEqual(s.buttonByLabel('UNICOM 122.800: Set Standby'), standby, 'Set Standby was re-homed onto another node');
+  assert.strictEqual(active.getAttribute('data-idx'), '4', 'the moved node carries its own current idx');
+  assert.strictEqual(standby.getAttribute('data-idx'), '3');
+});
+
+// The MD-11 State page swaps 'Ready to Fly: Set as default' for its check mark, which the reader
+// reads as 'Ready to Fly is the default' — no suffix rule relates the two labels, the agent's key does.
+test('an explicit key keeps a control on its node when its label changes shape', (t) => {
+  const s = loadShell(t);
+  s.render('State', [btn(12, 'Ready to Fly: Set as default', { key: 'tile-action:Ready to Fly' })]);
+  const b = s.buttonByLabel('Ready to Fly');
+  assert.strictEqual(b.getAttribute('data-key'), 'btn|k:tile-action:Ready to Fly#1');
+  s.render('State', [btn(12, 'Ready to Fly is the default', { key: 'tile-action:Ready to Fly' })]);
+  assert.strictEqual(s.buttonByLabel('Ready to Fly'), b, 'the keyed control was rebuilt instead of patched');
+  assert.strictEqual(b.textContent, 'Ready to Fly is the default', 'visible label did not update');
+});
+
+test('the explicit key wins over the label: the same text under another key is another node', (t) => {
+  const s = loadShell(t);
+  s.render('Perf', [btn(5, 'Runway next', { key: 'step-next:Runway' })]);
+  const first = s.buttonByLabel('Runway next');
+  s.render('Perf', [btn(5, 'Runway next', { key: 'step-next:Arrival Runway' })]);
+  assert.notStrictEqual(s.buttonByLabel('Runway next'), first, 'a different key was patched onto the old node');
+});
+
+// With the heuristics gone, an element WITHOUT a key is keyed by its whole label again (the flyPad's
+// and the PMDG tablet's keys are exactly what they were before PR 189).
+test('without a key, "(now …)" and an after-colon tail are part of the key again', (t) => {
+  const s = loadShell(t);
+  s.render('Perf', [btn(5, 'Runway next (now 06L)'), btn(6, 'GPU: Connect')]);
+  const step = s.buttonByLabel('Runway next');
+  const gpu = s.buttonByLabel('GPU');
+  assert.strictEqual(step.getAttribute('data-key'), 'btn|Runway next (now 06L)#1');
+  assert.strictEqual(gpu.getAttribute('data-key'), 'btn|GPU: Connect#1');
+  s.render('Perf', [btn(5, 'Runway next (now 06R)'), btn(6, 'GPU: Disconnect')]);
+  assert.notStrictEqual(s.buttonByLabel('Runway next'), step, 'an unkeyed "(now …)" change was patched in place');
+  assert.notStrictEqual(s.buttonByLabel('GPU'), gpu, 'an unkeyed after-colon change was patched in place');
 });

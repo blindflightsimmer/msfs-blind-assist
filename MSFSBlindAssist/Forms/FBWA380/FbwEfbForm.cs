@@ -328,6 +328,7 @@ public class FbwEfbForm : Form
                 case "live":      el.Live = kv.Value; break;
                 case "disabled":  el.Disabled = kv.Value == "true"; break;
                 case "announceChange": el.AnnounceChange = kv.Value == "true"; break;
+                case "key":       el.Key = kv.Value; break;
                 case "options":   el.Options = string.IsNullOrEmpty(kv.Value) ? null : kv.Value.Split(OptionSeparator); break;
                 case "min":       el.Min = ParseInv(kv.Value); break;
                 case "max":       el.Max = ParseInv(kv.Value); break;
@@ -408,6 +409,7 @@ public class FbwEfbForm : Form
             live = e.Live,
             disabled = e.Disabled,
             announceChange = e.AnnounceChange,
+            key = e.Key,
             options = e.Options,
             min = e.Min,
             max = e.Max,
@@ -749,6 +751,7 @@ public class FbwEfbForm : Form
         public string Live = "";
         public bool Disabled;
         public bool AnnounceChange;   // agent opt-in: speak this control's post-press label change (MD-11 stepper arrows + tiles)
+        public string Key = "";       // agent-stamped reconcile key for a control whose LABEL carries changing state; "" = key by label
         public string[]? Options;
         public double? Min;      // range (slider) bounds for controlType "range"
         public double? Max;
@@ -845,28 +848,26 @@ public class FbwEfbForm : Form
   // across same-page polls (values are patched in place) while a sub-tab/page switch
   // cleanly swaps controls. The live data-idx for click/set is patched in place.
   // Strip the DYNAMIC state suffixes the agent appends -- (active) / (called) /
-  // (selected) / (current page) / (expanded) / (collapsed), the colon
-  // placed/not-placed markers, and ANY after-colon state tail -- from the
+  // (selected) / (current page) / (expanded) / (collapsed) and the colon
+  // placed/not-placed markers -- from the
   // reconcile key, so a control whose state changes (a door tile activated, a rate
   // option selected) maps to the SAME node and is patched IN PLACE rather than
   // destroyed + rebuilt. Rebuilding moved the screen-reader focus off the control
   // the user just activated. The visible label still updates via patchEl; only the
   // key is stabilised.
-  // The MD-11 reader puts a tile's state AFTER a colon -- 'Passenger 1L: Closed'
-  // -> 'Passenger 1L: Open', 'GPU: Connect' -> 'GPU: Disconnect' -- and reads its
-  // read-outs the same way ('Load: 35%' -> 'Load: 40%'), so without the last rule
-  // every flip is a NEW key: the node the pilot just pressed is destroyed under
-  // their focus and its new label is never spoken. The rule demands a colon
-  // FOLLOWED BY WHITESPACE, so clock and duration values ('23:35 UTC',
-  // 'Block time 03:50 (air 03:22)') keep their whole text in the key.
   function baseLabel(t) {
     return (t || '')
-      .replace(/\s*\(now [^)]*\)\s*$/i, '')     // a stepper's current choice: 'Runway next (now 09L)'
       .replace(/\s*\((active|called|selected|current page|expanded|collapsed)\)\s*$/i, '')
-      .replace(/:\s*(placed|not placed)\s*$/i, '')
-      .replace(/:\s+[^:]*$/, '');               // MD-11 'Name: state' tiles and 'Label: value' read-outs
+      .replace(/:\s*(placed|not placed)\s*$/i, '');
   }
-  function keyOf(it) { return rk(it) + '|' + baseLabel(it.text || ''); }
+  // A label whose changing state no suffix rule can name carries an EXPLICIT key instead. The agent
+  // that knows which part of the label is state stamps it, and the key wins over the label: the
+  // MD-11 reader keys 'GPU: Connect' / 'GPU: Disconnect' as 'tile:GPU', and 'Runway next (now 06L)'
+  // as 'step-next:Runway'. Never go back to a TEXT heuristic for that. An after-colon strip here once
+  // keyed the flyPad ATC page's 'UNICOM 122.800: Set Active' and 'UNICOM 122.800: Set Standby' both as
+  // 'UNICOM 122.800', held apart only by DOM order, so a re-sort patched one button's label onto the
+  // other's node. With no key, the rule above applies unchanged, so every other agent keeps its keys.
+  function keyOf(it) { return (typeof it.key === 'string' && it.key) ? rk(it) + '|k:' + it.key : rk(it) + '|' + baseLabel(it.text || ''); }
 
   // The control the pilot activated last, and when: a label that changes on THAT node within
   // a few seconds is the outcome of their own press (a stepper moving to the next runway), and

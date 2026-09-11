@@ -457,16 +457,7 @@ namespace MSFSBlindAssist.SimConnect
             }
 
             var elements = result.elements ?? new List<ScrapeElement>();
-            var sb = new StringBuilder((result.page ?? "") + "|" + elements.Count + "|");
-            foreach (var e in elements)
-                // e.idx (stamped) is part of the signature: if a reorder changes
-                // which element carries which idx, the form must re-render so its
-                // click/set targets stay correct even when text/value are unchanged.
-                sb.Append(e.idx).Append(':').Append(e.text).Append('/').Append(e.value)
-                  .Append('/').Append(e.controlType).Append('/').Append(e.clickable ? '1' : '0')
-                  .Append('/').Append(e.kind).Append('/').Append(e.level)
-                  .Append('/').Append(e.disabled ? '1' : '0').Append('|');
-            string elHash = sb.ToString();
+            string elHash = ElementsSignature(result.page, elements);
             if (elHash != _lastElementsHash)
             {
                 _lastElementsHash = elHash;
@@ -494,6 +485,10 @@ namespace MSFSBlindAssist.SimConnect
                     // Present only when the agent asked for it (the MD-11 stepper arrows and tiles);
                     // the form treats absence as false, so no other EFB's push changes by a byte.
                     if (elements[i].announceChange) data[$"items.{i}.announceChange"] = "true";
+                    // The agent's stable reconcile key: the MD-11 tiles, stepper arrows and read-outs,
+                    // whose label carries changing state. Present only when stamped, so a key-less
+                    // agent's push is unchanged.
+                    if (!string.IsNullOrEmpty(elements[i].key)) data[$"items.{i}.key"] = elements[i].key!;
                     // Options for a real <select>; unit-separator joined.
                     if (elements[i].options is { Count: > 0 })
                         data[$"items.{i}.options"] = string.Join(OptionSeparator, elements[i].options!);
@@ -507,6 +502,30 @@ namespace MSFSBlindAssist.SimConnect
                 _lastElementsData = data;
                 _forceNextPush = false;
             }
+        }
+
+        /// <summary>
+        /// The push signature. FbwEfbForm is re-rendered only when this changes, so a field it
+        /// renders or keys on that is missing here is a change the pilot never sees. It includes:
+        /// <list type="bullet">
+        /// <item>the stamped idx: a reorder must retarget click/set even when text and value are unchanged;</item>
+        /// <item>the agent's reconcile key: the shell keys its node by it;</item>
+        /// <item>a dropdown's option list: a list that changes under an unchanged value (a new
+        /// airport's runways) would otherwise leave the old choices on screen.</item>
+        /// </list>
+        /// </summary>
+        internal static string ElementsSignature(string? page, IReadOnlyList<ScrapeElement> elements)
+        {
+            var sb = new StringBuilder((page ?? "") + "|" + elements.Count + "|");
+            foreach (var e in elements)
+                sb.Append(e.idx).Append(':').Append(e.text).Append('/').Append(e.value)
+                  .Append('/').Append(e.controlType).Append('/').Append(e.clickable ? '1' : '0')
+                  .Append('/').Append(e.kind).Append('/').Append(e.level)
+                  .Append('/').Append(e.disabled ? '1' : '0')
+                  .Append('/').Append(e.key)
+                  .Append('/').Append(e.options is { Count: > 0 } ? string.Join(OptionSeparator, e.options!) : "")
+                  .Append('|');
+            return sb.ToString();
         }
 
         // ---- Runtime.evaluate over the inspector socket -----------------
@@ -654,7 +673,8 @@ namespace MSFSBlindAssist.SimConnect
             public List<ScrapeElement>? elements { get; set; }
         }
 
-        private sealed class ScrapeElement
+        // internal, not private, so the xUnit suite can pin ElementsSignature.
+        internal sealed class ScrapeElement
         {
             public int idx { get; set; }
             public string? kind { get; set; }
@@ -672,6 +692,9 @@ namespace MSFSBlindAssist.SimConnect
             // every other element — and on every other EFB's agent, so the identical lines in
             // CoherentEFBClient.cs (the flyPad client) are deliberately NOT given this field.
             public bool announceChange { get; set; }
+            // Agent-stamped reconcile key for an element whose label carries changing state (the MD-11
+            // reader only). The shell keys the node by it instead of the label; absent everywhere else.
+            public string? key { get; set; }
             public List<string>? options { get; set; }
             public double? min { get; set; }
             public double? max { get; set; }
