@@ -78,9 +78,31 @@ public class Md11RadioTests
         var structure = Def.GetPanelStructure();
         Assert.Equal("Radios", structure["Pedestal"][0]);
         Assert.DoesNotContain("Radios", structure["Read-outs"]);
-        Assert.Equal(Md11Radios.PanelKeys, Def.GetPanelControls()["Radios"]);
+        Assert.Equal(Md11Radios.PanelKeys, Def.GetPanelControls()["Radios"].Take(Md11Radios.PanelKeys.Length));   // the COM rows open the panel
         Assert.Equal(new[] { "COM_STANDBY_FREQUENCY_SET:1", "COM1_RADIO_SWAP" }, Md11Radios.PanelKeys.Take(2));
         Assert.Equal(Md11Radios.Keys, Def.GetPanelDisplayVariables()["Radios"]);   // "COM 1 Active Frequency: 135.500"
+    }
+
+    /// <summary>
+    /// The six COM rows OPEN the Radios panel, and the three crew positions' radio control panels
+    /// the layout table placed there follow them in the table's order — 24 controls (VHF 1-3,
+    /// HF 1-2, the MHz and kHz tuners and the transfer, per position) that the COM rows once
+    /// replaced, leaving them on no panel at all.
+    /// </summary>
+    [Fact]
+    public void TheRadiosPanel_KeepsTheThreeCrewRadioPanels_AfterTheComRows()
+    {
+        static string[] Crew(string p) => new[]
+        {
+            $"MD11_PED_{p}_RADIO_PNL_VHF1_BT", $"MD11_PED_{p}_RADIO_PNL_VHF2_BT", $"MD11_PED_{p}_RADIO_PNL_VHF3_BT",
+            $"MD11_PED_{p}_RADIO_PNL_HF1_BT", $"MD11_PED_{p}_RADIO_PNL_HF2_BT",
+            $"MD11_PED_{p}_OUTER_RADIO_FREQ_SEL_KB", $"MD11_PED_{p}_INNER_RADIO_FREQ_SEL_KB", $"MD11_PED_{p}_RADIO_PNL_XFER_BT",
+        };
+        var hardware = Crew("CPT").Concat(Crew("FO")).Concat(Crew("OBS")).ToArray();
+
+        Assert.Equal(24, hardware.Length);
+        Assert.Equal(hardware, Md11PanelLayout.Place(Md11ControlMap.Load()).Controls["Radios"]);   // what the table places
+        Assert.Equal(Md11Radios.PanelKeys.Concat(hardware), Def.GetPanelControls()["Radios"]);    // what the pilot gets
     }
 
     [Theory]

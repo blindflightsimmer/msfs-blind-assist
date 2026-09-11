@@ -411,12 +411,16 @@ public partial class TFDiMD11Definition
     /// <summary>
     /// The Radios panel is operable (typed standby, transfer), so it belongs on the Pedestal with
     /// the radio control panels rather than among the read-outs; it opens the section because
-    /// tuning is what the pilot goes there for.
+    /// tuning is what the pilot goes there for. The six COM rows go at the HEAD of the list the
+    /// layout table already placed there — the three crew positions' radio control panels (VHF
+    /// 1-3, HF 1-2, the MHz and kHz tuners and the transfer, 24 controls) — and never in place of
+    /// it: this once assigned the list outright, and those 24 were on no panel at all.
     /// </summary>
     private static void AddRadiosPanel(Dictionary<string, List<string>> structure,
         Dictionary<string, List<string>> controls, Dictionary<string, List<string>> displays)
     {
-        controls["Radios"] = new List<string>(Md11Radios.PanelKeys);
+        if (!controls.TryGetValue("Radios", out var keys)) controls["Radios"] = keys = new List<string>();
+        keys.InsertRange(0, Md11Radios.PanelKeys);
         displays["Radios"] = new List<string>(Md11Radios.Keys);
         if (!structure.TryGetValue("Pedestal", out var panels)) structure["Pedestal"] = panels = new List<string>();
         panels.Remove("Radios");

@@ -356,4 +356,31 @@ public class Md11PanelLayoutTests
             Assert.Equal(1, controls.Values.SelectMany(k => k).Count(k => k == side.SetKey));
         }
     }
+
+    /// <summary>
+    /// Nothing the layout table places may be lost by the rows the DEFINITION adds after placement.
+    /// The Radios panel once had its list REPLACED by the six COM rows, and the 24 hardware
+    /// radio-panel controls Place put there (three crew positions × VHF 1-3, HF 1-2, the two tuners
+    /// and the transfer) were on no panel at all — while
+    /// <see cref="EveryOperableControl_IsPlacedExactlyOnce_AndNoFallbackPanelIsNeeded"/> stayed green,
+    /// because it asserts on Place, not on what the definition hands MainForm. This asserts on the
+    /// definition's FINAL lists, control rows and Status Display rows alike. The definition
+    /// deliberately removes no placed key today; one it ever must would be named in
+    /// <c>deliberatelyRemoved</c>, with its reason.
+    /// </summary>
+    [Fact]
+    public void EveryPlacedKey_SurvivesIntoTheDefinitionsFinalPanels()
+    {
+        var def = new TFDiMD11Definition();
+        var controlRows = def.GetPanelControls().Values.SelectMany(k => k).ToHashSet(StringComparer.Ordinal);
+        var displayRows = def.GetPanelDisplayVariables().Values.SelectMany(k => k).ToHashSet(StringComparer.Ordinal);
+        var deliberatelyRemoved = new HashSet<string>(StringComparer.Ordinal);   // none today
+
+        var lostControls = P.Controls.Values.SelectMany(k => k)
+            .Where(k => !deliberatelyRemoved.Contains(k) && !controlRows.Contains(k)).ToList();
+        var lostDisplays = P.Displays.Values.SelectMany(k => k)
+            .Where(k => !deliberatelyRemoved.Contains(k) && !displayRows.Contains(k)).ToList();
+        Assert.Empty(lostControls);
+        Assert.Empty(lostDisplays);
+    }
 }
