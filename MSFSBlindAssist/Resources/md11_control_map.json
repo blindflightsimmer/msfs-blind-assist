@@ -6,6 +6,7 @@
   "wasm_control_vars": 1504,
   "export_vars": 58,
   "state_only_vars": 238,
+  "empty_case_labels": 0,
   "by_kind": {
    "annun": 488,
    "button": 660,
@@ -61,6 +62,7 @@
    "state_var": "MD11_AOVHD_APUFIRE_KB",
    "value_map": {
     "0": "Bottle 1",
+    "1": "Normal",
     "2": "Bottle 2"
    },
    "num_states": null,
@@ -1112,10 +1114,20 @@
    "label": "Engine 1 Fire Handle",
    "label_source": "tooltip",
    "state_var": "MD11_AOVHD_ENG1FIRE_SW",
-   "value_map": {
-    "0": "Bottle 1",
-    "1": "Fuel and Hydraulic Disconnect",
-    "2": "Bottle 2"
+   "value_map": {},
+   "composite": {
+    "outer_var": "MD11_AOVHD_ENG1FIRE_SW",
+    "outer_words": {
+     "0": "Normal",
+     "1": "Generator Field Disconnect"
+    },
+    "delegate": "2",
+    "inner_var": "MD11_AOVHD_ENG1FIRE_KB",
+    "inner_words": {
+     "0": "Bottle 1",
+     "1": "Fuel and Hydraulic Disconnect",
+     "2": "Bottle 2"
+    }
    },
    "num_states": null,
    "events": {
@@ -1231,10 +1243,20 @@
    "label": "Engine 2 Fire Handle",
    "label_source": "tooltip",
    "state_var": "MD11_AOVHD_ENG2FIRE_SW",
-   "value_map": {
-    "0": "Bottle 1",
-    "1": "Fuel and Hydraulic Disconnect",
-    "2": "Bottle 2"
+   "value_map": {},
+   "composite": {
+    "outer_var": "MD11_AOVHD_ENG2FIRE_SW",
+    "outer_words": {
+     "0": "Normal",
+     "1": "Generator Field Disconnect"
+    },
+    "delegate": "2",
+    "inner_var": "MD11_AOVHD_ENG2FIRE_KB",
+    "inner_words": {
+     "0": "Bottle 1",
+     "1": "Fuel and Hydraulic Disconnect",
+     "2": "Bottle 2"
+    }
    },
    "num_states": null,
    "events": {
@@ -1350,10 +1372,20 @@
    "label": "Engine 3 Fire Handle",
    "label_source": "tooltip",
    "state_var": "MD11_AOVHD_ENG3FIRE_SW",
-   "value_map": {
-    "0": "Bottle 1",
-    "1": "Fuel and Hydraulic Disconnect",
-    "2": "Bottle 2"
+   "value_map": {},
+   "composite": {
+    "outer_var": "MD11_AOVHD_ENG3FIRE_SW",
+    "outer_words": {
+     "0": "Normal",
+     "1": "Generator Field Disconnect"
+    },
+    "delegate": "2",
+    "inner_var": "MD11_AOVHD_ENG3FIRE_KB",
+    "inner_words": {
+     "0": "Bottle 1",
+     "1": "Fuel and Hydraulic Disconnect",
+     "2": "Bottle 2"
+    }
    },
    "num_states": null,
    "events": {
@@ -4226,13 +4258,24 @@
    "label": "Captain Oxygen Flow Regulator",
    "label_source": "tooltip",
    "state_var": "MD11_LSIDE_OXY_FLOW_SW",
-   "value_map": {},
+   "value_map": {
+    "1": "100%",
+    "0": "Normal"
+   },
    "num_states": null,
    "events": {
     "LEFT_BUTTON_DOWN": 94234
    },
    "guard_id": null,
-   "source": "FlightDeck/CaptainAux_Light.xml"
+   "source": "FlightDeck/CaptainAux_Light.xml",
+   "state": {
+    "lamps": [],
+    "latch": {
+     "var": "MD11_LSIDE_OXY_FLOW_SW",
+     "on": "100%",
+     "off": "Normal"
+    }
+   }
   },
   {
    "node_id": "MD11_LSIDE_OXY_TEST_BT",
@@ -9716,13 +9759,24 @@
    "label": "First Officer Oxygen Flow Regulator",
    "label_source": "tooltip",
    "state_var": "MD11_RSIDE_OXY_FLOW_SW",
-   "value_map": {},
+   "value_map": {
+    "1": "100%",
+    "0": "Normal"
+   },
    "num_states": null,
    "events": {
     "LEFT_BUTTON_DOWN": 95514
    },
    "guard_id": null,
-   "source": "FlightDeck/FOAux_Light.xml"
+   "source": "FlightDeck/FOAux_Light.xml",
+   "state": {
+    "lamps": [],
+    "latch": {
+     "var": "MD11_RSIDE_OXY_FLOW_SW",
+     "on": "100%",
+     "off": "Normal"
+    }
+   }
   },
   {
    "node_id": "MD11_RSIDE_OXY_TEST_BT",
@@ -14888,7 +14942,7 @@
    "kind": "button",
    "template": "TFDi_Design_MD11_Button_Template",
    "area": "Main Instrument Panel",
-   "label": "Standby Display STD",
+   "label": "Standby Altimeter STD",
    "label_source": "curated",
    "state_var": "MD11_MIP_ISFD_STD_BT",
    "value_map": {},
@@ -18300,12 +18354,21 @@
    "label": "Elevator Feel",
    "label_source": "tooltip",
    "state_var": "MD11_OVHD_FLTCTL_ELEVFEEL_BT",
-   "value_map": {
-    "0": "Decrease Reference Speed Fast",
-    "1": "Decrease Reference Speed Slow",
-    "2": "Neutral",
-    "3": "Increase Reference Speed Slow",
-    "4": "Increase Reference Speed Fast"
+   "value_map": {},
+   "composite": {
+    "outer_var": "MD11_OVHD_FLTCTL_ELEVFEEL_BT",
+    "outer_words": {
+     "0": "Auto"
+    },
+    "delegate": "1",
+    "inner_var": "MD11_OVHD_FLTCTL_ELEVFEEL_KB",
+    "inner_words": {
+     "0": "Decrease Reference Speed Fast",
+     "1": "Decrease Reference Speed Slow",
+     "2": "Neutral",
+     "3": "Increase Reference Speed Slow",
+     "4": "Increase Reference Speed Fast"
+    }
    },
    "num_states": null,
    "events": {
@@ -24814,8 +24877,8 @@
    "kind": "knob",
    "template": "TFDi_Design_MD11_Knob_Template",
    "area": "Overhead",
-   "label": "Forward Cabin/Courier Cabin Temperature",
-   "label_source": "tooltip",
+   "label": "Forward Zone Temperature",
+   "label_source": "curated",
    "value_map": {
     "0": "1 (full cold)",
     "1": "2",
@@ -24994,8 +25057,8 @@
    "kind": "knob",
    "template": "TFDi_Design_MD11_Knob_Template",
    "area": "Overhead",
-   "label": "Middle Cabin/Main Cargo Deck Temperature",
-   "label_source": "tooltip",
+   "label": "Middle Zone Temperature",
+   "label_source": "curated",
    "value_map": {
     "0": "1 (full cold)",
     "1": "2",
