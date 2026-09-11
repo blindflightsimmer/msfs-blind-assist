@@ -89,16 +89,41 @@ public sealed class Md11FlapSystem
     /// The Dial-A-Flap detent always carries its angle ("Dial-A-Flap, 15 degrees"): the detent
     /// name alone is not actionable — it tells the pilot the handle is in the take-off detent but
     /// not what take-off flap setting they are about to rotate on.
+    ///
+    /// <paramref name="dialRaw"/> is null while the thumbwheel has not been sampled, and then the
+    /// detent says so ("Dial-A-Flap, angle not yet read") — never an angle: raw 0 is a real 10°,
+    /// so the 0 the callers used to substitute announced a take-off flap nobody had set.
     /// </summary>
-    public string DescribePosition(double flapRng, double dialRaw)
+    public string DescribePosition(double flapRng, double? dialRaw)
     {
         var detent = DetentFor(flapRng);
         if (detent == null) return "Flaps in transit";
 
         if (!detent.Dial) return detent.Name;
+        if (dialRaw is not double raw) return $"{detent.Name}, angle not yet read";
 
-        var deg = DegreesFor(dialRaw);
+        var deg = DegreesFor(raw);
         return $"{detent.Name}, {deg.ToString("0", CultureInfo.InvariantCulture)} degrees";
+    }
+
+    /// <summary>
+    /// The spoken flap read-out's decision for a newly composed <paramref name="text"/>, given the
+    /// text last recorded (<paramref name="lastRecorded"/>, empty before the first) — BASELINE-FIRST,
+    /// like the spoiler read-out: a repeat is silent; the first COMPLETE text is recorded silently
+    /// (connecting, or switching to the MD-11 in flight, must not announce where the handle already
+    /// sits); every later change is spoken and recorded.
+    ///
+    /// <paramref name="complete"/> is false while the text still lacks a var it needs — the
+    /// Dial-A-Flap detent before the thumbwheel's first sample. Such a text is neither spoken nor
+    /// recorded while there is no baseline: the lever's sample can land before the wheel's, and a
+    /// baseline of "angle not yet read" would make the wheel's first sample speak the angle on
+    /// connect. Once a baseline exists it is ordinary news.
+    /// </summary>
+    public static (bool Speak, bool Record) ReadoutDecision(string lastRecorded, string text, bool complete)
+    {
+        if (string.Equals(text, lastRecorded, StringComparison.Ordinal)) return (false, false);
+        if (lastRecorded.Length == 0) return (false, complete);
+        return (true, true);
     }
 
     /// <summary>The ValueDescriptions for the handle combo: raw FLAP_RNG value → detent name.</summary>
@@ -179,6 +204,19 @@ public sealed class Md11FlapSystem
     public double NearestDialChoice(double raw)
         => Math.Round(DialSpec.ToRaw(NearestSelectableDegrees(raw)), 4);
 
+    /// <summary>
+    /// What a Dial-A-Flap set says when the wheel settles AWAY from the pick: null within a degree
+    /// (a landed set is silent — the screen reader already read the combo's pick, the rule every
+    /// set on this aircraft follows), else "Dial-A-Flap 17 degrees, could not reach 20", so a wheel
+    /// that stopped short is never mistaken for one that took the pick. Both are whole degrees; the
+    /// caller rounds the achieved angle with <see cref="NearestSelectableDegrees"/>, the display
+    /// row's rule, so the sentence and the row can never name different angles.
+    /// </summary>
+    public static string? DialSetShortfall(int wantDeg, int gotDeg)
+        => Math.Abs(gotDeg - wantDeg) <= 1
+            ? null
+            : $"Dial-A-Flap {gotDeg.ToString(CultureInfo.InvariantCulture)} degrees, could not reach {wantDeg.ToString(CultureInfo.InvariantCulture)}";
+
     // ---------------------------------------------------------------------------------
     // Actuation
     // ---------------------------------------------------------------------------------
@@ -192,8 +230,7 @@ public sealed class Md11FlapSystem
     /// So write the wheel's own backing L:var (the OVERRIDE_ANIM_CODE source) directly through the
     /// calc path in ONE shot; the animation follows it. Clamped to the wheel's 0–100 travel.
     /// </summary>
-    public Task<bool> SetDialRawAsync(double raw, SimConnectManager sim, Md11EventBus bus,
-        System.Threading.CancellationToken ct = default)
+    public Task<bool> SetDialRawAsync(double raw, SimConnectManager sim, Md11EventBus bus)
     {
         if (_dial == null) return Task.FromResult(false);
         bus.WriteExternal(DialKey, Math.Clamp(raw, 0, 100));

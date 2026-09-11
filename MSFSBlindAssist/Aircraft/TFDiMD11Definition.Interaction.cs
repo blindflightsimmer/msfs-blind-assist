@@ -463,8 +463,8 @@ public partial class TFDiMD11Definition
                 _ = GuardRefreshAsync(control, simConnect);
                 return true;
 
-            // The thumbwheel is continuous, not detented: walk it by measured step size, then
-            // ALWAYS speak the actual achieved angle (see SetDialAndAnnounce).
+            // The thumbwheel is continuous, not detented: ONE write of its own backing var, never
+            // a CEVENT walk; silent when it lands, a shortfall is spoken (see SetDialAndAnnounce).
             case Md11Kinds.Knob when control.NodeId == Md11FlapSystem.DialKey:
                 _ = SetDialAndAnnounce(value, simConnect, announcer);
                 return true;
@@ -515,18 +515,18 @@ public partial class TFDiMD11Definition
     /// successful one.
     /// </summary>
     /// <summary>
-    /// Sets the Dial-A-Flap thumbwheel, then ALWAYS speaks the angle the wheel actually reached.
+    /// Sets the Dial-A-Flap thumbwheel, then speaks ONLY a shortfall.
     ///
-    /// The thumbwheel is analog with no direct-set, so a walk rarely lands EXACTLY on the target
-    /// and can only get partway. The generic SafeWalk's "did not move" (spoken on any non-exact
-    /// landing) is both wrong — it DID move — and confusing: the screen reader has already read the
-    /// combo's target, so the pilot hears one number from the combo and a contradicting "did not
-    /// move", with the ReadFlaps read-out showing a third. So here we ignore success/failure and
-    /// simply announce the REAL resulting angle — one truth, matching ReadFlaps.
+    /// The set is one write of the wheel's own backing var (<see cref="Md11FlapSystem.SetDialRawAsync"/>
+    /// — never a CEVENT walk), so a landed set is SILENT: the screen reader already read the combo's
+    /// pick, and re-announcing the landed angle double-speaks every set — the rule
+    /// <see cref="DebouncedWalk"/> follows. A wheel that settles more than a degree off the pick
+    /// says so ("Dial-A-Flap 17 degrees, could not reach 20", <see cref="Md11FlapSystem.DialSetShortfall"/>),
+    /// because the pilot has no gauge to check, and says it through <see cref="OnUiThread"/>: the
+    /// awaits below resume on the thread pool, where ScreenReaderAnnouncer is unreliable.
     /// </summary>
     private int _dialSetGen;
     private CancellationTokenSource? _dialWalkCts;
-    private volatile bool _dialWalkActive;
 
     private async Task SetDialAndAnnounce(double targetRaw, SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
@@ -549,19 +549,15 @@ public partial class TFDiMD11Definition
         var handle = sim.GetCachedVariableValue(Md11FlapSystem.LeverKey);
         Log.Info("MD11", $"Dial set: flap handle FLAP_RNG={handle?.ToString("0.#") ?? "null"}, target={want}°.");
 
-        _dialWalkActive = true;
+        var bus = _bus;                                // read once: Dispose may null it
+        if (bus == null) return;
         try
         {
-            await _flaps.SetDialRawAsync(targetRaw, sim, _bus, cts.Token).ConfigureAwait(false);
+            await _flaps.SetDialRawAsync(targetRaw, sim, bus).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) { return; }
         catch (Exception ex)
         {
             Log.Error("MD11", $"Dial-A-Flap set threw: {ex.Message}");
-        }
-        finally
-        {
-            _dialWalkActive = false;
         }
 
         if (gen != _dialSetGen) return;                // superseded during the walk — let the newer one speak
@@ -575,15 +571,13 @@ public partial class TFDiMD11Definition
         // (FreshReadPolicy.CacheIsFresh), handed back at once: the force-read this used to issue
         // was a documented no-op for such a var, and the 120 ms after it dead time.
         var raw = await sim.ReadFreshAsync(Md11FlapSystem.DialKey, Md11SelectorWalker.FreshReadTimeoutMs).ConfigureAwait(false);
-        if (raw == null) return;
+        if (raw == null || gen != _dialSetGen) return;
 
-        _dialRaw = raw.Value;
-        int deg = (int)Math.Round(_flaps.DegreesFor(raw.Value));
-        // If it reached the target (within a degree) just confirm it; otherwise say both, so the
-        // pilot knows the wheel stopped short rather than silently trusting the combo.
-        announcer.Announce(Math.Abs(deg - want) <= 1
-            ? $"Dial-A-Flap {deg} degrees"
-            : $"Dial-A-Flap {deg} degrees, could not reach {want}");
+        // A landed set is silent — the screen reader already read the pick. A wheel that stopped
+        // more than a degree off it says so, in the display row's own rounding, on the UI thread:
+        // this tail runs on the thread pool after the awaits above.
+        var shortfall = Md11FlapSystem.DialSetShortfall(want, _flaps.NearestSelectableDegrees(raw.Value));
+        if (shortfall != null) OnUiThread(() => announcer.Announce(shortfall));
     }
 
     // Per-control debounce for the detented walk. Arrowing through a combo fires a SET for every
@@ -1052,9 +1046,9 @@ public partial class TFDiMD11Definition
                 _dialRaw = value;
                 // Moving the thumbwheel only changes the commanded angle when the handle is
                 // actually IN the Dial-A-Flap detent. Elsewhere it is a pre-selection — silent.
-                // While OUR walk is driving the wheel, SetDialAndAnnounce owns the single final
-                // call-out — don't also narrate every degree the walk sweeps through.
-                if (!_dialWalkActive && !double.IsNaN(_flapRng) && _flaps.DetentFor(_flapRng)?.Dial == true)
+                // A set from a combo is ONE write, so it arrives as one delivery; the pilot's own
+                // pick is echo-suppressed by MainForm's wrap.
+                if (!double.IsNaN(_flapRng) && _flaps.DetentFor(_flapRng)?.Dial == true)
                     AnnounceFlaps(announcer);
                 return true;
         }
@@ -1216,20 +1210,29 @@ public partial class TFDiMD11Definition
 
     /// <summary>
     /// Speaks the handle position, always with the Dial-A-Flap angle when that is the detent.
-    /// Deduplicated on the spoken string: the lever var can re-deliver the same value, and a
-    /// thumbwheel walk steps through many raw values that round to the same degree.
+    /// Deduplicated on the spoken string (the lever var can re-deliver the same value) and
+    /// BASELINE-FIRST like the spoiler read-out: the first complete text after connecting — or after
+    /// switching to the MD-11 in flight — is recorded silently, so nobody is told "Flap 35" about a
+    /// handle nobody moved (<see cref="Md11FlapSystem.ReadoutDecision"/>). The context reset leaves
+    /// the flap pair alone on purpose: it dedups on this last text.
     /// </summary>
     private void AnnounceFlaps(ScreenReaderAnnouncer announcer)
     {
         if (double.IsNaN(_flapRng)) return;
 
-        var dial = double.IsNaN(_dialRaw) ? 0 : _dialRaw;
+        var dial = SampledDialRaw;
         var text = _flaps.DescribePosition(_flapRng, dial);
+        // Complete once every var the words need has been read: the Dial-A-Flap detent needs the
+        // wheel too, whose first sample may land after the lever's.
+        bool complete = dial != null || _flaps.DetentFor(_flapRng)?.Dial != true;
 
-        if (string.Equals(text, _lastFlapSpoken, StringComparison.Ordinal)) return;
-        _lastFlapSpoken = text;
-        announcer.Announce(text);
+        var (speak, record) = Md11FlapSystem.ReadoutDecision(_lastFlapSpoken, text, complete);
+        if (record) _lastFlapSpoken = text;
+        if (speak) announcer.Announce(text);
     }
+
+    /// <summary>The thumbwheel's last sample, or null before the first — never a stand-in 0, which is a real 10°.</summary>
+    private double? SampledDialRaw => double.IsNaN(_dialRaw) ? null : _dialRaw;
 
     /// <summary>
     /// Renders the flap combos' live value. Without this the lever would display the bare
@@ -1254,7 +1257,7 @@ public partial class TFDiMD11Definition
         switch (varKey)
         {
             case Md11FlapSystem.LeverKey:
-                displayText = _flaps.DescribePosition(value, double.IsNaN(_dialRaw) ? 0 : _dialRaw);
+                displayText = _flaps.DescribePosition(value, SampledDialRaw);
                 return true;
 
             case Md11FlapSystem.DialKey:
@@ -1528,7 +1531,7 @@ public partial class TFDiMD11Definition
 
         // Bypasses the dedupe: an explicit hotkey press must always speak, even if the answer
         // is the same as last time.
-        announcer.Announce(_flaps.DescribePosition(_flapRng, double.IsNaN(_dialRaw) ? 0 : _dialRaw));
+        announcer.Announce(_flaps.DescribePosition(_flapRng, SampledDialRaw));
     }
 
     /// <summary>

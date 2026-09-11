@@ -241,6 +241,112 @@ public class Md11FlapSystemTests
         Assert.Equal("Flaps in transit", System().DescribePosition(30, 0));
     }
 
+    /// <summary>
+    /// A thumbwheel that has not been sampled has no angle to report — and raw 0 IS an angle, the
+    /// wheel's 10° end. The callers used to hand 0 in for an unsampled wheel, so right after
+    /// connecting with the handle in the take-off detent the read-out said "Dial-A-Flap, 10
+    /// degrees" whatever the wheel was set to. It must say the angle is not known instead.
+    /// </summary>
+    [Fact]
+    public void DescribePosition_DialDetent_WithAnUnsampledWheel_SaysTheAngleIsNotYetRead()
+    {
+        var sys = System();
+
+        Assert.Equal("Dial-A-Flap, angle not yet read", sys.DescribePosition(46.91, null));
+        Assert.Equal("Dial-A-Flap, 10 degrees", sys.DescribePosition(46.91, 0));   // 0 is a real angle
+    }
+
+    /// <summary>Only the Dial-A-Flap detent needs the wheel; every other position reads the same without it.</summary>
+    [Theory]
+    [InlineData(0, "Flap Up / Slat Retracted")]
+    [InlineData(100, "Flap 50")]
+    [InlineData(30, "Flaps in transit")]
+    public void DescribePosition_OutsideTheDialDetent_NeedsNoWheelSample(double rng, string expected)
+    {
+        Assert.Equal(expected, System().DescribePosition(rng, null));
+    }
+
+    // ---------------------------------------------------------------------------------
+    // The spoken flap read-out: baseline-first, never narrating a connect
+    // ---------------------------------------------------------------------------------
+
+    [Fact]
+    public void ReadoutDecision_TheFirstCompleteText_IsRecordedSilently()
+    {
+        Assert.Equal((false, true), Md11FlapSystem.ReadoutDecision("", "Flap 35", complete: true));
+    }
+
+    [Fact]
+    public void ReadoutDecision_AnIncompleteFirstText_IsNeitherSpokenNorTheBaseline()
+    {
+        Assert.Equal((false, false), Md11FlapSystem.ReadoutDecision("", "Dial-A-Flap, angle not yet read", complete: false));
+    }
+
+    [Fact]
+    public void ReadoutDecision_AChangeAfterTheBaseline_IsSpokenAndRecorded()
+    {
+        Assert.Equal((true, true), Md11FlapSystem.ReadoutDecision("Flap 28", "Flap 35", complete: true));
+        // After the baseline, even an incomplete text is news — and true.
+        Assert.Equal((true, true), Md11FlapSystem.ReadoutDecision("Flap 28", "Dial-A-Flap, angle not yet read", complete: false));
+    }
+
+    [Fact]
+    public void ReadoutDecision_ARepeat_IsSilent()
+    {
+        Assert.Equal((false, false), Md11FlapSystem.ReadoutDecision("Flap 35", "Flap 35", complete: true));
+    }
+
+    /// <summary>
+    /// Connecting — or switching to the MD-11 in flight — with the handle parked in the take-off
+    /// detent. The lever's first sample can land before the wheel's; played through the decision in
+    /// that order, NOTHING is spoken (the complete text becomes the baseline), and the next real
+    /// change is. The definition's AnnounceFlaps runs exactly this loop.
+    /// </summary>
+    [Fact]
+    public void ReadoutDecision_ConnectingInTheDialDetent_LeverBeforeWheel_SpeaksNothing()
+    {
+        var sys = System();
+        string last = "";
+        var spoken = new List<string>();
+        void Offer(double rng, double? dial)
+        {
+            var text = sys.DescribePosition(rng, dial);
+            bool complete = dial != null || sys.DetentFor(rng)?.Dial != true;
+            var (speak, record) = Md11FlapSystem.ReadoutDecision(last, text, complete);
+            if (record) last = text;
+            if (speak) spoken.Add(text);
+        }
+
+        Offer(46.91, null);    // the lever first; the wheel not yet read
+        Offer(46.91, 33.0);    // the wheel's first sample: 15 degrees
+        Assert.Empty(spoken);
+
+        Offer(70, 33.0);       // the pilot selects 28
+        Assert.Equal(new[] { "Flap 28" }, spoken);
+    }
+
+    // ---------------------------------------------------------------------------------
+    // A Dial-A-Flap set: silent when it lands, a shortfall is spoken
+    // ---------------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(20, 20)]
+    [InlineData(20, 19)]
+    [InlineData(20, 21)]
+    public void DialSetShortfall_IsSilentWithinADegree(int want, int got)
+    {
+        Assert.Null(Md11FlapSystem.DialSetShortfall(want, got));
+    }
+
+    [Theory]
+    [InlineData(20, 17, "Dial-A-Flap 17 degrees, could not reach 20")]
+    [InlineData(10, 25, "Dial-A-Flap 25 degrees, could not reach 10")]
+    [InlineData(25, 23, "Dial-A-Flap 23 degrees, could not reach 25")]
+    public void DialSetShortfall_NamesWhereTheWheelStopped_AndWhatWasAsked(int want, int got, string expected)
+    {
+        Assert.Equal(expected, Md11FlapSystem.DialSetShortfall(want, got));
+    }
+
     // ---------------------------------------------------------------------------------
     // Combo wiring
     // ---------------------------------------------------------------------------------
