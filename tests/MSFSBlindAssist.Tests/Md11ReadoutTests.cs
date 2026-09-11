@@ -86,9 +86,12 @@ public class Md11ReadoutTests
     /// <summary>
     /// A classifier belongs only to a control whose VALUE space is not its combo's KEY space: the
     /// gear lever's 0-25 travel against {0 Up, 1 Down}, the Dial-A-Flap wheel's continuous raw
-    /// value against whole degrees, and the flap handle's Dial-A-Flap BAND against the detent
-    /// points. Every other MD-11 combo keeps the raw value as its key (the speedbrake lever's
-    /// travel detents are exact keys and must stay that way).
+    /// value against whole degrees, the flap handle's Dial-A-Flap BAND against the detent
+    /// points, and the speedbrake lever's travel — streamed every frame, resting wherever the
+    /// lever stopped — against its four detents. Every other MD-11 combo keeps the raw value as
+    /// its key. (This test once pinned the speedbrake as an exact-key combo; a lever resting at
+    /// 26.4 then matched no key and the Spoilers combo opened blank, where the first Down-arrow
+    /// commits "Retracted".)
     /// </summary>
     [Fact]
     public void OnlyMismatchedKeySpaces_ClassifyTheirValue()
@@ -99,14 +102,17 @@ public class Md11ReadoutTests
             .OrderBy(k => k, StringComparer.Ordinal)
             .ToList();
         Assert.Equal(
-            new[] { Md11FlapSystem.DialKey, Md11FlapSystem.LeverKey, Md11GearLever.Key }
+            new[] { Md11FlapSystem.DialKey, Md11FlapSystem.LeverKey, Md11GearLever.Key, Md11SpeedbrakeSystem.LeverKey }
                 .OrderBy(k => k, StringComparer.Ordinal),
             classified);
 
-        // The concrete counter-example: an unclassified var's key IS its value.
-        var lever = Def.GetVariables()[Md11SpeedbrakeSystem.LeverKey];
-        Assert.Null(lever.ValueToDescriptionKey);
-        Assert.Equal(17.5, lever.DescriptionKeyFor(17.5));
+        // The speedbrake lever's travel lands on the detent its read-out names…
+        Assert.Equal(25, Def.GetVariables()[Md11SpeedbrakeSystem.LeverKey].DescriptionKeyFor(26.4));
+
+        // …and the concrete counter-example: an unclassified var's key IS its value.
+        var irs = Def.GetVariables()["MD11_OVHD_IRS_1_KB"];
+        Assert.Null(irs.ValueToDescriptionKey);
+        Assert.Equal(1, irs.DescriptionKeyFor(1));
     }
 
     /// <summary>

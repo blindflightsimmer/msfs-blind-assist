@@ -48,9 +48,38 @@ public static class Md11SpeedbrakeSystem
     /// <summary>The detent a travel value sits in, or null between detents.</summary>
     public static string? DescribeTravel(double rng)
     {
-        foreach (var (value, name) in Detents)
-            if (Math.Abs(rng - value) <= DetentTolerance) return name;
-        return null;
+        int i = DetentIndex(rng);
+        return i < 0 ? null : Detents[i].Name;
+    }
+
+    /// <summary>
+    /// The <see cref="TravelValues"/> KEY a travel value describes — the classifier behind the
+    /// Spoilers combo (<c>SimVarDefinition.ValueToDescriptionKey</c>). The travel streams every
+    /// frame and rests wherever the lever stopped, a little off its detent (26.4 for "2/3
+    /// extended"), so the combo's exact-key lookup matched nothing: it opened with NO selection,
+    /// and in a DropDownList the first Down-arrow selects row 0 and COMMITS it — "Retracted".
+    /// The rule is the read-out's own (<see cref="DescribeTravel"/>), so the combo and the spoken
+    /// detent cannot disagree. Between detents it returns the travel itself, which is never a key
+    /// (every detent is more than <see cref="DetentTolerance"/> away) — the flap handle's
+    /// convention (<c>Md11FlapSystem.LeverDetentKey</c>): the combo shows nothing rather than a
+    /// detent the lever is not in.
+    /// </summary>
+    public static double TravelDescriptionKey(double travel)
+    {
+        int i = DetentIndex(travel);
+        return i < 0 ? travel : Detents[i].Value;
+    }
+
+    /// <summary>
+    /// The detent within <see cref="DetentTolerance"/> of a travel value, or -1 between detents —
+    /// the one rule the read-out and the combo share. The detents sit 7.5 or more apart and the
+    /// tolerance is 2, so at most one qualifies, and it is the nearest.
+    /// </summary>
+    private static int DetentIndex(double travel)
+    {
+        for (int i = 0; i < Detents.Length; i++)
+            if (Math.Abs(travel - Detents[i].Value) <= DetentTolerance) return i;
+        return -1;
     }
 
     /// <summary>What the lever row shows: the detent, or the fact that it is between two.</summary>
@@ -100,9 +129,24 @@ public static class Md11SpeedbrakeSystem
         return null;
     }
 
-    /// <summary>Whether the lever must be left alone: the wheel does nothing while the pull is up.</summary>
+    /// <summary>
+    /// Why a Spoilers selection must be refused before anything is sent, or null when it may go.
+    /// The wheel does nothing while the pull is up, so an EXTENSION there could only walk into a
+    /// generic "did not move"; each pulled state gets its own reason and what to do — armed (1),
+    /// and auto-extended on landing (2), which used to fall through to that walk. Retracting is
+    /// never refused: at 1 the lever is already retracted (arming requires it), and at 2 it is the
+    /// stow <see cref="RefuseArm"/> points the pilot to for the same state — whether the wheel takes
+    /// a retract at 2 is unmeasured (md11.md, Speedbrake), and one it ignores still reports "did
+    /// not move".
+    /// </summary>
     public static string? RefuseTravel(double targetTravel, double handle)
-        => (int)Math.Round(handle) == 1 && targetTravel > DetentTolerance
-            ? "Disarm the ground spoilers before extending the spoilers."
-            : null;
+    {
+        if (targetTravel <= DetentTolerance) return null;
+        return (int)Math.Round(handle) switch
+        {
+            1 => "Disarm the ground spoilers before extending the spoilers.",
+            2 => "The ground spoilers are extended; select Retracted to stow them.",
+            _ => null,
+        };
+    }
 }

@@ -573,15 +573,20 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                 // same rule the gear hotkey read-out uses (Md11GearLever). The pick still writes
                 // the key, which is what the walker's two-position toggle resolves against.
                 if (c.NodeId == Md11GearLever.Key) def.ValueToDescriptionKey = Md11GearLever.DescriptionKey;
-                // Both flap controls are combos of discrete positions over a var that is not
-                // discrete: the thumbwheel's raw value is continuous, and the handle's Dial-A-Flap
-                // detent is a BAND (FLAP_RNG 38-65 — parked at 46.91 in TFDi's ReadyToFly state).
-                // Neither ever matched a key exactly, so both combos opened with NO selection, and
-                // in a DropDownList the first Down-arrow selects row 0 and COMMITS it: 10 degrees
-                // on the wheel, and on the handle "Flap Up / Slat Retracted" — a walk that RETRACTS
-                // the flaps. Each classifies by the rule its own read-out already uses.
+                // Both flap controls and the speedbrake lever are combos of discrete positions over
+                // a var that is not discrete: the thumbwheel's raw value is continuous, the handle's
+                // Dial-A-Flap detent is a BAND (FLAP_RNG 38-65 — parked at 46.91 in TFDi's
+                // ReadyToFly state), and the speedbrake's travel (MD11_SPDBRK_RNG) streams every
+                // frame and rests wherever the lever stopped, a little off its detent (26.4 for
+                // "2/3 extended"). None ever matched a key exactly, so each combo opened with NO
+                // selection, and in a DropDownList the first Down-arrow selects row 0 and COMMITS
+                // it: 10 degrees on the wheel, "Flap Up / Slat Retracted" on the handle — a walk
+                // that RETRACTS the flaps — and "Retracted" on the Spoilers row. Each classifies by
+                // the rule its own read-out already uses; the handle and the lever, between
+                // detents, stay unclassified and show nothing rather than a position they are not in.
                 else if (c.NodeId == Md11FlapSystem.DialKey) def.ValueToDescriptionKey = _flaps.NearestDialChoice;
                 else if (c.NodeId == Md11FlapSystem.LeverKey) def.ValueToDescriptionKey = _flaps.LeverDetentKey;
+                else if (c.NodeId == Md11SpeedbrakeSystem.LeverKey) def.ValueToDescriptionKey = Md11SpeedbrakeSystem.TravelDescriptionKey;
                 return def;
             }
 

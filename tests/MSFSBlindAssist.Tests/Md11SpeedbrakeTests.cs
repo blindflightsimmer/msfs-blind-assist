@@ -122,4 +122,60 @@ public class Md11SpeedbrakeTests
                                         && v.UpdateFrequency == UpdateFrequency.Continuous && v.IsAnnounced && !v.ExcludeFromBatch);
         Assert.Single(named);
     }
+
+    /// <summary>
+    /// The travel streams every frame and a lever rests wherever it stopped, a little off its
+    /// detent, so the Spoilers combo's EXACT-key lookup matched nothing: it opened with no
+    /// selection, and in a DropDownList the first Down-arrow selects row 0 and COMMITS it —
+    /// "Retracted". The definition classifies the travel onto the detent the read-out names,
+    /// within the read-out's own tolerance.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(17.5, 17.5)]
+    [InlineData(25, 25)]
+    [InlineData(32.5, 32.5)]
+    [InlineData(26.4, 25)]      // resting a little past 2/3
+    [InlineData(1.2, 0)]
+    [InlineData(31.0, 32.5)]
+    public void ATravelAtOrNearADetent_ClassifiesOntoThatDetentsKey(double travel, double expectedKey)
+    {
+        Assert.Equal(expectedKey, Md11SpeedbrakeSystem.TravelDescriptionKey(travel));
+        var lever = Vars[Md11SpeedbrakeSystem.LeverKey];
+        Assert.Equal(expectedKey, lever.DescriptionKeyFor(travel));                                         // wired on the definition
+        Assert.Equal(Md11SpeedbrakeSystem.DescribeTravel(travel), lever.ValueDescriptions[expectedKey]);   // the combo shows what is spoken
+    }
+
+    /// <summary>
+    /// Between detents the lever is in transit: no key, so the combo shows nothing rather than a
+    /// detent the lever is not in — the flap handle's convention (Md11FlapSystem.LeverDetentKey).
+    /// </summary>
+    [Theory]
+    [InlineData(10)]
+    [InlineData(21.25)]
+    [InlineData(29)]
+    public void ATravelBetweenDetents_ClassifiesOntoNoKey(double travel)
+    {
+        var lever = Vars[Md11SpeedbrakeSystem.LeverKey];
+        Assert.False(lever.ValueDescriptions.ContainsKey(Md11SpeedbrakeSystem.TravelDescriptionKey(travel)));
+        Assert.False(lever.ValueDescriptions.ContainsKey(lever.DescriptionKeyFor(travel)));
+        Assert.Null(Md11SpeedbrakeSystem.DescribeTravel(travel));
+    }
+
+    /// <summary>
+    /// The wheel does nothing while the pull is up, so an EXTENSION is refused before anything is
+    /// sent, with the state and what to do: armed (1) keeps its sentence; auto-extended on landing
+    /// (2) used to fall through to the walk and a generic "did not move". Retracting is never
+    /// refused — at 2 it is the stow RefuseArm points the pilot to.
+    /// </summary>
+    [Theory]
+    [InlineData(17.5, 1, "Disarm the ground spoilers before extending the spoilers.")]
+    [InlineData(32.5, 1, "Disarm the ground spoilers before extending the spoilers.")]
+    [InlineData(17.5, 2, "The ground spoilers are extended; select Retracted to stow them.")]
+    [InlineData(32.5, 2, "The ground spoilers are extended; select Retracted to stow them.")]
+    [InlineData(0, 1, null)]
+    [InlineData(0, 2, null)]
+    [InlineData(25, 0, null)]
+    public void AnExtensionIsRefused_WhileThePullIsUp_WithWhatToDo(double target, double handle, string? expected)
+        => Assert.Equal(expected, Md11SpeedbrakeSystem.RefuseTravel(target, handle));
 }
