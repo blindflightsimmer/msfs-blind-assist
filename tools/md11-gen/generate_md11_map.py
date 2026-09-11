@@ -986,7 +986,7 @@ CASE_MARK_RE = re.compile(r"%\{:\s*([-\d.]+)\s*\}")
 # '%(<rpn>)%{if}A%{else}B%{end}': a two-way dynamic word. Group 1 is the TRUE word, group 2 the
 # resting (false) one.
 INLINE_IF_RE = re.compile(r"%\([^)]*(?:\)[^)%]*)*?\)\s*%\{if\}([^%]*)%\{else\}([^%]*)%\{end\}")
-# Stands in for a literal '%%' while a case label is cut at its first directive.
+# Stands in for a literal '%%' while a case label or an if/else word is cut at its first directive.
 _LITERAL_PERCENT = "\0"
 
 
@@ -1177,7 +1177,11 @@ def parse_tooltip(tooltip, node_id=None, empty_cases=None, composite=None):
     elif expr and not LABEL_ONLY_VARS.intersection(_lvars(expr)):
         value_map = _cases(expr)
         if not value_map:
-            m = re.search(r"%\{if\}([^%]*)%\{else\}([^%]*)%\{end\}", expr)
+            # '%%' is a literal percent sign in these words too, exactly as in a case label (D11):
+            # the oxygen flow regulators read '%{if}100%%%{else}Normal%{end}' on their OWN var, and
+            # cut at the '%' they had no words -- so no latch, and no spoken state at all.
+            m = re.search(r"%\{if\}([^%]*)%\{else\}([^%]*)%\{end\}",
+                          expr.replace("%%", _LITERAL_PERCENT))
             # The if/else words are THIS control's positions only when the expression reads ONE
             # L:var -- the state var. The EFIS minimums caps read two: their own value first
             # ('%((L:MD11_CAP_MINIMUMS))%!d!'), then the mode SWITCH's var for the Baro/Radio
@@ -1190,7 +1194,7 @@ def parse_tooltip(tooltip, node_id=None, empty_cases=None, composite=None):
             # and lose an {Off, On} map that nothing consumed (a button never reads `values`, and
             # the `state` block that composes its spoken position is generated separately).
             if m and _reads_one_state_var(expr):
-                on, off = m.group(1).strip(), m.group(2).strip()
+                on, off = (word.replace(_LITERAL_PERCENT, "%").strip() for word in m.groups())
                 if on and off:
                     value_map = {"1": on, "0": off}
 

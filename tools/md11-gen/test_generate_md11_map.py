@@ -859,5 +859,34 @@ class CompositeTests(unittest.TestCase):
         self.assertNotIn("composite", by["MD11_OVHD_ELEC_EMER_PWR_KB"])
 
 
+class IfElseWordTests(unittest.TestCase):
+    """D11: '%%' is a literal percent sign in a trailing if/else word, as D2 made it in a case
+    label. TFDi's oxygen flow regulators read their OWN var -- the proof that a button's own L:var
+    holds its position -- as '%{if}100%%%{else}Normal%{end}'; cut at the '%', the words were lost,
+    so the regulators had no positions, no latch and no spoken state."""
+
+    CAPTAIN = ("Captain Oxygen Flow Regulator "
+               "(%((L:MD11_LSIDE_OXY_FLOW_SW))%{if}100%%%{else}Normal%{end})")
+
+    def test_the_oxygen_regulator_gets_both_words(self):
+        label, var, value_map = g.parse_tooltip(self.CAPTAIN, node_id="MD11_LSIDE_OXY_FLOW_SW")
+        self.assertEqual("Captain Oxygen Flow Regulator", label)
+        self.assertEqual("MD11_LSIDE_OXY_FLOW_SW", var)
+        self.assertEqual({"1": "100%", "0": "Normal"}, value_map)
+
+    def test_so_the_regulator_speaks_the_latch_its_own_tooltip_reads(self):
+        label, var, value_map = g.parse_tooltip(self.CAPTAIN, node_id="MD11_LSIDE_OXY_FLOW_SW")
+        regulator = ctl("MD11_LSIDE_OXY_FLOW_SW", label=label, state_var=var, value_map=value_map,
+                        events={"LEFT_BUTTON_DOWN": 94234})
+        out = g.apply_state(g.finalize_controls([regulator]))
+        self.assertEqual({"lamps": [], "latch": {"var": "MD11_LSIDE_OXY_FLOW_SW", "on": "100%",
+                                                 "off": "Normal"}}, out[0]["state"])
+
+    def test_a_percent_sign_in_either_word_is_kept(self):
+        _, _, value_map = g.parse_tooltip(
+            "Test Flow (%((L:MD11_OVHD_X_FLOW_SW))%{if}Max 100%%%{else}Min 20%%%{end})")
+        self.assertEqual({"1": "Max 100%", "0": "Min 20%"}, value_map)
+
+
 if __name__ == "__main__":
     unittest.main()
