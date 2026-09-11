@@ -1414,10 +1414,8 @@ public partial class TFDiMD11Definition
             // The var carries only the unit the PFD shows; DescribeAltimeter converts the other.
             case HotkeyAction.ReadAltimeter:
             {
-                var b = simConnect.GetCachedVariableValue(Md11Fcp.ReadCaptainBaro);
-                announcer.AnnounceImmediate(b == null
-                    ? "Altimeter unavailable"
-                    : Md11AltimeterAnnouncer.Sentence(b.Value));
+                announcer.AnnounceImmediate(Md11AltimeterAnnouncer.HotkeySentence(
+                    simConnect.GetCachedVariableValue(Md11Fcp.ReadCaptainBaro)));
                 return true;
             }
 

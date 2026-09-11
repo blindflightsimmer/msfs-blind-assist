@@ -40,6 +40,11 @@ public sealed class Md11AltimeterAnnouncer
     /// </summary>
     public void OnUpdate(double value, long nowMs)
     {
+        // A flat 0 (or less) is no reading. The export reads 0 until the aircraft publishes it, and a
+        // baseline of 0 turned the first real setting into an announced "change" on connect — the COM
+        // announcer's out-of-band rule and DescribeAltimeterShortfall's "a read-back of 0 is no
+        // evidence", applied here. It neither seeds nor arms.
+        if (value <= 0) return;
         if (!_baselined)
         {
             _baselined = true;
@@ -57,7 +62,7 @@ public sealed class Md11AltimeterAnnouncer
     /// <summary>Seeds the baseline when there is none (a flight load re-delivers only what changed); true when it did.</summary>
     public bool SeedIfEmpty(double value)
     {
-        if (_baselined) return false;
+        if (_baselined || value <= 0) return false;   // 0 is no reading (see OnUpdate)
         _baselined = true;
         _lastSeen = value;
         _lastSpoken = Sentence(value);
@@ -89,4 +94,12 @@ public sealed class Md11AltimeterAnnouncer
     /// <summary>"Altimeter standard", or "Altimeter: 1013, 29.92" — the B key's words.</summary>
     public static string Sentence(double reading)
         => Md11Fcp.IsStandard(reading) ? "Altimeter standard" : $"Altimeter: {Md11Fcp.DescribeAltimeter(reading)}";
+
+    /// <summary>
+    /// The B key: <see cref="Sentence"/> for a real reading, "Altimeter unavailable" for none — an
+    /// undelivered var (null) or the unpublished export's flat 0, which used to be spoken as
+    /// "Altimeter: 0, 0.00".
+    /// </summary>
+    public static string HotkeySentence(double? reading)
+        => reading is > 0 ? Sentence(reading.Value) : "Altimeter unavailable";
 }

@@ -117,4 +117,41 @@ public class Md11AltimeterAnnouncerTests
         a.OnUpdate(30.12, 2_000);
         Assert.Equal("Altimeter: 1020, 30.12", a.Due(2_000 + Md11AltimeterAnnouncer.SettleMs));   // the first real change speaks
     }
+
+    [Fact]
+    public void A_zero_first_delivery_is_no_reading_so_the_real_setting_becomes_the_silent_baseline()
+    {
+        var a = new Md11AltimeterAnnouncer();
+        a.OnUpdate(0, 0);          // an MD-11 export reads a flat 0 until the aircraft publishes it
+        a.OnUpdate(29.92, 100);    // the first REAL value is the baseline and is never spoken
+        Assert.False(a.HasPending);
+        Assert.Null(a.Due(10_000));
+    }
+
+    [Fact]
+    public void A_zero_after_the_baseline_is_ignored_not_a_change()
+    {
+        var a = new Md11AltimeterAnnouncer();
+        a.OnUpdate(29.92, 0);
+        a.OnUpdate(0, 100);
+        Assert.False(a.HasPending);
+        a.OnUpdate(29.92, 200);    // back on the same setting: still nothing to say
+        Assert.False(a.HasPending);
+    }
+
+    [Fact]
+    public void SeedIfEmpty_refuses_zero()
+    {
+        var a = new Md11AltimeterAnnouncer();
+        Assert.False(a.SeedIfEmpty(0));
+        Assert.True(a.SeedIfEmpty(1013));
+    }
+
+    [Theory]
+    [InlineData(null, "Altimeter unavailable")]
+    [InlineData(0.0, "Altimeter unavailable")]
+    [InlineData(-1.0, "Altimeter unavailable")]
+    [InlineData(29.92, "Altimeter standard")]
+    public void HotkeySentence_treats_zero_as_no_reading(double? reading, string expected)
+        => Assert.Equal(expected, Md11AltimeterAnnouncer.HotkeySentence(reading));
 }
