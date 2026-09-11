@@ -47,6 +47,9 @@ public class FbwEfbForm : Form
     private const string StateTypeElements = "fbw_efb_elements";
     private const string StateTypeConnected = "fbw_efb_connected";
     private const char OptionSeparator = (char)0x1f;
+    // The browser shell's own marker for a control the EFB has greyed out (buildEl / patchEl). The
+    // native list fallback uses it too, so both renderings say the same thing.
+    private const string DimmedSuffix = ", dimmed";
 
     private readonly IMcduBridge _bridgeServer;
     private readonly ScreenReaderAnnouncer _announcer;
@@ -521,10 +524,13 @@ public class FbwEfbForm : Form
 
     // ---- list-mode rendering (fallback) ----------------------------------
 
+    // Disabled is part of the structure. CreateControlFor builds a control's ", dimmed" label and its
+    // "Unavailable" refusal into it, so a greyed-out flip must rebuild the control;
+    // UpdateControlsInPlace patches values only.
     private string StructureSignature()
     {
         return _currentPage + "" + string.Join("",
-            _elements.Select(e => e.Index + "|" + (e.ControlType ?? "") + "|" + e.Clickable + "|" + e.Tag + "|" + e.Text));
+            _elements.Select(e => e.Index + "|" + (e.ControlType ?? "") + "|" + e.Clickable + "|" + e.Tag + "|" + e.Text + "|" + e.Disabled));
     }
 
     private void UpdateControlsInPlace()
@@ -588,22 +594,35 @@ public class FbwEfbForm : Form
         _lastStructureSignature = signature;
     }
 
+    // What a dimmed control says when the pilot activates it, the same word the browser shell's
+    // onActivate uses. The press did nothing, so this is an error condition and is spoken; the press
+    // itself is never announced.
+    private void AnnounceUnavailable() => _announcer.Announce("Unavailable");
+
     private Control CreateControlFor(EFBElement el, int width)
     {
         if (el.ControlType is "checkbox" or "radio")
         {
+            string cbText = string.IsNullOrEmpty(el.Text) ? "(unnamed checkbox)" : el.Text;
+            bool cbDisabled = el.Disabled;
             var cb = new CheckBox
             {
-                Text = string.IsNullOrEmpty(el.Text) ? "(unnamed checkbox)" : el.Text,
+                Text = cbDisabled ? cbText + DimmedSuffix : cbText,
                 Checked = el.Value == "true",
                 AutoSize = false,
                 Size = new Size(width, 24),
-                AccessibleName = el.Text
+                AccessibleName = cbDisabled ? cbText + DimmedSuffix : el.Text,
+                // A greyed-out box stays in the tab order. Enabled = false would drop it from Tab, and
+                // the pilot would never learn it exists. It never flips itself either: with AutoCheck
+                // off, Space only raises Click, which is answered below the way the browser shell
+                // answers a dimmed control.
+                AutoCheck = !cbDisabled
             };
             int idx = el.AgentIdx;   // stamped agent idx — what click/set look up
+            if (cbDisabled) cb.Click += (_, _) => AnnounceUnavailable();
             cb.CheckedChanged += (_, _) =>
             {
-                if (_suppressControlEvents) return;
+                if (_suppressControlEvents || cbDisabled) return;
                 _bridgeServer.EnqueueCommand("set_element_value", new Dictionary<string, string>
                 {
                     ["index"] = idx.ToString(),
@@ -617,10 +636,13 @@ public class FbwEfbForm : Form
         if (el.ControlType is "text" or "select")
         {
             var container = new Panel { Size = new Size(width, 46), AccessibleRole = AccessibleRole.Grouping };
+            string fieldText = string.IsNullOrEmpty(el.Text) ? "(unnamed field)" : el.Text;
+            bool fieldDisabled = el.Disabled;
             var label = new Label
             {
-                Text = (string.IsNullOrEmpty(el.Text) ? "(unnamed field)" : el.Text)
-                       + (el.ControlType == "select" ? " (choice — type a value)" : ""),
+                Text = fieldText
+                       + (el.ControlType == "select" ? " (choice — type a value)" : "")
+                       + (fieldDisabled ? DimmedSuffix : ""),
                 Location = new Point(0, 0),
                 AutoSize = true
             };
@@ -629,8 +651,11 @@ public class FbwEfbForm : Form
                 Text = el.Value,
                 Location = new Point(0, 20),
                 Size = new Size(width - 4, 23),
-                AccessibleName = el.Text,
-                AccessibleDescription = "Type a value and press Enter to set it."
+                AccessibleName = fieldDisabled ? fieldText + DimmedSuffix : el.Text,
+                AccessibleDescription = fieldDisabled ? "" : "Type a value and press Enter to set it.",
+                // Read-only, never Enabled = false: a disabled TextBox leaves the tab order, so the pilot
+                // could not reach the field to hear its value, or that it is greyed out.
+                ReadOnly = fieldDisabled
             };
             int idx = el.AgentIdx;   // stamped agent idx — what click/set look up
             string controlType = el.ControlType!;
@@ -639,6 +664,12 @@ public class FbwEfbForm : Form
             {
                 if (e.KeyCode == Keys.Return)
                 {
+                    if (fieldDisabled)
+                    {
+                        AnnounceUnavailable();
+                        e.Handled = true; e.SuppressKeyPress = true;
+                        return;
+                    }
                     _bridgeServer.EnqueueCommand("set_element_value", new Dictionary<string, string>
                     {
                         ["index"] = idx.ToString(),
@@ -670,6 +701,8 @@ public class FbwEfbForm : Form
         if (el.Clickable || el.Tag == "button" || el.Role == "button" || el.Tag == "a")
         {
             string text = string.IsNullOrEmpty(el.Text) ? "(unnamed button)" : el.Text;
+            bool btnDisabled = el.Disabled;
+            if (btnDisabled) text += DimmedSuffix;
             var btn = new Button
             {
                 Text = text,
@@ -681,6 +714,10 @@ public class FbwEfbForm : Form
             int idx = el.AgentIdx;   // stamped agent idx — what click/set look up
             btn.Click += (_, _) =>
             {
+                // The browser shell's onActivate rule: a dimmed control answers "Unavailable" and posts
+                // nothing. This fallback used to press straight through it, and the MD-11 reader's own
+                // refusal was then the only thing between the pilot and a locked EFB page.
+                if (btnDisabled) { AnnounceUnavailable(); return; }
                 _bridgeServer.EnqueueCommand("click_display_element",
                     new Dictionary<string, string> { ["index"] = idx.ToString() });
                 var t = new System.Windows.Forms.Timer { Interval = 450 };
