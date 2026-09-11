@@ -1,4 +1,6 @@
+using MSFSBlindAssist.Aircraft;
 using MSFSBlindAssist.Aircraft.MD11;
+using MSFSBlindAssist.SimConnect.MD11;
 
 namespace MSFSBlindAssist.Tests;
 
@@ -66,5 +68,72 @@ public class Md11McduTypedTextTests
             var reported = Md11McduKeys.UntypeableCharacters(c.ToString());
             Assert.Equal(Md11McduKeys.ForChar(c) == null, reported.Length == 1);
         }
+    }
+
+    // ------------------------------------------------------------------ deliverability (C3)
+    //
+    // Review round 2: the window pressed key by key, spoke "{key} key unavailable" for each key
+    // that could not be delivered, sent the rest — and then cleared the box. An entry is now
+    // checked whole before its first key, and refused in ONE sentence with the text kept.
+
+    [Fact]
+    public void FirstUndeliverableKey_IsNullWhenEveryKeyCanBePressed()
+    {
+        Assert.Null(Md11McduKeys.FirstUndeliverableKey("KJFK/KLAX", _ => true));
+        Assert.Null(Md11McduKeys.FirstUndeliverableKey("", _ => false));   // nothing to press
+    }
+
+    [Fact]
+    public void FirstUndeliverableKey_NamesTheFirstDeadKeyInTypingOrder()
+    {
+        var dead = new HashSet<string> { "SLASH", "L" };
+        Assert.Equal("SLASH", Md11McduKeys.FirstUndeliverableKey("KJFK/KLAX", k => !dead.Contains(k)));
+    }
+
+    [Fact]
+    public void FirstUndeliverableKey_AsksAboutTheKeySuffixesTheWindowPresses()
+    {
+        var asked = new List<string>();
+        Md11McduKeys.FirstUndeliverableKey("A. -1", k => { asked.Add(k); return true; });
+        Assert.Equal(new[] { "A", "DOT", "SP", "MINUS", "1" }, asked);
+    }
+
+    [Fact]
+    public void FirstUndeliverableKey_LeavesAnUntypeableCharacterToRefusalFor()
+    {
+        // RefusalFor runs first and names it; this check is only about keys that exist. So '*' (no
+        // MCDU key) is never offered to the predicate — the window answers it with CanPress on a
+        // node id built from the key — and never reported as an undeliverable key.
+        var asked = new List<string>();
+        Assert.Null(Md11McduKeys.FirstUndeliverableKey("N12*", k => { asked.Add(k); return true; }));
+        Assert.Equal(new[] { "N", "1", "2" }, asked);
+    }
+
+    [Theory]
+    [InlineData("SLASH", "Not sent. The MCDU slash key is unavailable.")]
+    [InlineData("DOT", "Not sent. The MCDU dot key is unavailable.")]
+    [InlineData("SP", "Not sent. The MCDU space key is unavailable.")]
+    [InlineData("PLUS", "Not sent. The MCDU plus key is unavailable.")]
+    [InlineData("MINUS", "Not sent. The MCDU minus key is unavailable.")]
+    [InlineData("K", "Not sent. The MCDU K key is unavailable.")]
+    [InlineData("7", "Not sent. The MCDU 7 key is unavailable.")]
+    public void UndeliverableRefusal_IsOneSentenceNamingTheKey(string key, string expected)
+    {
+        Assert.Equal(expected, Md11McduKeys.UndeliverableRefusal(key));
+    }
+
+    /// <summary>
+    /// CanPress answers under PressControl's own conditions: with no bus attached (Attach has not
+    /// run — the test suite never attaches) nothing can be pressed, a real MCDU key included.
+    /// </summary>
+    [Fact]
+    public void An_unattached_definition_can_press_nothing()
+    {
+        var def = new TFDiMD11Definition();
+        var realKey = Md11McduKeys.NodeId(Md11McduUnit.Left, "A");
+
+        Assert.False(def.CanPress(realKey));
+        Assert.False(def.CanPress("MD11_NO_SUCH_NODE_BT"));
+        Assert.Equal(def.CanPress(realKey), def.PressControl(realKey));
     }
 }

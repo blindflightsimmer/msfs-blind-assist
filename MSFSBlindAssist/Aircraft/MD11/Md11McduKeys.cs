@@ -111,6 +111,46 @@ public static class Md11McduKeys
         return $"Not sent. The MCDU keyboard has no {list} key.";
     }
 
+    /// <summary>
+    /// The first key of <paramref name="text"/>, in typing order, that
+    /// <paramref name="canPressKey"/> says cannot be delivered — its node-id suffix ("SLASH",
+    /// "K") — or null when every key can be.
+    ///
+    /// The window asks this BEFORE it presses anything, with <c>TFDiMD11Definition.CanPress</c>
+    /// on the selected unit's node ids. Pressing key by key and speaking each failure put the
+    /// rest of the entry in the scratchpad ("KJFKKLAX" for "KJFK/KLAX") and then cleared the box,
+    /// leaving the pilot to retype a line they could not see had gone in wrong. A character with
+    /// no key at all is <see cref="RefusalFor"/>'s to report — the window validates that first —
+    /// so it is skipped here.
+    /// </summary>
+    public static string? FirstUndeliverableKey(string text, Func<string, bool> canPressKey)
+    {
+        foreach (var c in text)
+        {
+            var key = ForChar(c);
+            if (key != null && !canPressKey(key)) return key;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The ONE sentence for an entry refused because <paramref name="key"/> (a node-id suffix)
+    /// cannot be delivered: nothing was typed, and the window keeps the entry in its box.
+    /// </summary>
+    public static string UndeliverableRefusal(string key) =>
+        $"Not sent. The MCDU {SpokenKeyName(key)} key is unavailable.";
+
+    /// <summary>A key suffix as a pilot says it: the punctuation keys by name, letters and digits as themselves.</summary>
+    private static string SpokenKeyName(string key) => key switch
+    {
+        "DOT" => "dot",
+        "SLASH" => "slash",
+        "PLUS" => "plus",
+        "MINUS" => "minus",
+        "SP" => "space",
+        _ => key,
+    };
+
     /// <summary>Spoken names for the punctuation a pilot is most likely to type by habit.</summary>
     private static readonly Dictionary<char, string> SpokenNames = new()
     {

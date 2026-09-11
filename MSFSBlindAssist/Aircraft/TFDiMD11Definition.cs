@@ -253,12 +253,29 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     public bool PressControl(string nodeId)
     {
         if (_bus == null) return false;                                   // Attach hasn't run — no sim yet
-        if (!_byNodeId.TryGetValue(nodeId, out var control)) return false;
-        if (!control.Events.ContainsKey("LEFT_BUTTON_DOWN")) return false;
+        var control = PressableControl(nodeId);
+        if (control == null) return false;
 
         _bus.Press(control);
         return true;
     }
+
+    /// <summary>
+    /// True when <see cref="PressControl"/> would press <paramref name="nodeId"/> right now: a bus
+    /// is attached, the node is mapped, and it has a LEFT_BUTTON_DOWN. The same conditions, not a
+    /// copy of them — both go through <see cref="PressableControl"/>.
+    ///
+    /// For a caller that presses SEVERAL keys which must all land or none: the MCDU window checks
+    /// a whole typed entry before its first key, because a key that fails part-way leaves the
+    /// scratchpad holding text the pilot did not type.
+    /// </summary>
+    public bool CanPress(string nodeId) => _bus != null && PressableControl(nodeId) != null;
+
+    /// <summary>The mapped control a left-click press reaches, or null (unmapped, or no LEFT_BUTTON_DOWN).</summary>
+    private Md11Control? PressableControl(string nodeId) =>
+        _byNodeId.TryGetValue(nodeId, out var control) && control.Events.ContainsKey("LEFT_BUTTON_DOWN")
+            ? control
+            : null;
 
     /// <summary>
     /// Fires a NAMED event pair on a control — for actions that are not a plain left-click.

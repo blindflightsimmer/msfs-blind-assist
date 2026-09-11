@@ -56,7 +56,6 @@ public class Md11McduForm : Form
     private TextBox statusBox = null!;
 
     private System.Windows.Forms.Timer? _pollTimer;
-    private System.Windows.Forms.Timer? _scratchpadDebounceTimer;
 
     private Md11McduUnit _unit = Md11McduUnit.Left;
     private Md11McduScreen? _screen;
@@ -81,7 +80,19 @@ public class Md11McduForm : Form
     /// repaint be held rather than believed. See <see cref="Md11McduPresence.BlankSettleMs"/>.
     /// </summary>
     private readonly DateTime?[] _blankSince = new DateTime?[3];
-    private string _lastAnnouncedScratchpad = "";
+
+    /// <summary>
+    /// The scratchpad read-back, shared with the iFly CDU (<see cref="CduScratchpadAnnouncer"/>):
+    /// fed on every poll tick that shows a page, silent on its first sample after a re-seed,
+    /// held while a typing or CLR burst is being written so only the settled text is read, and
+    /// "Scratchpad cleared" for an emptied pad. It replaced a 300 ms debounce timer that repeated
+    /// the Delete clear's own "Scratchpad cleared" and let a half-typed entry through.
+    /// </summary>
+    private readonly CduScratchpadAnnouncer _scratchpad = new(Md11McduScratchpad.ClearedText);
+
+    /// <summary>True while <see cref="ClearScratchpadAsync"/> runs; a second Delete in that time is ignored.</summary>
+    private bool _clearing;
+
     private string _lastAnnouncedFlags = "";
 
     /// <summary>
@@ -217,16 +228,6 @@ public class Md11McduForm : Form
             if (previousWindow != IntPtr.Zero) SetForegroundWindow(previousWindow);
         });
 
-        _scratchpadDebounceTimer = new System.Windows.Forms.Timer { Interval = 300 };
-        _scratchpadDebounceTimer.Tick += (s, e) =>
-        {
-            _scratchpadDebounceTimer.Stop();
-            var pad = _screen?.Scratchpad.Trim() ?? "";
-            if (pad == _lastAnnouncedScratchpad) return;
-            _lastAnnouncedScratchpad = pad;
-            _announcer.Announce(string.IsNullOrEmpty(pad) ? "Scratchpad cleared" : pad);
-        };
-
         // 250 ms: fast enough that a keypress feels immediate, slow enough to be free. A tick
         // where nothing arrived costs one reference compare.
         //
@@ -282,13 +283,17 @@ public class Md11McduForm : Form
         _screen = null;
         _lastRendered = null;
 
-        // A pending scratchpad announce is void: fired now, it would read the current pad against
-        // stale text and could say "Scratchpad cleared" for a scratchpad nobody cleared.
-        // Re-baseline on what the unit shows — and the annunciator flags likewise, or a unit whose
-        // MSG was already lit would announce "MSG" as though it had just come on.
-        _scratchpadDebounceTimer?.Stop();
+        // The scratchpad read-back is re-seeded SILENTLY on what this unit shows — Reset, then the
+        // seed a first sample after Reset always is. Read against the previous unit's text, or
+        // against what the pad held when the window was hidden, it would announce a change nobody
+        // made now, or "Scratchpad cleared" for a scratchpad nobody cleared. Only a PAGE seeds it:
+        // a blank or never-delivered unit is seeded by its first page, through Poll. The
+        // annunciator flags likewise, or a unit whose MSG was already lit would announce "MSG" as
+        // though it had just come on.
         var current = _sim.Md11McduDataManager?.GetScreen(_unit);
-        _lastAnnouncedScratchpad = current?.Scratchpad.Trim() ?? "";
+        _scratchpad.Reset();
+        if (current != null && Md11McduPresence.Classify(current) == Md11McduPresenceState.Content)
+            _scratchpad.OnPoll(current.Scratchpad.Trim(), DateTime.UtcNow);
         _lastAnnouncedFlags = current == null ? "" : FlagsOf(current);
 
         // Render at once only when the unit has CONTENT. A blank or never-delivered unit waits
@@ -311,10 +316,18 @@ public class Md11McduForm : Form
     /// A press that cannot be delivered is SPOKEN, never swallowed — see PressControl. The pilot
     /// cannot see the screen, so a dropped key would otherwise look exactly like a working one.
     /// </summary>
-    private void PressKey(string key)
+    private bool PressKey(string key) => PressKey(_unit, key);
+
+    /// <summary>
+    /// <see cref="PressKey(string)"/> on a NAMED unit — for the scratchpad clear, which must keep
+    /// pressing the unit it started on even if the selector moves while it runs. True when the
+    /// press was queued.
+    /// </summary>
+    private bool PressKey(Md11McduUnit unit, string key)
     {
-        if (!_definition.PressControl(Md11McduKeys.NodeId(_unit, key)))
-            _announcer.Announce($"{key} key unavailable");
+        if (_definition.PressControl(Md11McduKeys.NodeId(unit, key))) return true;
+        _announcer.Announce($"{key} key unavailable");
+        return false;
     }
 
     private void McduDisplay_KeyDown(object? sender, KeyEventArgs e)
@@ -324,7 +337,9 @@ public class Md11McduForm : Form
         // from the display, because the scratchpad box needs Backspace to edit its own text.
         if (e.KeyCode == Keys.Back)
         {
-            PressKey("CLR");
+            // Holds the read-back for its own write like any burst, so a held Backspace (key
+            // repeat) reads the settled scratchpad once instead of every character on the way.
+            if (PressKey("CLR")) HoldScratchpadReadBack(1);
             e.Handled = true; e.SuppressKeyPress = true;
         }
         // Delete = clear the WHOLE scratchpad. Backspace is a single CLR (one character); Delete is
@@ -361,29 +376,55 @@ public class Md11McduForm : Form
     /// exported scratchpad back between presses and STOPPING the instant it is empty. Reading back
     /// is what makes it safe for both cases: typed text (N characters → N presses) and a scratchpad
     /// MESSAGE (one press clears it), without over-deleting into whatever the FMS shows next.
+    ///
+    /// A clear that works says NOTHING itself: every press holds the scratchpad read-back, which
+    /// speaks "Scratchpad cleared" once the pad has settled empty. It used to say so here too, and
+    /// the read-back said it again — and it said it even when the presses ran out with text still
+    /// there. What it does say is <see cref="Md11McduScratchpad.ClearVerdict"/>'s. It keeps
+    /// pressing the unit it STARTED on, and a second Delete while it runs is ignored: two loops
+    /// would each read the other's presses as their own progress and over-delete.
     /// </summary>
     private async Task ClearScratchpadAsync()
     {
+        if (_clearing) return;
         var manager = _sim.Md11McduDataManager;
         if (manager == null) { _announcer.Announce("Not connected"); return; }
 
-        // Cap at the scratchpad width plus a margin — a backstop against an unreadable feed, so a
-        // stuck read can never turn this into an unbounded CLR storm at the aircraft.
-        for (var i = 0; i < Md11McduLayout.Cols + 4; i++)
+        _clearing = true;
+        try
         {
-            var screen = manager.GetScreen(_unit);
-            if (screen == null || string.IsNullOrWhiteSpace(screen.Scratchpad))
+            var unit = _unit;
+            for (var presses = 0; ; presses++)
             {
-                _announcer.Announce("Scratchpad cleared");
-                return;
-            }
-            PressKey("CLR");
-            // Long enough for the press to register AND the CHANGED client-data delivery to land,
-            // so the next iteration reads the post-delete scratchpad rather than the stale one.
-            await Task.Delay(150);
-        }
+                var screen = manager.GetScreen(unit);
+                // A PAGE, read: a never-delivered unit, or a blank frame (a page change's erase
+                // reads as an empty scratchpad that is not one), cannot say the pad is empty.
+                var readable = Md11McduPresence.Classify(screen) == Md11McduPresenceState.Content;
+                var empty = readable && string.IsNullOrWhiteSpace(screen!.Scratchpad);
 
-        _announcer.Announce("Scratchpad cleared");
+                // Capped at the scratchpad width plus a margin (MaxClearPresses) — a backstop
+                // against an unreadable feed, so a stuck read can never become an unbounded CLR
+                // storm at the aircraft. The read above runs once more after the last press.
+                if (!readable || empty || presses >= Md11McduScratchpad.MaxClearPresses)
+                {
+                    if (Md11McduScratchpad.ClearVerdict(readable, empty, presses) is { } verdict)
+                        _announcer.Announce(verdict);
+                    return;
+                }
+
+                if (!PressKey(unit, "CLR")) return;   // PressKey spoke "CLR key unavailable" — once, not per iteration
+                HoldScratchpadReadBack(1);
+
+                // Long enough for the press to register AND the CHANGED client-data delivery to land,
+                // so the next iteration reads the post-delete scratchpad rather than the stale one.
+                await Task.Delay(150);
+                if (IsDisposed) return;   // an aircraft switch disposed the window mid-clear: say nothing more
+            }
+        }
+        finally
+        {
+            _clearing = false;
+        }
     }
 
     private void Form_KeyDown(object? sender, KeyEventArgs e)
@@ -491,8 +532,9 @@ public class Md11McduForm : Form
     {
         if (e.KeyCode != Keys.Return) return;
 
-        // A refused entry stays in the box: the refusal names the character to remove, and the
-        // pilot edits and presses Enter again rather than retyping the whole line.
+        // A refused entry stays in the box: the refusal names the character to remove, or the key
+        // that cannot be pressed, and the pilot edits and presses Enter again rather than retyping
+        // the whole line.
         if (SendTextToMcdu(scratchpadInput.Text.ToUpperInvariant()))
             scratchpadInput.Clear();
         e.Handled = true; e.SuppressKeyPress = true;
@@ -501,7 +543,8 @@ public class Md11McduForm : Form
     /// <summary>
     /// Types a string into the scratchpad, one key at a time — the MCDU has no "set text" input.
     /// Returns false, having pressed NOTHING, when the entry holds a character the MCDU keyboard
-    /// lacks.
+    /// lacks, or a key that cannot be delivered right now (TFDiMD11Definition.CanPress) — ONE
+    /// sentence either way, and the entry stays in the box.
     ///
     /// The whole entry is validated first (Md11McduKeys.RefusalFor), for the same reason PressKey
     /// speaks an undeliverable press: skipping the one character and sending the rest would put
@@ -523,8 +566,24 @@ public class Md11McduForm : Form
             return false;
         }
 
+        // Every key is checked BEFORE the first is pressed. Key by key, a key that could not be
+        // delivered spoke "{key} key unavailable" while the rest of the entry went in — and the
+        // caller then cleared the box, so the pilot was left to retype a line they could not see
+        // had gone in wrong.
+        var unit = _unit;
+        var undeliverable = Md11McduKeys.FirstUndeliverableKey(text, key => _definition.CanPress(Md11McduKeys.NodeId(unit, key)));
+        if (undeliverable != null)
+        {
+            Log.Debug("MD11", $"MCDU scratchpad entry refused, {undeliverable} key cannot be pressed on the {unit} MCDU: \"{text}\"");
+            _announcer.Announce(Md11McduKeys.UndeliverableRefusal(undeliverable));
+            return false;
+        }
+
+        // Hold the read-back until the whole entry has been written, so it is read once, settled,
+        // and no half-typed prefix of it is.
+        HoldScratchpadReadBack(text.Length);
         foreach (char c in text)
-            PressKey(Md11McduKeys.ForChar(c)!);
+            PressKey(unit, Md11McduKeys.ForChar(c)!);
         return true;
     }
 
@@ -569,10 +628,19 @@ public class Md11McduForm : Form
 
         // The manager only builds a new screen object when the sim delivers, and the underlying
         // request is CHANGED-only — so an unchanged reference means nothing happened.
-        if (ReferenceEquals(screen, _lastRendered)) return;
+        if (!ReferenceEquals(screen, _lastRendered))
+        {
+            _screen = screen;
+            Render(silentTitle: false);
+        }
 
-        _screen = screen;
-        Render(silentTitle: false);
+        // The scratchpad read-back runs on EVERY tick that shows a page, not behind the reference
+        // shortcut above: a typing or CLR hold can end on a tick that delivered nothing, and the
+        // settled text must still be read then (CduScratchpadAnnouncer). After Render, so a page
+        // change's title is still spoken before the scratchpad, as it always was. A page only: an
+        // erase frame's empty scratchpad is a repaint (held above), and a settled blank reaches
+        // the pilot as the advisory row, never as "Scratchpad cleared".
+        if (presence == Md11McduPresenceState.Content) AnnounceScratchpad(screen);
     }
 
     private void Render(bool silentTitle)
@@ -645,13 +713,27 @@ public class Md11McduForm : Form
         // an empty list and Space/Enter would act on nothing. Line 1, as a page change lands.
         if (mcduDisplay.SelectedIndex < 0 && mcduDisplay.Items.Count > 0)
             mcduDisplay.SelectedIndex = mcduDisplay.Items.Count > 1 ? 1 : 0;
-
-        if (screen.Scratchpad.Trim() != _lastAnnouncedScratchpad)
-        {
-            _scratchpadDebounceTimer?.Stop();
-            _scratchpadDebounceTimer?.Start();
-        }
     }
+
+    /// <summary>
+    /// Feeds the scratchpad read-back one sample and speaks what it returns: the settled text, or
+    /// <see cref="Md11McduScratchpad.ClearedText"/> for an emptied pad. Nothing for its silent
+    /// first sample, an unchanged pad, or a change inside a hold (<see cref="HoldScratchpadReadBack"/>).
+    /// </summary>
+    private void AnnounceScratchpad(Md11McduScreen screen)
+    {
+        if (_scratchpad.OnPoll(screen.Scratchpad.Trim(), DateTime.UtcNow) is { } say)
+            _announcer.Announce(say);
+    }
+
+    /// <summary>
+    /// Holds the scratchpad read-back until <paramref name="keyPresses"/> more keys have been
+    /// written and have had time to land (<see cref="Md11McduScratchpad.HoldUntil"/>: extends a
+    /// hold still running, never shortens one), so a burst is read once, settled, and none of its
+    /// intermediate text is.
+    /// </summary>
+    private void HoldScratchpadReadBack(int keyPresses) =>
+        _scratchpad.SuppressUntil = Md11McduScratchpad.HoldUntil(_scratchpad.SuppressUntil, DateTime.UtcNow, keyPresses);
 
     /// <summary>
     /// Advances every unit's blank clock from its latest frame: started when the unit reads blank,
@@ -776,9 +858,9 @@ public class Md11McduForm : Form
         previousWindow = GetForegroundWindow();
 
         // Only when the window was actually hidden. Shift+M on an already-open window is a
-        // re-show: it is following the feed already, so re-syncing there would cancel a
-        // scratchpad announce the pilot's own typing had legitimately armed, and would log a
-        // "poll started" for a poll that never stopped.
+        // re-show: it is following the feed already, so re-syncing there would re-seed the
+        // scratchpad read-back and swallow the settled entry the pilot's own typing is waiting to
+        // hear, and would log a "poll started" for a poll that never stopped.
         if (!Visible)
         {
             // Catch up on whatever changed while the window was hidden WITHOUT speaking it, and
@@ -818,12 +900,12 @@ public class Md11McduForm : Form
         base.OnVisibleChanged(e);
         if (Visible) return;
 
-        // Nothing to read to while hidden. Stop BOTH timers: the poll, and the scratchpad
-        // debounce a last Render may have armed — left running it fired 300 ms after the hide
-        // and spoke the scratchpad to a window nobody had open. ShowForm restarts the poll after
-        // re-syncing silently, so nothing that changed in between is replayed.
+        // Nothing to read to while hidden, so the poll stops — and with it the scratchpad
+        // read-back, which runs only from the poll and has no timer of its own left to fire after
+        // the hide (the debounce it replaced did, and spoke to a window nobody had open). ShowForm
+        // restarts the poll after re-syncing silently, so nothing that changed in between is
+        // replayed.
         _pollTimer?.Stop();
-        _scratchpadDebounceTimer?.Stop();
         Log.Debug("MD11", "MCDU window hidden: poll stopped");
     }
 
@@ -832,10 +914,9 @@ public class Md11McduForm : Form
         if (disposing)
         {
             // Close() is cancelled by the hide-on-close guard above, so OnFormClosed never runs —
-            // teardown has to live here or the timers outlive the aircraft switch.
+            // teardown has to live here or the poll timer outlives the aircraft switch.
             _pollTimer?.Stop();
             _pollTimer?.Dispose();
-            _scratchpadDebounceTimer?.Dispose();
         }
         base.Dispose(disposing);
     }
