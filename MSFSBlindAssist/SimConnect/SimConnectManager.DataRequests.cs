@@ -99,6 +99,17 @@ public partial class SimConnectManager
     private readonly FreshReadWaiters _freshReads = new(FreshRequestIdBase);
     private readonly ConcurrentDictionary<int, string> _freshRequestIdToVarKey = new();
 
+    // SimConnect is not thread-safe, and every other call this app makes on the main connection
+    // runs on the UI thread. The manager is built there (MainForm's constructor, through
+    // InitializeManagers), so this initializer captures the UI thread's WinForms context and id at
+    // construction — as MobiFlightWasmModule captures its own for its heartbeat — and the core
+    // RequestVariable below moves an off-thread call onto it. Only a WinForms context: it runs
+    // every post on the thread that created it, which is what makes "posted" mean "on the UI
+    // thread"; anything else (a test runner's context) leaves the gate inert — today's behaviour.
+    private readonly UiThreadGate _uiGate = new(
+        SynchronizationContext.Current as System.Windows.Forms.WindowsFormsSynchronizationContext,
+        Environment.CurrentManagedThreadId);
+
     /// <summary>
     /// True when a <see cref="ReadFreshAsync"/> of <paramref name="varKey"/> reflects the aircraft
     /// within about a frame — see <see cref="FreshReadPolicy.SupportsFreshReads"/>. The MD-11
@@ -157,6 +168,14 @@ public partial class SimConnectManager
         {
             return;
         }
+
+        // Off the UI thread — the MD-11's walks and read-backs call in from ConfigureAwait(false)
+        // pool-thread continuations — hand the whole request to the UI thread, where SimConnect and
+        // the maps below are otherwise only ever touched. The posted run re-enters here and
+        // re-checks the connection above. A ReadFreshAsync caller loses nothing: FreshReadWaiters
+        // registers its waiter before it calls in, and the id mapping below is written by the
+        // posted run itself, before the request it names can be answered.
+        if (_uiGate.PostIfOffThread(() => RequestVariable(varKey, forceUpdate, freshRequestId))) return;
 
         // Record the force flag BEFORE the individual-def check below. Batch-covered vars
         // (Continuous+IsAnnounced, no ExcludeFromBatch) have NO individual data def, so they take

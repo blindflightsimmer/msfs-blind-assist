@@ -666,7 +666,7 @@ public partial class SimConnectManager
                 // read from a batch that won't fire — better to have the var be silently
                 // un-monitored than to dereference a stale (batchNum, index) pair forever.
                 foreach (var key in batchMapKeys)
-                    continuousVariableIndexMap.Remove(key);
+                    continuousVariableIndexMap.TryRemove(key, out _);
                 // batchVarArrays[batchNum] was never assigned from batchArrayEntries on this path
                 // (the assignment above only runs after a successful try), so it's still whatever
                 // the top-of-method reset left it at (empty) — no separate rollback needed here.

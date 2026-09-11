@@ -349,7 +349,9 @@ public partial class SimConnectManager
     // Batched continuous variable monitoring (using unsafe pointers instead of reflection)
     // Multi-batch system: Maps variable key -> (batchNumber, indexWithinBatch)
     // batchNumber: 1-5, indexWithinBatch: 0-99
-    private Dictionary<string, (int batchNum, int index)> continuousVariableIndexMap = new Dictionary<string, (int batchNum, int index)>();
+    // Concurrent: ReadFreshAsync reads it from the MD-11's pool-thread walks and read-backs, while
+    // StartContinuousMonitoring rebuilds it on the UI thread.
+    private readonly ConcurrentDictionary<string, (int batchNum, int index)> continuousVariableIndexMap = new();
 
     // Prebuilt per-batch arrays mirroring continuousVariableIndexMap, built once in
     // StartContinuousMonitoring (SimConnectManager.Setup.cs) and reused by every 1 Hz batch
