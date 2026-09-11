@@ -88,3 +88,17 @@ test('on the ground that same press goes through, exactly once', () => {
   assert.equal(A.clickElement(el.idx), true);
   assert.deepStrictEqual(seen, { pointerdown: 1, mousedown: 1, mouseup: 1, click: 1 });
 });
+
+// The generic path's record is built on A.el, like every block's, so the locked-page rule lives in
+// ONE place: A.controlFor itself dims a control met inside an inert subtree, and stamps its element.
+test('A.controlFor dims a control read inside a locked subtree, and stamps it', () => {
+  const { A, document } = load('services-ground');
+  const btn = document.querySelector('button');
+  A._idx = 0;
+  A._inert = true;
+  let rec;
+  try { rec = A.controlFor(btn); } finally { A._inert = false; }
+  assert.equal(rec.disabled, true, 'dimmed inside a locked subtree');
+  assert.equal(btn.getAttribute('data-md11-efb-idx'), String(rec.idx), 'stamped with its own idx');
+  assert.equal(A.controlFor(btn).disabled, false, 'live outside one');
+});

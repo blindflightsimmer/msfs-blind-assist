@@ -60,9 +60,22 @@
     return false;
   };
 
+  // textContent minus every hidden subtree, by the same visibility rule the walk uses (A.isHidden).
+  // The uppercase branch of A.txt cannot use innerText, which applies the CSS transform ("SAVE"). Plain
+  // textContent reads text the EFB has HIDDEN as well: a zero-size badge inside a button read "Save0".
+  A.renderedText = function (el) {
+    var s = '';
+    for (var i = 0; i < el.childNodes.length; i++) {
+      var n = el.childNodes[i];
+      if (n.nodeType === 3) s += n.textContent;
+      else if (n.nodeType === 1 && !A.isHidden(n)) s += A.renderedText(n);
+    }
+    return s;
+  };
+
   A.txt = function (el) {
     if (!el) return '';
-    var t = A.isUppercased(el) ? (el.textContent || '') : (el.innerText || el.textContent || '');
+    var t = A.isUppercased(el) ? A.renderedText(el) : (el.innerText || el.textContent || '');
     return t.replace(/\s+/g, ' ').trim();
   };
 
@@ -102,17 +115,30 @@
   // the nav bar
   // ---------------------------------------------------------------------------------
 
-  // The tab bar is the first element whose direct children are >=5 buttons. Found structurally
-  // rather than by class: the class list is Tailwind soup that changes with any restyle, whereas
-  // "a row of button siblings at the top of the app" is what the bar actually IS.
+  // The tab bar is a VISIBLE row of >=5 sibling buttons. It is found structurally rather than by
+  // class: the class list is Tailwind soup that changes with any restyle, whereas "a row of button
+  // siblings at the top of the app" is what the bar actually IS.
+  //   - Among such rows, the one carrying the current-page marker wins, and other children in it
+  //     (a spacer, a clock) are tolerated.
+  //   - A row with no marker is taken only as a fallback, and only when it is buttons alone. That is
+  //     the old rule, kept so a restyle that drops the marker still finds the bar.
+  //   - Never a hidden row: React keeps inactive views mounted.
+  //   - Never a content row of buttons. The Charts chart-type strip is exactly five buttons, and
+  //     under the old first-match rule, first in the DOM, it WAS the nav bar.
   A.findTabBar = function () {
-    var divs = A.root().querySelectorAll('div');
+    var divs = A.root().querySelectorAll('div'), fallback = null;
     for (var i = 0; i < divs.length; i++) {
-      var kids = divs[i].children, n = 0;
-      for (var j = 0; j < kids.length; j++) if (kids[j].tagName === 'BUTTON') n++;
-      if (n >= A.TAB_BAR_MIN && n === kids.length) return divs[i];
+      var d = divs[i], kids = d.children, n = 0, marked = false;
+      for (var j = 0; j < kids.length; j++) {
+        if (kids[j].tagName !== 'BUTTON') continue;
+        n++;
+        if (A.hasClass(kids[j], A.ACTIVE_TAB_CLASS)) marked = true;
+      }
+      if (n < A.TAB_BAR_MIN || A.isHidden(d) || A.isChartStrip(d) || A.isChoiceGroup(d)) continue;
+      if (marked) return d;
+      if (!fallback && n === kids.length) fallback = d;
     }
-    return null;
+    return fallback;
   };
 
   A.tabButtons = function () {
@@ -150,65 +176,65 @@
     return 0;
   };
 
-  A.controlFor = function (el, idx) {
-    var o = {
-      idx: idx, text: '', value: '', controlType: '', kind: '',
-      clickable: false, level: 0, live: '', disabled: !!el.disabled, options: null
-    };
+  // A generic control's element record, built on A.el like every block's. It is therefore stamped
+  // the same way, and the locked-page rule (A._inert -> disabled) lives in A.el alone instead of
+  // being re-applied by each caller.
+  A.controlFor = function (el) {
+    var f = { disabled: !!el.disabled };
 
     if (el.tagName === 'INPUT') {
       // A disabled field the row rules did not reach is still a read-out, never an edit box. Like the
       // read-out rows, it is keyed by its caption (see the contract at the top).
       if (el.disabled && !A.isStepperInput(el) && A.isReadoutType(el)) {
         var rl = A.labelFor(el) || 'Value';
-        o.kind = 'static';
-        o.text = A.readoutText(rl, el);
-        o.key = 'readout:' + rl;
-        return o;
+        f.kind = 'static';
+        f.text = A.readoutText(rl, el);
+        f.key = 'readout:' + rl;
+        return A.el(el, f);
       }
 
       var ty = (el.type || 'text').toLowerCase();
       if (ty === 'checkbox' || ty === 'radio') {
-        o.controlType = 'checkbox';
-        o.value = el.checked ? 'true' : 'false';
+        f.controlType = 'checkbox';
+        f.value = el.checked ? 'true' : 'false';
       } else if (ty === 'range') {
-        o.controlType = 'range';
-        o.value = String(el.value == null ? '' : el.value);
-        if (el.min !== '') o.min = Number(el.min);
-        if (el.max !== '') o.max = Number(el.max);
-        if (el.step !== '') o.step = Number(el.step);
+        f.controlType = 'range';
+        f.value = String(el.value == null ? '' : el.value);
+        if (el.min !== '') f.min = Number(el.min);
+        if (el.max !== '') f.max = Number(el.max);
+        if (el.step !== '') f.step = Number(el.step);
       } else {
-        o.controlType = 'text';
-        o.value = String(el.value == null ? '' : el.value);
+        f.controlType = 'text';
+        f.value = String(el.value == null ? '' : el.value);
       }
       // An unlabelled input is useless to a screen reader, so fall back through every label
       // source the EFB might have used before giving up.
-      o.text = A.labelFor(el);
+      f.text = A.labelFor(el);
       var unit = A.unitFor(el);
-      if (unit) o.text = (o.text ? o.text + ' ' : '') + '(' + unit + ')';
-      return o;
+      if (unit) f.text = (f.text ? f.text + ' ' : '') + '(' + unit + ')';
+      return A.el(el, f);
     }
 
     if (el.tagName === 'SELECT') {
-      o.controlType = 'select';
-      o.value = String(el.value == null ? '' : el.value);
-      o.options = [];
-      for (var i = 0; i < el.options.length; i++) o.options.push(A.txt(el.options[i]));
-      o.text = A.labelFor(el);
-      return o;
+      f.controlType = 'select';
+      f.value = String(el.value == null ? '' : el.value);
+      f.options = [];
+      for (var i = 0; i < el.options.length; i++) f.options.push(A.txt(el.options[i]));
+      f.text = A.labelFor(el);
+      return A.el(el, f);
     }
 
     if (el.tagName === 'A') {
-      o.kind = 'link';
-      o.text = A.txt(el);
-      return o;
+      f.kind = 'link';
+      f.text = A.txt(el);
+      return A.el(el, f);
     }
 
     // BUTTON
-    o.kind = 'button';
-    o.clickable = true;
-    o.text = A.txt(el) || el.getAttribute('aria-label') || el.getAttribute('title') || A.iconButtonName(el) || '';
-    return o;
+    f.kind = 'button';
+    f.clickable = true;
+    f.text = A.txt(el) || el.getAttribute('aria-label') || el.getAttribute('title') || A.iconButtonName(el) || '';
+    return A.el(el, f);
   };
 
   // ---------------------------------------------------------------------------------
@@ -329,11 +355,14 @@
 
   // B5: a unit box — the short, text-only <div> the EFB puts right after an input ("°C", "inHg",
   // "lb", "ft"). Folded into the field's name and claimed, so it is never read as a loose line.
+  // A unit is a WORD: it carries a letter, or is a bare ° or %. A short number in that spot
+  // ("507.9") is a VALUE. Taken as a unit, it would rename the field "GW (507.9)" and, once claimed,
+  // never be read at all. The same goes for a dash placeholder ("----").
   A.unitEl = function (input) {
     var n = input.nextElementSibling;
     if (!n || n.tagName !== 'DIV' || n.children.length > 0) return null;
     var t = A.txt(n);
-    if (!t || t.length > 6 || t.indexOf(' ') >= 0) return null;
+    if (!t || t.length > 6 || t.indexOf(' ') >= 0 || !/[A-Za-z°%]/.test(t)) return null;
     return n;
   };
 
@@ -912,9 +941,7 @@
       if (A.runBlocks(el, els)) return;              // a building block owns this element and its subtree
 
       if (A.isControl(el)) {
-        el.setAttribute(A.ATTR, String(++A._idx));
-        var c = A.controlFor(el, A._idx);
-        if (A._inert) c.disabled = true;
+        var c = A.controlFor(el);                   // stamps el, and dims it on a locked page (A.el)
         if (c.text || c.value || c.controlType) els.push(c);
         return;                                     // do NOT descend into a control
       }
@@ -936,7 +963,11 @@
 
     function walk(el) {
       if (!el || el.nodeType !== 1) return;
-      if (el === bar) return;                       // already emitted above, as tabs
+      if (el === bar) {                             // its buttons were emitted above, as tabs;
+        for (var b = 0; b < el.children.length; b++)   // anything else in the row is still read
+          if (el.children[b].tagName !== 'BUTTON') walk(el.children[b]);
+        return;
+      }
       if (el.tagName === 'SVG' || el.tagName === 'svg') return;   // decorative icons only
       if (A.isHidden(el)) return;
       var inertHere = !A._inert && A.isInertRoot(el);
@@ -1087,9 +1118,13 @@
 
       if (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio')) {
         var want = (String(text).toLowerCase() === 'true');
-        if (el.checked !== want) A.clickElement(idx);   // let React's own handler flip it
-        return true;
+        if (el.checked === want) return true;          // already there: nothing to press
+        return A.clickElement(idx);                    // React's own handler flips it; a REFUSED press (disabled, locked) is a failed set
       }
+
+      // A greyed-out field takes no input. The native setter below would write it anyway, then
+      // 'input'/'change' would tell React it had been typed into, and the set would report success.
+      if (el.disabled) return false;
 
       // React tracks an input's value on the node and IGNORES a plain el.value = x — the change
       // never reaches state. Writing through the prototype's native setter defeats that tracker,

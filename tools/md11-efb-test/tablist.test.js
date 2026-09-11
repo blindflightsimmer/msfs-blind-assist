@@ -33,3 +33,18 @@ test('stale idx stamps from an earlier scrape are cleared before restamping', ()
   assert.equal(ghost.hasAttribute('data-md11-efb-idx'), false);
   assert.equal(document.querySelectorAll('[data-md11-efb-idx="3"]').length, 1);
 });
+
+// The uppercase branch reads textContent, because innerText would apply the CSS transform and
+// shout. But textContent also reads text the EFB has HIDDEN: a hidden badge inside the Save button
+// read "Save0".
+test('an uppercase-styled button reads only its rendered text, never a hidden child', () => {
+  const { A, document } = load('options-general');
+  const save = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Save');
+  assert.ok(save && A.isUppercased(save), 'the Save button is uppercase-styled');
+  const badge = document.createElement('span');   // no data-vis: hidden in the harness
+  badge.textContent = '0';
+  save.appendChild(badge);
+  const els = JSON.parse(A.scrape()).elements;
+  assert.ok(els.some(e => e.kind === 'button' && e.text === 'Save'), JSON.stringify(els.filter(e => e.kind === 'button').map(e => e.text)));
+  assert.ok(!els.some(e => /Save0/.test(e.text)), 'hidden text read');
+});
