@@ -33,7 +33,13 @@ public class Md11DefinitionStateTests
         // The gate is volts AND the DC bus 1 OFF lamp, so a change in either can flip every
         // composed state on a visible panel to "unpowered" and back. MainForm's reverse index
         // only relabels rows that named the variable as a dependency.
-        var missing = Vars.Where(kv => kv.Value.StateVariables != null)
+        // The one exception is a COMPOSITE row (the engine fire handles and the Elevator Feel knob):
+        // it composes from its two positions alone, with no power term — a position is not an
+        // annunciator — so it watches exactly its two keys (pinned in Md11FireHandleTests and
+        // Md11ElevatorFeelTests).
+        var composites = Md11ControlMap.Load().Controls.Where(c => c.Composite != null)
+            .Select(c => c.NodeId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missing = Vars.Where(kv => kv.Value.StateVariables != null && !composites.Contains(kv.Key))
             .Where(kv => !kv.Value.StateVariables!.Contains(TFDiMD11Definition.DcPowerKey)
                       || !kv.Value.StateVariables!.Contains(TFDiMD11Definition.Dc1BusOffKey))
             .Select(kv => kv.Key).ToList();

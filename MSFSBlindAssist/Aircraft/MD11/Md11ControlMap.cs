@@ -176,6 +176,16 @@ public sealed class Md11Control
     [JsonPropertyName("state")]
     public Md11StateSpec? State { get; set; }
 
+    /// <summary>
+    /// Present only on a COMPOSITE control — the three engine fire handles and the Elevator Feel knob.
+    /// TFDi's tooltip reads an OUTER var and hands one of its positions over to a nested case on the
+    /// control's own var (an outer %{case} on a handle, an outer %{if} on the knob), so no single value
+    /// map describes it: the generator emits this instead and leaves <see cref="ValueMap"/> empty. The
+    /// row is read-only and its words are <see cref="Md11CompositeState.Describe"/>'s.
+    /// </summary>
+    [JsonPropertyName("composite")]
+    public Md11CompositeSpec? Composite { get; set; }
+
     /// <summary>The spoken label, never null — falls back to the node id so a control is always identifiable.</summary>
     public string DisplayLabel => string.IsNullOrWhiteSpace(Label) ? NodeId : Label!;
 
@@ -261,6 +271,21 @@ public sealed class Md11StateLatch
     [JsonPropertyName("var")] public string Var { get; set; } = string.Empty;
     [JsonPropertyName("on")] public string On { get; set; } = "On";
     [JsonPropertyName("off")] public string Off { get; set; } = "Off";
+}
+
+/// <summary>
+/// The generated <c>composite</c> block (<c>_composite_block</c> in the generator): the OUTER var and
+/// its words by position — the <see cref="Delegate"/> position has none — the position that hands
+/// over, and the INNER var (the control's own) with its words. Keys are raw values as strings, as in
+/// <see cref="Md11Control.ValueMap"/>.
+/// </summary>
+public sealed class Md11CompositeSpec
+{
+    [JsonPropertyName("outer_var")] public string OuterVar { get; set; } = string.Empty;
+    [JsonPropertyName("outer_words")] public Dictionary<string, string> OuterWords { get; set; } = new();
+    [JsonPropertyName("delegate")] public string Delegate { get; set; } = string.Empty;
+    [JsonPropertyName("inner_var")] public string InnerVar { get; set; } = string.Empty;
+    [JsonPropertyName("inner_words")] public Dictionary<string, string> InnerWords { get; set; } = new();
 }
 
 /// <summary>The <c>kind</c> discriminator values used by the generator.</summary>

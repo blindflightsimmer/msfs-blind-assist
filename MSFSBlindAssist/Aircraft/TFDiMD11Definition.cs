@@ -406,6 +406,18 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
             if (vars.ContainsKey(c.NodeId)) continue;   // never shadow a base var
             var def = BuildControlVariable(c);
             if (def != null) vars[c.NodeId] = def;
+            // A composite's INNER var (an engine fire handle's own rotation, the Elevator Feel knob's
+            // own position) gets its own OnRequest read under a key of its own, because the control's
+            // key reads the OUTER var (the pull, the MANUAL latch). Never announced and never a row:
+            // only TryDescribeControlState reads it.
+            if (def != null && c.Composite != null)
+                vars[Md11CompositeState.InnerKeyFor(c.NodeId)] = new SimVarDefinition
+                {
+                    Name = c.Composite.InnerVar,
+                    DisplayName = $"{c.DisplayLabel} (inner position)",
+                    Type = SimVarType.LVar,
+                    UpdateFrequency = UpdateFrequency.OnRequest,
+                };
         }
 
         foreach (var kvp in BuildExportVariables())
@@ -588,7 +600,20 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                     // the direct-write fallback then zeroed the export. The FCP rows keep the mode
                     // words as a status field ("Heading"/"Track"); the mode is switched by its own
                     // button beside the row. See Md11ExportBacked.
-                    RenderAsReadOnlyStatus = values.Count == 0 || Md11ExportBacked.IsReadOnly(c, _exportVars),
+                    // So does a COMPOSITE (the engine fire handles and the Elevator Feel knob,
+                    // Md11CompositeState): its row reads the OUTER var (a handle's pull, the knob's
+                    // MANUAL latch) while its wheel turns the INNER one (the bottle-discharge rotation,
+                    // the knob itself), so a walk could never land. Its words come from
+                    // TryDescribeControlState, which reads the outer var under this key and the inner
+                    // one under its inner key — so MainForm must read and watch exactly those two (no
+                    // power term: a position is not an annunciator). StateVariables is also what makes
+                    // MainForm build the status box whatever the description count (the knob has one;
+                    // Utils.PanelRowRules).
+                    RenderAsReadOnlyStatus = values.Count == 0 || c.Composite != null
+                                             || Md11ExportBacked.IsReadOnly(c, _exportVars),
+                    StateVariables = c.Composite != null
+                        ? new[] { c.NodeId, Md11CompositeState.InnerKeyFor(c.NodeId) }
+                        : null,
                 };
                 // The gear lever's var is its 0-25 TRAVEL against the map's {0 Up, 1 Down}, and
                 // MainForm's combo lookup is an exact key match — parked at 25 the combo selected
@@ -631,6 +656,10 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     {
         if (c.NodeId == Md11FlapSystem.LeverKey) return _flaps.LeverValueDescriptions();
         if (c.NodeId == Md11FlapSystem.DialKey) return _flaps.DialValueDescriptions();
+        // A composite's value map is empty by design; its row carries the OUTER words as the text shown
+        // before there is a cache, and the rest is composed by TryDescribeControlState
+        // (Md11CompositeState.OuterDescriptions).
+        if (c.Composite != null) return Md11CompositeState.OuterDescriptions(c.Composite);
 
         var d = new Dictionary<double, string>();
         foreach (var kvp in c.ValueMap)

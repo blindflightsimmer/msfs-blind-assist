@@ -412,6 +412,22 @@ public partial class TFDiMD11Definition
             return true;
         }
 
+        // A COMPOSITE (the engine fire handles and the Elevator Feel knob, Md11CompositeState) has no
+        // axis a combo could walk: its row reads the outer var while its wheel turns the inner one (a
+        // handle's pull and its bottle-discharge rotation, the knob's MANUAL latch and the knob), so a
+        // walk could never land — on a handle it could only risk a discharge click, and on the knob
+        // the direct-write fallback wrote the latch. The row renders read-only (BuildControlVariable;
+        // MainForm builds it as the status box, Utils.PanelRowRules), so no panel path reaches this —
+        // but a caller that does is told why, on the UI thread every SetControl caller runs on.
+        // Operating them is a follow-up: the handles need a live fire to verify, and the map carries
+        // no event for the knob's latch.
+        if (control.Composite != null)
+        {
+            Log.Debug("MD11", $"{control.NodeId}: refused set to {value} — a composite control has no walkable axis.");
+            announcer.Announce(Md11CompositeState.RefusalSentence(control.DisplayLabel));
+            return true;
+        }
+
         switch (control.Kind)
         {
             // Momentary: press AND release. A press-only pulse leaves the button held for the

@@ -25,15 +25,26 @@ public partial class TFDiMD11Definition
 
     /// <summary>
     /// MainForm's label seam. No opinion before <see cref="Attach"/> (no cache to read) and for
-    /// controls without a state block (momentary buttons, knobs, switches, read-outs).
+    /// controls with neither a state block nor a composite (momentary buttons, knobs, switches,
+    /// read-outs). A composite (the engine fire handles, the Elevator Feel knob) composes from its two
+    /// positions alone (<see cref="Md11CompositeState.Describe"/>), and its inner var is read by its
+    /// own KEY, never through <see cref="KeyFor"/>: that var's name is the control's own key, which
+    /// reads the OUTER var.
     /// </summary>
     public override bool TryDescribeControlState(string varKey, out string stateText)
     {
         stateText = "";
         if (_sim == null) return false;
-        if (!_byNodeId.TryGetValue(varKey, out var c) || c.State == null) return false;
+        if (!_byNodeId.TryGetValue(varKey, out var c)) return false;
 
-        var text = Md11ControlState.Compose(c.State, ReadStateVar, IsDcPowered());
+        string? text;
+        if (c.Composite != null)
+            text = Md11CompositeState.Describe(c.Composite, _sim.GetCachedVariableValue(c.NodeId),
+                _sim.GetCachedVariableValue(Md11CompositeState.InnerKeyFor(c.NodeId)));
+        else if (c.State != null)
+            text = Md11ControlState.Compose(c.State, ReadStateVar, IsDcPowered());
+        else
+            return false;
         if (text == null) return false;
         stateText = text;
         return true;

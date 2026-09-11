@@ -422,14 +422,17 @@ public partial class MainForm
             }
             else if (varDef.RenderAsReadOnlyStatus &&
                      (varDef.ValueDescriptions == null || varDef.ValueDescriptions.Count == 0) &&
-                     !string.IsNullOrEmpty(varDef.Units))
+                     !string.IsNullOrEmpty(varDef.Units) &&
+                     !Utils.PanelRowRules.IsReadOnlyStatusRow(varDef))
             {
                 // Continuous-numeric read-only TextBox. Used for cockpit gauges
                 // exposed by the PMDG NG3 SDK as float fields (cabin altitude,
                 // DP, duct pressure, APU EGT, fuel temp, etc.). Text is
                 // "{value:Format} {Units}" and is silently refreshed on each
                 // continuous broadcast via UpdateControlFromSimVar — the user
-                // reads the current value by Tab-focusing the field.
+                // reads the current value by Tab-focusing the field. A row whose
+                // state the definition composes is never one, whatever its count:
+                // it is the status box below (Utils.PanelRowRules).
                 TextBox readoutBox = new TextBox();
                 readoutBox.ReadOnly = true;
                 readoutBox.TabStop = true;
@@ -450,12 +453,18 @@ public partial class MainForm
                 layout.Controls.Add(readoutBox, 1, rowIndex);
                 currentControls[varKey] = readoutBox;
             }
-            else if (varDef.ValueDescriptions != null && varDef.ValueDescriptions.Count > 1 &&
-                     (varDef.RenderAsReadOnlyStatus || varDef.OnlyAnnounceValueDescriptionMatches))
+            else if (varDef.ValueDescriptions != null && Utils.PanelRowRules.IsReadOnlyStatusRow(varDef))
             {
                 // Read-only status field (annunciators, door state, etc.).
                 // ValueDescriptions still drive the text; the user can focus the
                 // field for the screen reader to read it, but cannot change it.
+                // A row whose state the definition composes (StateVariables) is one
+                // whatever its description count, and its text is
+                // TryDescribeControlState's: the MD-11's Elevator Feel knob has ONE
+                // description, and by count alone it fell to the plain Button at the
+                // end of this chain, whose click writes 1 into the row's var. Every
+                // other row keeps the old rule (Utils.PanelRowRules); the null check
+                // is the old condition's own, kept because the body reads the map.
                 TextBox statusBox = new TextBox();
                 statusBox.ReadOnly = true;
                 statusBox.TabStop = true;
