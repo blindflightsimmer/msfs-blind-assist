@@ -44,9 +44,16 @@ public class Md11McduForm : Form
     private IntPtr previousWindow = IntPtr.Zero;
 
     private ComboBox unitSelector = null!;
-    private ListBox mcduDisplay = null!;
+    private DisplayListBox mcduDisplay = null!;
     private TextBox scratchpadInput = null!;
-    private Label statusLabel = null!;
+
+    /// <summary>
+    /// Connection state and lit annunciators, as a read-only TEXT BOX in the tab order. It was a
+    /// Label: not in the tab order — a screen reader reaches one only with its review cursor —
+    /// and with an AccessibleName that shadowed the very text it existed to show (CLAUDE.md:
+    /// status readouts are read-only TextBoxes; the iFly CDU window's status is the same control).
+    /// </summary>
+    private TextBox statusBox = null!;
 
     private System.Windows.Forms.Timer? _pollTimer;
     private System.Windows.Forms.Timer? _scratchpadDebounceTimer;
@@ -123,17 +130,24 @@ public class Md11McduForm : Form
         unitSelector.Items.AddRange(new object[] { "Left (Captain)", "Center", "Right (First Officer)" });
         unitSelector.SelectedIndex = 0;
 
-        statusLabel = new Label
+        statusBox = new TextBox
         {
             Text = "MCDU: waiting for data",
-            Location = new Point(240, y + 3),
-            Size = new Size(370, 20),
+            Location = new Point(240, y),
+            Size = new Size(370, 25),
+            ReadOnly = true,
+            TabStop = true,
+            BorderStyle = BorderStyle.FixedSingle,
             AccessibleName = "MCDU status",
             AccessibleDescription = "Connection state and lit MCDU annunciators."
         };
         y += 32;
 
-        mcduDisplay = new ListBox
+        // The shared read-only display list every live display window uses (one configuration,
+        // one reconcile path — DisplayList.UpdateInPlace behind SetLines). The font, colours and
+        // height below are this window's own and override the shared defaults; type-ahead stays
+        // on, as it was on the plain ListBox, because no character key is MCDU input here.
+        mcduDisplay = new DisplayListBox
         {
             Location = new Point(10, y),
             Size = new Size(600, 290),
@@ -172,14 +186,17 @@ public class Md11McduForm : Form
         }
 
         this.Controls.Add(unitSelector);
-        this.Controls.Add(statusLabel);
+        this.Controls.Add(statusBox);
         this.Controls.Add(mcduDisplay);
         this.Controls.Add(scratchpadInput);
         foreach (var b in buttons) this.Controls.Add(b);
 
+        // The display and the input first — the window opens on the display — then the two
+        // controls about the unit itself, which share the top row: its status, then the selector.
         int tabIdx = 0;
         mcduDisplay.TabIndex = tabIdx++;
         scratchpadInput.TabIndex = tabIdx++;
+        statusBox.TabIndex = tabIdx++;
         unitSelector.TabIndex = tabIdx++;
         foreach (var b in buttons) b.TabIndex = tabIdx++;
 
@@ -440,7 +457,10 @@ public class Md11McduForm : Form
             e.Handled = true; e.SuppressKeyPress = true; return;
         }
 
-        // Ctrl+Shift+L/C/R — switch unit without leaving the keyboard.
+        // Ctrl+Shift+L/C/R — switch unit without leaving the keyboard. The unit is announced only
+        // when focus is elsewhere: on the unit combo itself the screen reader already reads the
+        // combo's new value, and speaking it again is the double announcement the panel rules
+        // forbid.
         if (e.Control && e.Shift && (e.KeyCode == Keys.L || e.KeyCode == Keys.C || e.KeyCode == Keys.R))
         {
             unitSelector.SelectedIndex = e.KeyCode switch
@@ -449,7 +469,8 @@ public class Md11McduForm : Form
                 Keys.C => 1,
                 _ => 2,
             };
-            _announcer.Announce(unitSelector.SelectedItem?.ToString() ?? "");
+            if (!unitSelector.Focused)
+                _announcer.Announce(unitSelector.SelectedItem?.ToString() ?? "");
             e.Handled = true; e.SuppressKeyPress = true; return;
         }
 
@@ -516,7 +537,7 @@ public class Md11McduForm : Form
         var manager = _sim.Md11McduDataManager;
         if (manager == null)
         {
-            statusLabel.Text = "MCDU: not connected";
+            statusBox.Text = "MCDU: not connected";
             return;
         }
 
@@ -588,7 +609,7 @@ public class Md11McduForm : Form
         // Shared in-place reconcile. Its content-based restore cannot follow an LSK line (the
         // number is part of the text, so a slewed line is a different string); this form's own
         // row restore runs below and overrides it.
-        Forms.DisplayList.UpdateInPlace(mcduDisplay, rows.Select(r => r.Text).ToList());
+        mcduDisplay.SetLines(rows.Select(r => r.Text).ToList());
         _rows = rows;
 
         UpdateStatus(screen);
@@ -680,7 +701,7 @@ public class Md11McduForm : Form
 
         var advisory = Md11McduPresence.Describe(_unit, presence, withContent).ToList();
         if (_rows != null) _memory.RememberCursor(_unit, CursorRow());   // only on the way OVER, never on a later tick
-        Forms.DisplayList.UpdateInPlace(mcduDisplay, advisory);
+        mcduDisplay.SetLines(advisory);
         _rows = null;
 
         // The advisory must be UNDER the cursor, not one Down-press away: a list populated with
@@ -688,11 +709,11 @@ public class Md11McduForm : Form
         // explains the situation stays unheard until the pilot presses Down.
         if (mcduDisplay.SelectedIndex < 0 && mcduDisplay.Items.Count > 0) mcduDisplay.SelectedIndex = 0;
 
-        // UpdateStatus owns the MSG/FAIL announcement and WRITES statusLabel, so it runs
-        // BEFORE the label is set here — reversed, it would overwrite "blank" with
+        // UpdateStatus owns the MSG/FAIL announcement and WRITES statusBox, so it runs
+        // BEFORE the status is set here — reversed, it would overwrite "blank" with
         // "connected", which is the exact false reassurance this branch exists to remove.
         if (screen != null) UpdateStatus(screen);
-        statusLabel.Text = presence == Md11McduPresenceState.Blank
+        statusBox.Text = presence == Md11McduPresenceState.Blank
             ? $"MCDU: {_unit} blank"
             : $"MCDU: {_unit} no data";
 
@@ -721,7 +742,7 @@ public class Md11McduForm : Form
     {
         var lit = LitFlags(screen);
         var flags = string.Join(", ", lit);
-        statusLabel.Text = lit.Count == 0 ? "MCDU: connected" : "MCDU: " + flags;
+        statusBox.Text = lit.Count == 0 ? "MCDU: connected" : "MCDU: " + flags;
 
         if (flags != _lastAnnouncedFlags)
         {
