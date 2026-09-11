@@ -1008,12 +1008,18 @@ def _reads_one_state_var(text):
 
 
 def _collapse_inline_ifs(text):
-    """`text` with each inline if/else read by its resting (false) word and each '%%' held as
-    _LITERAL_PERCENT, for a position's reader to give back as '%'.
+    """`text` with every PLAIN inline if/else read by its resting (false) word, and each '%%' held
+    first as _LITERAL_PERCENT, for a position's reader to give back as '%'. Plain is INLINE_IF_RE's
+    shape: neither word carries a directive of its own.
 
-    The one collapse both a case position (_case_labels) and a composite's nested search
-    (_composite_block) apply: an inline word carries an %{end} of its own, and a nested %{case} is
-    cut at its first %{end}.
+    One pass, applied by both a case position (_case_labels) and a composite's nested search
+    (_composite_block): an inline word carries an %{end} of its own, and a nested %{case} is cut at
+    its first %{end}.
+
+    Nothing else is touched. An else-if chain keeps its outer if, and an if word holding an
+    interpolation or a nested %{case} on a third var passes through whole -- so a leftover %{if} or
+    a second case head stays inside the block, which is what _case_composite_block's guard tests
+    for and refuses.
     """
     return INLINE_IF_RE.sub(lambda nested: nested.group(2), text.replace("%%", _LITERAL_PERCENT))
 
@@ -1081,11 +1087,15 @@ def _composite_block(expr, node_id, empty_cases=None, source=None):
     An outer %{if} is the same shape with two positions, the else word and then the nested case
     (D13, _if_composite_block): the Elevator Feel knob.
 
-    Both rules read the block's inline if/else words by their resting word first, as every case
-    position is read (_collapse_inline_ifs). The nested case ends at its first %{end}, and an inline
-    word's own %{end} used to end it early: a rotation position holding one handed the rest of the
-    rotation to the pull (a wrong block), or left no whole delegate position, and the handle fell
-    back to the flat map over the pull without a word.
+    Both rules first read the block's PLAIN inline if/else words by their resting word, as every
+    case position is read (_collapse_inline_ifs). The nested case still ends at its first %{end},
+    and an inline word's own %{end} ends it there: cut short, the rest of the rotation reads as
+    the pull's positions -- a wrong block -- or leaves no whole delegate position, and the handle
+    falls back to the flat map over the pull without a word. The collapse removes that cut for
+    the plain shape alone: a shape it cannot clean -- an else-if chain, an if word holding an
+    interpolation, a case on a third var -- is still cut short, and there it is the REFUSAL that
+    stops the wrong block, the case rule's guard on the leftover %{if} or second case head and
+    the if rule's wholeness check.
 
     Not a composite: an outer case or if on the control's own var (the APU fire handle -- its
     nested block is an if/else on the pull, named by its resting word), a nested case on a third
