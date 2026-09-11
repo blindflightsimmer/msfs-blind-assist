@@ -376,6 +376,16 @@ public partial class TFDiMD11Definition
     {
         Attach(simConnect);
 
+        // The three altimeter STD toggles (Md11StdToggles): two rows of this app's own and the
+        // standby display's STD button, which has no events of its own. Each presses its altimeter
+        // knob's PUSH as a CEVENT pair. Ahead of the map lookup — the two synthetic keys are not map
+        // controls — and never through the knob's own row, which stays a read-only export row.
+        if (Md11StdToggles.TryGet(varKey, out var std))
+        {
+            PressStdToggle(std, simConnect, announcer);
+            return true;
+        }
+
         if (!_byNodeId.TryGetValue(varKey, out var control))
             return false;   // not ours (a base var) — let the generic path have it
 

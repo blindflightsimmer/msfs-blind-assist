@@ -350,6 +350,66 @@ public partial class TFDiMD11Definition
         }, "Altimeter read-back threw", "Altimeter read-back (UI-thread tail) threw", guardGeneration: true);
     }
 
+    /// <summary>
+    /// Latest press wins each STD row's read-back: a quick double press (on, then off) would
+    /// otherwise speak the final setting twice. The <see cref="_altimeterEntrySeq"/> precedent; UI
+    /// thread only — the press and the tail.
+    /// </summary>
+    private readonly Dictionary<string, int> _stdReadBackSeq = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// An STD row (<see cref="Md11StdToggles"/>): presses its altimeter knob's PUSH — the aircraft's
+    /// STD toggle — as the knob's own CEVENT pair, never a write. The STD state itself is unreadable,
+    /// so the press is confirmed by the SETTING it changes: the captain's by the settle announcement
+    /// that already speaks every change of that export (<see cref="Md11AltimeterAnnouncer"/> — nothing
+    /// extra here), the first officer's and the standby's by <see cref="VerifyStdToggleAsync"/>. A
+    /// press that cannot be sent says so — on this aircraft a dropped press sounds exactly like a
+    /// taken one.
+    /// </summary>
+    private void PressStdToggle(Md11StdTarget std, SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    {
+        int backlogMs = _bus?.BacklogMs ?? 0;   // sampled before the push joins the queue
+        if (!PressControlEvents(std.Knob, "LEFT_BUTTON_DOWN", "LEFT_BUTTON_UP"))
+        {
+            var label = GetVariables().TryGetValue(std.Key, out var row) ? row.DisplayName : std.Key;
+            announcer.Announce($"{label} unavailable");
+            return;
+        }
+        if (!std.ReadsBack) return;
+        int seq = _stdReadBackSeq.TryGetValue(std.Key, out var last) ? last + 1 : 1;
+        _stdReadBackSeq[std.Key] = seq;
+        _ = VerifyStdToggleAsync(std, seq, backlogMs, sim, announcer);
+    }
+
+    /// <summary>
+    /// The first officer's and the standby STD read-back: the EXTCTL-apply allowance every altimeter
+    /// read-back shares (<see cref="Md11Fcp.VerifyAfterMs"/>) measured from the push's WRITE (the bus
+    /// backlog ahead of it), then the altimeter is read on its next DELIVERY and spoken in the B
+    /// key's words with the side in front ("First Officer altimeter standard",
+    /// <see cref="Md11StdToggles.ReadBackSentence"/>). Nothing delivered — or a 0, which a missing
+    /// export reads — is no evidence: a log line, no speech. Dropped by a context reset or an aircraft
+    /// switch, and by a newer press of the same row; honours a Ctrl+M mute of the altimeter should it
+    /// ever get a row (both are silent exports without one today).
+    /// </summary>
+    private Task VerifyStdToggleAsync(Md11StdTarget std, int seq, int backlogMs, SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        return DeferToUiThreadAsync(Md11EventBus.ReadBackDelayMs(Md11Fcp.VerifyAfterMs, backlogMs), async () =>
+        {
+            var read = await sim.ReadFreshAsync(std.AltimeterVar, BatchReadBackTimeoutMs).ConfigureAwait(false);
+            Log.Debug("MD11", $"STD read-back: {std.AltimeterVar}={read?.ToString("0.##", CultureInfo.InvariantCulture) ?? "null"} " +
+                $"after {sw.ElapsedMilliseconds} ms (backlog {backlogMs} ms).");
+            var sentence = Md11StdToggles.ReadBackSentence(std.Side, read);
+            if (sentence == null) return null;
+            return () =>
+            {
+                if (_stdReadBackSeq.TryGetValue(std.Key, out var latest) && latest != seq) return;   // a newer press owns the read-back
+                if (Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet.Contains(std.AltimeterVar)) return;
+                announcer.Announce(sentence);
+            };
+        }, "STD read-back threw", "STD read-back (UI-thread tail) threw", guardGeneration: true);
+    }
+
     // ---------------------------------------------------------------------------------
     // Read-outs (output mode: Shift+H / Shift+S / Shift+A / Shift+V)
     // ---------------------------------------------------------------------------------

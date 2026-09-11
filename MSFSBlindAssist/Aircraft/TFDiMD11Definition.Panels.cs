@@ -259,6 +259,28 @@ public partial class TFDiMD11Definition
             ValueDescriptions = Md11SpeedbrakeSystem.ArmValues,
         };
 
+        // ---- Altimeter STD (Md11StdToggles) ----
+        // Two rows of this app's own, each pressing its EFIS altimeter knob's PUSH — the aircraft's
+        // STD toggle. The knobs' own rows stay READ-ONLY (their state var is the altimeter export,
+        // Md11ExportBacked), so these are separate rows like the COM rows, and a press goes out as
+        // the knob's CEVENT pair, never a write. LVar + Never: SetControl claims both keys, so
+        // nothing reads them and nothing writes them generically.
+        foreach (var (key, label) in new[]
+                 {
+                     (Md11StdToggles.CaptainKey, Md11StdToggles.CaptainLabel),
+                     (Md11StdToggles.FirstOfficerKey, Md11StdToggles.FirstOfficerLabel),
+                 })
+        {
+            v[key] = new SimVarDefinition
+            {
+                Name = key,
+                DisplayName = label,
+                Type = SimVarType.LVar,
+                UpdateFrequency = UpdateFrequency.Never,
+                RenderAsButton = true,
+            };
+        }
+
         return v;
     }
 
@@ -365,6 +387,7 @@ public partial class TFDiMD11Definition
         AddMinimumsEntries(placement.Controls);
         AddRadiosPanel(placement.Structure, placement.Controls, displays);
         AddSpeedbrakeArm(placement.Controls);
+        AddStdToggles(placement.Controls);
 
         _panelStructure = placement.Structure;
         _panelControls = placement.Controls;
@@ -406,6 +429,22 @@ public partial class TFDiMD11Definition
         if (!controls.TryGetValue("Speedbrake", out var keys)) return;
         int at = keys.IndexOf(Md11SpeedbrakeSystem.LeverKey);
         keys.Insert(at < 0 ? keys.Count : at + 1, Md11SpeedbrakeSystem.ArmKey);
+    }
+
+    /// <summary>
+    /// Each MSFSBA STD row sits right after its side's altimeter setting row — the knob whose push it
+    /// presses — on its EFIS panel (<see cref="Md11StdToggles"/>). The standby display's STD button is
+    /// a map control the layout table already places, so only the rows with a panel of their own are
+    /// inserted.
+    /// </summary>
+    private static void AddStdToggles(Dictionary<string, List<string>> controls)
+    {
+        foreach (var std in Md11StdToggles.Targets)
+        {
+            if (std.PanelName == null || !controls.TryGetValue(std.PanelName, out var keys)) continue;
+            int at = keys.IndexOf(std.Knob);
+            keys.Insert(at < 0 ? keys.Count : at + 1, std.Key);
+        }
     }
 
     /// <summary>
