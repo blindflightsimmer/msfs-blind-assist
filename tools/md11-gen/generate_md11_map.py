@@ -86,7 +86,10 @@ TEMPLATE_KINDS = {
 # Cockpit-area prefixes, from the NODE_ID's second underscore token. TFDi's own
 # naming; the labels here are what MSFSBA shows as panel section names.
 # L:vars that describe the AIRFRAME, never a control's state. A tooltip may reference one to pick
-# its wording between variants; that is not the control's position. Keep this list tiny and
+# its wording between variants; that is not the control's position, and its words are never a
+# position either (parse_tooltip lifts nothing from an expression that reads one). A LABEL that
+# reads one has a wording per variant that nothing here can choose between, so parse_tooltip
+# refuses to generate until LABEL_FIXES names the control. Keep this list tiny and
 # evidence-based — each entry needs a reason, because wrongly excluding a real state var silently
 # repoints a control at its own node id.
 LABEL_ONLY_VARS = {
@@ -226,10 +229,11 @@ CURATED = {
     },
     # AIR panel temperature selectors. NUM_STATES from Overhead.xml: 8 for the cockpit and the
     # three cabin zones (raw 0–7), 3 for the forward lower cargo, 7 for the aft lower cargo. Two
-    # of them (FWD_CAB, MID_CAB) also need this to REPLACE a wrong map: their tooltip chooses its
-    # WORDING with %((L:MD11_EFB_IS_CARGO))%{if}Courier Cabin%{else}Forward Cabin%{end}, and the
-    # inline if/else leaked those two words into value_map, so an 8-position knob rendered as a
-    # two-item combo. finalize_controls lets a curated value_map win for exactly that reason.
+    # of them (FWD_CAB, MID_CAB) choose their WORDING with
+    # %((L:MD11_EFB_IS_CARGO))%{if}Courier Cabin%{else}Forward Cabin%{end}; the inline if/else
+    # once leaked those two words into value_map, so an 8-position knob rendered as a two-item
+    # combo. parse_tooltip no longer lifts a variant flag's words (LABEL_ONLY_VARS) and their
+    # names are LABEL_FIXES entries; finalize_controls still lets a curated value_map win.
     "MD11_OVHD_PNEU_COCKPIT_TEMP": {"value_map": temperature_positions(8)},
     "MD11_OVHD_PNEU_FWD_CAB_TEMP": {"value_map": temperature_positions(8)},
     "MD11_OVHD_PNEU_MID_CAB_TEMP": {"value_map": temperature_positions(8)},
@@ -245,6 +249,12 @@ LABEL_FIXES = {
     "MD11_OVHD_L_RAIN_REPLNT_BT": "Left Rain Repellent",
     "MD11_OVHD_R_RAIN_REPLNT_BT": "Right Rain Repellent",
     "MD11_OVHD_PNEU_OUTFLOW_VALVE_POS_SW": "Outflow Valve Position",
+    # Cabin-temperature knobs whose tooltip names the zone per AIRFRAME variant
+    # (MD11_EFB_IS_CARGO: "Forward Cabin" on the passenger jet, "Courier Cabin" on the MD-11F;
+    # "Middle Cabin" / "Main Cargo Deck"). One name for both variants (Robin, 2026-09-11); the aft
+    # knob's tooltip names no variant and keeps "Aft Cabin Temperature".
+    "MD11_OVHD_PNEU_FWD_CAB_TEMP": "Forward Zone Temperature",
+    "MD11_OVHD_PNEU_MID_CAB_TEMP": "Middle Zone Temperature",
     "MD11_OVHD_1_PAX_LOAD_SW": "Passenger Load Units",
     "MD11_OVHD_10_PAX_LOAD_SW": "Passenger Load Tens",
     "MD11_OVHD_100_PAX_LOAD_SW": "Passenger Load Hundreds",
@@ -254,7 +264,9 @@ LABEL_FIXES = {
     "MD11_CTR_FLTNO2_SW": "Flight Number Digit 2",
     "MD11_CTR_FLTNO3_SW": "Flight Number Digit 3",
     "MD11_CTR_FLTNO4_SW": "Flight Number Digit 4",
-    "MD11_MIP_ISFD_STD_BT": "Standby Display STD",
+    # The standby altimeter's STD: the node the ISFD baro knob's push animates (TFDi gives the node
+    # itself no events). Named for what it sets, like the Captain/First Officer Altimeter STD rows.
+    "MD11_MIP_ISFD_STD_BT": "Standby Altimeter STD",
     "MD11_PED_XPNDR_CLR_BT": "Transponder Clear",
     "MD11_CABIN_OXY_MASKS_DOOR": "Cabin Oxygen Masks Door",
     # ONE toggle: MD11_EFB_TOGGLE and MD11_EFB_TOGGLE_FO both fire event 94465, so the
@@ -934,8 +946,33 @@ USETEMPLATE_RE = re.compile(
 )
 FIELD_RE = re.compile(r"<([A-Z0-9_]+)>(.*?)</\1>", re.S)
 
+# One %{case} position marker: '%{:0}', '%{:20}', '%{:-1}'.
+CASE_MARK_RE = re.compile(r"%\{:\s*([-\d.]+)\s*\}")
+# '%(<rpn>)%{if}A%{else}B%{end}': a two-way dynamic word. Group 1 is the TRUE word, group 2 the
+# resting (false) one.
+INLINE_IF_RE = re.compile(r"%\([^)]*(?:\)[^)%]*)*?\)\s*%\{if\}([^%]*)%\{else\}([^%]*)%\{end\}")
+# Stands in for a literal '%%' while a case label is cut at its first directive.
+_LITERAL_PERCENT = "\0"
 
-def parse_tooltip(tooltip):
+
+def _lvars(text):
+    """Every L:var `text` names, in order, repeats included."""
+    return re.findall(r"L:([A-Za-z0-9_]+)", text)
+
+
+def _reads_one_state_var(text):
+    """True when `text` names exactly ONE L:var (one occurrence) and it is no airframe variant flag.
+
+    The rule for lifting if/else words as a control's positions, on the trailing state expression
+    and on an inline block alike: the words describe the var the expression reads, so they are this
+    control's positions only when that var is the only one there. A second var brings a companion's
+    words (the EFIS minimums caps); a LABEL_ONLY_VARS flag brings the variant's (the cabin zones).
+    """
+    names = _lvars(text)
+    return len(names) == 1 and names[0] not in LABEL_ONLY_VARS
+
+
+def parse_tooltip(tooltip, node_id=None, empty_cases=None):
     """Split a TOOLTIPID into (label, state_var, value_map).
 
     TFDi tooltips come in two shapes.
@@ -955,6 +992,11 @@ def parse_tooltip(tooltip):
 
     Returns (label, state_var, value_map). value_map is lifted verbatim from the
     aircraft so detent/position wording is TFDi's, never invented here.
+
+    `node_id` names the control in the one error this raises: a LABEL that reads an airframe
+    variant flag (LABEL_ONLY_VARS) is refused unless LABEL_FIXES names the node. `empty_cases`,
+    when given, collects the value of every %{case} position TFDi left without words (text, not
+    live data) -- collect() reports those rather than letting them vanish.
     """
     if not tooltip:
         return None, None, {}
@@ -997,14 +1039,35 @@ def parse_tooltip(tooltip):
     value_map = {}
 
     def _cases(text):
+        # A position's label runs from its marker to the NEXT marker, so it can hold a nested
+        # block: the APU fire handle's centre is
+        #   %{:1}%((L:MD11_AOVHD_APUFIRE_SW))%{if}Shutoff%{else}Normal%{end}
+        # and cutting at the first '%' threw that position away (the combo sat blank at rest, and
+        # the centre could not be selected). A nested if/else names the position by its resting
+        # (false) word -- the word the inline collapse also reads first -- and '%%' is a literal
+        # percent sign ("70%% N1" -> "70% N1"). Anything else is still cut at its first directive,
+        # and a later marker with the same value still wins: the engine fire handles nest the
+        # rotation's whole %{case} inside the pull's position 2, and the shipped map is what this
+        # flat scan makes of it -- changing that is a position change on an operable control.
         out = {}
-        for val, lbl in re.findall(r"%\{:\s*([-\d.]+)\s*\}([^%]*)", text):
-            lbl = lbl.strip()
+        marks = list(CASE_MARK_RE.finditer(text))
+        for i, mark in enumerate(marks):
+            end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+            seg = text[mark.end():end].replace("%%", _LITERAL_PERCENT)
+            seg = INLINE_IF_RE.sub(lambda nested: nested.group(2), seg)
+            seg = seg.split("%{end}", 1)[0]
+            lbl = seg.split("%", 1)[0].replace(_LITERAL_PERCENT, "%").strip()
             if lbl:
-                out[val] = lbl
+                out[mark.group(1)] = lbl
+            elif empty_cases is not None and "%(" not in seg:
+                # Empty TEXT, not live data: a position with no name. It cannot be a combo entry,
+                # but it is reported for curation, never dropped unseen.
+                empty_cases.append(mark.group(1))
         return out
 
-    if expr:
+    # A variant flag's words are never positions: nothing is lifted from an expression that
+    # reads one (LABEL_ONLY_VARS).
+    if expr and not LABEL_ONLY_VARS.intersection(_lvars(expr)):
         value_map = _cases(expr)
         if not value_map:
             m = re.search(r"%\{if\}([^%]*)%\{else\}([^%]*)%\{end\}", expr)
@@ -1019,30 +1082,47 @@ def parse_tooltip(tooltip):
             # air-system selector around their own var, so their expressions name two L:vars too
             # and lose an {Off, On} map that nothing consumed (a button never reads `values`, and
             # the `state` block that composes its spoken position is generated separately).
-            if m and len(re.findall(r"L:[A-Za-z0-9_]+", expr)) == 1:
+            if m and _reads_one_state_var(expr):
                 on, off = m.group(1).strip(), m.group(2).strip()
                 if on and off:
                     value_map = {"1": on, "0": off}
 
     # --- (b) collapse inline dynamic blocks left in the label -------------------
+    # A label that reads an airframe variant flag has one wording per variant, and nothing here
+    # can choose: collapsed, TFDi's cabin knobs read "Forward Cabin/Courier Cabin Temperature" on
+    # every airframe. Refuse until LABEL_FIXES names the control; with the name, the variant
+    # blocks below collapse to nothing and give value_map nothing.
+    variant_vars = sorted(LABEL_ONLY_VARS.intersection(_lvars(label)))
+    if variant_vars and node_id not in LABEL_FIXES:
+        raise ValueError(
+            f"{node_id or 'a control'}: its tooltip label reads the airframe variant flag "
+            f"{', '.join(variant_vars)}, so it has one wording per variant -- add a LABEL_FIXES "
+            f"entry that names it for every variant")
+
+    # Positions come from an inline block under the trailing path's rule, judged on the WHOLE
+    # label: the FCP mode knobs name ONE var here (their mode export) and keep Heading/Track,
+    # while a block beside a second var lifts nothing -- judged on the block alone it would hand
+    # a companion's words to a control whose state var is the other one.
+    label_reads_one_var = _reads_one_state_var(label)
+
     # '%(<rpn>)%{if}A%{else}B%{end}' -> 'B/A'  (false state first: it reads better
     # as the resting position, e.g. 'Heading/Track', 'IAS/Mach').
     def _inline_if(m):
+        if LABEL_ONLY_VARS.intersection(_lvars(m.group(0))):
+            return ""
         a, b = m.group(1).strip(), m.group(2).strip()
-        if not value_map:
+        if not value_map and label_reads_one_var:
             value_map.update({"1": a, "0": b})
         return f"{b}/{a}" if a and b else (a or b)
 
-    label = re.sub(
-        r"%\([^)]*(?:\)[^)%]*)*?\)\s*%\{if\}([^%]*)%\{else\}([^%]*)%\{end\}",
-        _inline_if,
-        label,
-    )
+    label = INLINE_IF_RE.sub(_inline_if, label)
 
     # '%(<rpn>)%{case}%{:0}A%{:1}B%{end}' -> 'A/B'
     def _inline_case(m):
+        if LABEL_ONLY_VARS.intersection(_lvars(m.group(0))):
+            return ""
         cases = _cases(m.group(0))
-        if cases and not value_map:
+        if cases and not value_map and label_reads_one_var:
             value_map.update(cases)
         return "/".join(cases.values()) if cases else ""
 
@@ -1197,13 +1277,19 @@ def collect(pkg_dir):
 
                 # An annunciator with no events is a lamp; its lit state is the
                 # L:var itself (VIS_VAR overrides which var drives visibility).
-                label, state_var, value_map = parse_tooltip(fields.get("TOOLTIPID"))
+                empty_cases = []
+                label, state_var, value_map = parse_tooltip(
+                    fields.get("TOOLTIPID"), node_id=node_id, empty_cases=empty_cases)
 
                 key = (node_id, kind, tuple(sorted(events.items())))
                 if key in seen:
                     stats["duplicate"] += 1
                     continue
                 seen.add(key)
+                # A %{case} position TFDi left without words: main() prints and counts it for
+                # curation, so it never leaves the map unseen.
+                for case_value in empty_cases:
+                    stats[f"empty_case_label:{source} {node_id} %{{:{case_value}}}"] += 1
 
                 # Prefer TFDi's own wording; fall back to the node id only when the
                 # exporter emitted no tooltip (every annunciator, ~a third of buttons).
@@ -1473,6 +1559,10 @@ def main():
     for c in controls:
         by_area[c["area"]].append(c)
 
+    # %{case} positions with no words (collect() records them): counted in the map, printed below.
+    empty_case_labels = sorted(k[len("empty_case_label:"):] for k in stats
+                               if k.startswith("empty_case_label:"))
+
     out = {
         "_generated_by": "tools/md11-gen/generate_md11_map.py",
         "_source": "TFDi MD-11 ModelBehaviorDefs + md11host.wasm",
@@ -1481,6 +1571,7 @@ def main():
             "wasm_control_vars": len(all_vars),
             "export_vars": len(export_vars),
             "state_only_vars": len(orphan_vars),
+            "empty_case_labels": len(empty_case_labels),
             "by_kind": dict(sorted(by_kind.items())),
             "by_area": {a: len(v) for a, v in sorted(by_area.items())},
         },
@@ -1500,6 +1591,7 @@ def main():
     print(f"  wasm ctrl vars  : {len(all_vars)}")
     print(f"  export vars     : {len(export_vars)}")
     print(f"  state-only vars : {len(orphan_vars)}")
+    print(f"  empty case lbls : {len(empty_case_labels)}")
     print("  by kind         :")
     for k, v in sorted(by_kind.items()):
         print(f"    {k:10s} {v}")
@@ -1514,6 +1606,8 @@ def main():
         print("  skipped templates (not controls):")
         for k, v in sorted(skipped.items(), key=lambda kv: -kv[1])[:10]:
             print(f"    {v:5d}  {k}")
+    for where in empty_case_labels:
+        print(f"empty case label (a position with no name; curate it): {where}", file=sys.stderr)
 
 
 if __name__ == "__main__":

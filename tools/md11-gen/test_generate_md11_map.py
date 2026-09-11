@@ -3,9 +3,17 @@
 Pure-function tests on tiny fixtures: no aircraft package, no wasm. Every case is a
 defect seen in the shipped map (see docs/md11.md, "Labels").
 """
+import contextlib
+import io
+import json
+import os
+import sys
+import tempfile
 import unittest
+from unittest import mock
 
 import generate_md11_map as g
+import md11_paths
 
 
 def ctl(node_id, kind="button", label=None, events=None, state_var=None, value_map=None,
@@ -16,6 +24,42 @@ def ctl(node_id, kind="button", label=None, events=None, state_var=None, value_m
         "state_var": state_var or node_id, "value_map": value_map or {},
         "num_states": None, "events": events or {}, "guard_id": guard_id, "source": source,
     }
+
+
+def use_template(template, **fields):
+    """One ModelBehaviorDefs <UseTemplate> block, its fields in the order given."""
+    inner = "".join(f"<{name}>{value}</{name}>" for name, value in fields.items())
+    return f'<UseTemplate Name="{template}">{inner}</UseTemplate>'
+
+
+def write_package(root, files):
+    """A minimal MD-11 package under `root`, for tests that run collect() or main() end to end.
+
+    `files` maps a path under ModelBehaviorDefs/TFDi_Design/MD11 ('FlightDeck/Overhead.xml') to the
+    XML inside its <ModelBehaviors> root. The wasm names one control var, which is all
+    _exit_if_incomplete asks for. Returns (package dir, wasm path)."""
+    pkg = os.path.join(root, "pkg")
+    base = os.path.join(pkg, md11_paths.PACKAGE_MARKER)
+    for rel, xml in files.items():
+        path = os.path.join(base, *rel.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("<ModelBehaviors>\n" + xml + "\n</ModelBehaviors>\n")
+    wasm = os.path.join(root, "md11host.wasm")
+    with open(wasm, "wb") as fh:
+        fh.write(b"\0asm Aircraft::vars->MD11_OVHD_ELEC_X_OFF_LT\0")
+    return pkg, wasm
+
+
+def run_main(pkg, wasm, out):
+    """generate_md11_map.main() on a fixture package: (the map it wrote, what it printed to stderr)."""
+    err = io.StringIO()
+    argv = ["generate_md11_map.py", "--pkg", pkg, "--wasm", wasm, "--out", out]
+    with mock.patch.object(sys, "argv", argv), \
+         contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+        g.main()
+    with open(out, encoding="utf-8") as fh:
+        return json.load(fh), err.getvalue()
 
 
 class SpeakableTests(unittest.TestCase):
@@ -214,8 +258,9 @@ class FinalizeTests(unittest.TestCase):
 
     def test_curated_value_map_replaces_a_leaked_or_missing_one(self):
         # The parser cannot see these knobs' positions (their tooltips carry no %{case}), and on
-        # two of them the freighter/pax WORDING leaked into the map through the inline if/else:
-        # {"1": "Courier Cabin", "0": "Forward Cabin"} on an 8-position knob. Curated wins.
+        # two of them the freighter/pax WORDING used to leak into the map through the inline
+        # if/else: {"1": "Courier Cabin", "0": "Forward Cabin"} on an 8-position knob. The parser
+        # no longer lifts it (VariantWordingTests); a curated map still wins over any parsed one.
         out = g.finalize_controls([
             ctl("MD11_OVHD_PNEU_FWD_CAB_TEMP", kind="knob", label="Forward Cabin/Courier Cabin Temperature",
                 value_map={"1": "Courier Cabin", "0": "Forward Cabin"}),
@@ -231,8 +276,8 @@ class FinalizeTests(unittest.TestCase):
                          by["MD11_OVHD_PNEU_FWD_CARGO_TEMP"]["value_map"])
         self.assertEqual(7, len(by["MD11_OVHD_PNEU_AFT_CARGO_TEMP"]["value_map"]))
         self.assertEqual("7 (full hot)", by["MD11_OVHD_PNEU_AFT_CARGO_TEMP"]["value_map"]["6"])
-        # The label is untouched: only the positions were curated.
-        self.assertEqual("Forward Cabin/Courier Cabin Temperature", by["MD11_OVHD_PNEU_FWD_CAB_TEMP"]["label"])
+        # The zone is named by LABEL_FIXES too: TFDi's tooltip names it once per airframe variant.
+        self.assertEqual("Forward Zone Temperature", by["MD11_OVHD_PNEU_FWD_CAB_TEMP"]["label"])
 
     def test_temperature_positions_are_generated_from_the_count(self):
         self.assertEqual({"0": "1 (full cold)", "1": "2", "2": "3 (full hot)"}, g.temperature_positions(3))
@@ -429,6 +474,136 @@ class StateTests(unittest.TestCase):
         self.assertEqual([("MD11_OVHD_X_TEST_LT", "ON", "On")],
                          [(l["var"], l["legend"], l["lit"]) for l in out["MD11_OVHD_X_TEST_BT"]["state"]["lamps"]])
         self.assertNotIn("state", out["MD11_OVHD_X_BT"])
+
+
+class VariantWordingTests(unittest.TestCase):
+    """D1: an airframe variant flag (LABEL_ONLY_VARS) picks a tooltip's WORDING, never a position.
+    A label that reads one has a wording per variant and the parser cannot choose between them:
+    collapsed, the cabin knobs read "Forward Cabin/Courier Cabin Temperature" on every airframe."""
+
+    FWD = "%((L:MD11_EFB_IS_CARGO))%{if}Courier Cabin%{else}Forward Cabin%{end} Temperature"
+
+    def test_a_label_reading_a_variant_flag_refuses_to_generate_without_a_curated_name(self):
+        with self.assertRaises(ValueError) as cm:
+            g.parse_tooltip(self.FWD, node_id="MD11_OVHD_PNEU_NEW_CAB_TEMP")
+        self.assertIn("MD11_OVHD_PNEU_NEW_CAB_TEMP", str(cm.exception))
+        self.assertIn("LABEL_FIXES", str(cm.exception))
+
+    def test_with_a_curated_name_the_variant_words_reach_neither_the_label_nor_the_map(self):
+        label, state_var, value_map = g.parse_tooltip(self.FWD, node_id="MD11_OVHD_PNEU_FWD_CAB_TEMP")
+        self.assertEqual("Temperature", label)
+        self.assertIsNone(state_var)
+        self.assertEqual({}, value_map)
+
+    def test_a_variant_flag_in_the_state_expression_yields_no_positions(self):
+        # Not in TFDi's package today. The rule is that a variant's words are never positions,
+        # wherever the tooltip carries them; here the label itself reads no flag, so no error.
+        label, state_var, value_map = g.parse_tooltip(
+            "Cargo Heat (%((L:MD11_EFB_IS_CARGO))%{if}Installed%{else}Not installed%{end})")
+        self.assertEqual("Cargo Heat", label)
+        self.assertIsNone(state_var)
+        self.assertEqual({}, value_map)
+
+    def test_the_zone_and_standby_std_names_are_curated(self):
+        out = g.finalize_controls([
+            ctl("MD11_OVHD_PNEU_FWD_CAB_TEMP", kind="knob", label="Temperature"),
+            ctl("MD11_OVHD_PNEU_MID_CAB_TEMP", kind="knob", label="Temperature"),
+            ctl("MD11_MIP_ISFD_STD_BT"),
+        ])
+        named = {c["node_id"]: (c["label"], c["label_source"]) for c in out}
+        self.assertEqual(("Forward Zone Temperature", "curated"), named["MD11_OVHD_PNEU_FWD_CAB_TEMP"])
+        self.assertEqual(("Middle Zone Temperature", "curated"), named["MD11_OVHD_PNEU_MID_CAB_TEMP"])
+        self.assertEqual(("Standby Altimeter STD", "curated"), named["MD11_MIP_ISFD_STD_BT"])
+
+
+class InlineIfGuardTests(unittest.TestCase):
+    """D1: an inline %{if}/%{else} lifts positions under the trailing path's rule -- the label
+    names exactly one L:var. It used to lift whatever block it met first."""
+
+    def test_the_fcp_mode_knobs_keep_their_mode_words_on_their_export(self):
+        # Intended read-only mode rows (Md11ExportBacked): each label names ONE var, its mode
+        # export, so the words stay; the button beside the row switches the mode. Passes before
+        # and after the change -- it pins that the guard leaves these three alone.
+        for tooltip, label, var, positions in (
+            ("Autopilot %((L:MD11_AP_HDG_TRK))%{if}Track%{else}Heading%{end} Select",
+             "Autopilot Heading/Track Select", "MD11_AP_HDG_TRK", {"1": "Track", "0": "Heading"}),
+            ("Autopilot %((L:MD11_AP_IAS_MACH))%{if}MACH%{else}IAS%{end} Select",
+             "Autopilot IAS/MACH Select", "MD11_AP_IAS_MACH", {"1": "MACH", "0": "IAS"}),
+            ("Autopilot %((L:MD11_AP_VS_FPA))%{if}FPA%{else}VS%{end} Select",
+             "Autopilot VS/FPA Select", "MD11_AP_VS_FPA", {"1": "FPA", "0": "VS"}),
+        ):
+            with self.subTest(var=var):
+                self.assertEqual((label, var, positions), g.parse_tooltip(tooltip))
+
+    def test_an_inline_block_beside_a_second_var_lifts_no_positions(self):
+        # The minimums caps' shape, inline instead of trailing: the Baro/Radio words describe the
+        # mode switch's var, not the value this control reads first.
+        _, var, value_map = g.parse_tooltip(
+            "Captain Minimums %((L:MD11_CAP_MINIMUMS))%!d! "
+            "%((L:MD11_LECP_MINIMUMS_KB))%{if}Baro%{else}Radio%{end}")
+        self.assertEqual("MD11_CAP_MINIMUMS", var)
+        self.assertEqual({}, value_map)
+
+
+class CaseLabelTests(unittest.TestCase):
+    """D2: a %{case} position's label runs to the next position, not to the first '%'."""
+
+    APU = ("APU Fire Handle (%((L:MD11_AOVHD_APUFIRE_KB))%{case}%{:0}Bottle 1"
+           "%{:1}%((L:MD11_AOVHD_APUFIRE_SW))%{if}Shutoff%{else}Normal%{end}%{:2}Bottle 2%{end})")
+
+    def test_a_nested_block_names_its_position_by_the_resting_word(self):
+        # TFDi's APU fire handle tooltip, verbatim. Its centre used to vanish, leaving the combo
+        # blank at rest with no way to select the centre.
+        label, var, value_map = g.parse_tooltip(self.APU)
+        self.assertEqual("APU Fire Handle", label)
+        self.assertEqual("MD11_AOVHD_APUFIRE_KB", var)
+        self.assertEqual({"0": "Bottle 1", "1": "Normal", "2": "Bottle 2"}, value_map)
+        self.assertEqual(["0", "1", "2"], list(value_map))
+
+    def test_a_literal_percent_sign_stays_in_a_position_name(self):
+        _, _, value_map = g.parse_tooltip(
+            "Thrust Cue (%((L:MD11_THR_X_SW))%{case}%{:0}Off%{:1}70%% N1%{end})")
+        self.assertEqual({"0": "Off", "1": "70% N1"}, value_map)
+
+    def test_an_empty_position_is_reported_and_kept_out_of_the_map(self):
+        empty = []
+        _, _, value_map = g.parse_tooltip(
+            "Test Selector (%((L:MD11_OVHD_X_SEL_SW))%{case}%{:0}Off%{:1}%{:2}On%{end})",
+            node_id="MD11_OVHD_X_SEL_SW", empty_cases=empty)
+        self.assertEqual({"0": "Off", "2": "On"}, value_map)
+        self.assertEqual(["1"], empty)
+
+    def test_live_data_in_a_position_is_not_reported_as_empty(self):
+        empty = []
+        g.parse_tooltip("Readout (%((L:MD11_X_KB))%{case}%{:0}Off%{:1}%((L:MD11_X_KB) 10 *)%!d!%{end})",
+                        empty_cases=empty)
+        self.assertEqual([], empty)
+
+    def test_the_engine_fire_handles_nested_case_is_unchanged(self):
+        # TFDi's Engine 1 handle, verbatim: the rotation's whole %{case} sits inside position 2 of
+        # the pull's, and the flat scan lets the nested 0/1/2 overwrite the pull's words -- which
+        # is what the shipped map carries. Changing it is a position change on an operable
+        # control, which the regeneration review stops on (spec D9); this rule leaves it alone.
+        _, var, value_map = g.parse_tooltip(
+            "Engine 1 Fire Handle (%((L:MD11_AOVHD_ENG1FIRE_SW))%{case}%{:0}Normal"
+            "%{:1}Generator Field Disconnect%{:2}%((L:MD11_AOVHD_ENG1FIRE_KB))%{case}%{:0}Bottle 1"
+            "%{:1}Fuel and Hydraulic Disconnect%{:2}Bottle 2%{end}%{end})")
+        self.assertEqual("MD11_AOVHD_ENG1FIRE_SW", var)
+        self.assertEqual({"0": "Bottle 1", "1": "Fuel and Hydraulic Disconnect", "2": "Bottle 2"},
+                         value_map)
+
+
+class EmptyCaseReportTests(unittest.TestCase):
+    def test_main_counts_and_prints_every_empty_position(self):
+        tooltip = "Test Selector (%((L:MD11_OVHD_X_SEL_SW))%{case}%{:0}Off%{:1}%{:2}On%{end})"
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg, wasm = write_package(tmp, {"FlightDeck/Overhead.xml": use_template(
+                "TFDi_Design_MD11_Switch_Template", NODE_ID="MD11_OVHD_X_SEL_SW", TOOLTIPID=tooltip,
+                LEFT_BUTTON_DOWN="1", RIGHT_BUTTON_DOWN="2")})
+            data, err = run_main(pkg, wasm, os.path.join(tmp, "map.json"))
+        self.assertEqual(1, data["counts"]["empty_case_labels"])
+        self.assertIn("MD11_OVHD_X_SEL_SW %{:1}", err)
+        self.assertEqual({"0": "Off", "2": "On"}, data["controls"][0]["value_map"])
 
 
 if __name__ == "__main__":
