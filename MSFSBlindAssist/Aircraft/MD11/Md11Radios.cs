@@ -122,7 +122,10 @@ public static class Md11Radios
 /// <summary>
 /// Baseline-first change detector for the COM keys: the first sample of each key seeds silently
 /// (connecting must not read the whole radio stack aloud), and a later change of more than half
-/// a kHz inside the airband is spoken. Reset on the DISCONNECT so the reconnect's first delivery
+/// a kHz inside the airband is spoken. A value OUTSIDE the airband (an unpowered radio's 0) is
+/// ignored outright — never spoken and never stored as the baseline: stored, it made the
+/// power-up that follows a "change", and all six keys were read aloud every time the radios
+/// came back. Reset on a context reset (a disconnect or a flight load) so the next delivery
 /// re-seeds (never on the reconnect itself: that first delivery has already landed by then).
 /// </summary>
 public sealed class Md11ComAnnouncer
@@ -132,21 +135,25 @@ public sealed class Md11ComAnnouncer
     /// <summary>The sentence to speak for this update, or null when nothing should be said.</summary>
     public string? OnUpdate(string key, double khz)
     {
+        if (!Md11Radios.InAirband(khz)) return null;   // BEFORE the store: an out-of-band value is never a baseline
         bool seeded = _last.TryGetValue(key, out double prev);
         _last[key] = khz;
         if (!seeded) return null;
         if (Math.Abs(khz - prev) <= 0.5) return null;
-        if (!Md11Radios.InAirband(khz)) return null;
         return Md11Radios.Describe(key, khz);
     }
 
-    /// <summary>The last value seen for a key, if any — what a tuning read-back compares against.</summary>
+    /// <summary>The last airband value seen for a key, if any — what a tuning read-back compares against.</summary>
     public double? Last(string key) => _last.TryGetValue(key, out var v) ? v : null;
 
-    /// <summary>Seeds a key that has no baseline (a flight load re-delivers only what changed); true when it did.</summary>
+    /// <summary>
+    /// Seeds a key that has no baseline (a flight load re-delivers only what changed); true when it
+    /// did. An out-of-band value seeds nothing, by <see cref="OnUpdate"/>'s rule: a cold-and-dark
+    /// load's cached 0, seeded here, made the power-up a change on all six keys.
+    /// </summary>
     public bool SeedIfEmpty(string key, double khz)
     {
-        if (_last.ContainsKey(key)) return false;
+        if (!Md11Radios.InAirband(khz) || _last.ContainsKey(key)) return false;
         _last[key] = khz;
         return true;
     }

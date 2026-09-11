@@ -40,9 +40,32 @@ public class Md11RadioTests
         var com = new Md11ComAnnouncer();
         com.OnUpdate("COM_ACTIVE_FREQUENCY:2", 127750);
         Assert.Null(com.OnUpdate("COM_ACTIVE_FREQUENCY:2", 0));          // radio unpowered: no "COM 2 active 0.000"
-        Assert.Equal("COM 2 active 127.750", com.OnUpdate("COM_ACTIVE_FREQUENCY:2", 127750));   // power back: spoken
+        Assert.Equal(127750, com.Last("COM_ACTIVE_FREQUENCY:2"));          // …and the 0 is not the new baseline
+        Assert.Null(com.OnUpdate("COM_ACTIVE_FREQUENCY:2", 127750));       // power back on the same frequency: nothing changed, nothing said
+        Assert.Equal("COM 2 active 121.500", com.OnUpdate("COM_ACTIVE_FREQUENCY:2", 121500));   // a real change still speaks
         Assert.Equal("--", Md11Radios.Display(0));
         Assert.Equal("127.750", Md11Radios.Display(127750));
+    }
+
+    /// <summary>
+    /// A power loss's 0 used to be STORED before the airband gate, so it became the baseline and
+    /// the power-up that followed was a "change" on all six keys — the whole radio stack read aloud
+    /// every time the radios came back. An out-of-band value is never a baseline, through either
+    /// door: a delivery (OnUpdate) or the flight-load seed (SeedIfEmpty).
+    /// </summary>
+    [Fact]
+    public void AnOutOfBandValue_IsNeverTheBaseline_SoThePowerUpIsSilent()
+    {
+        var com = new Md11ComAnnouncer();
+        Assert.Null(com.OnUpdate("COM_STANDBY_FREQUENCY:3", 0));            // connected with the radios unpowered
+        Assert.Null(com.Last("COM_STANDBY_FREQUENCY:3"));
+        Assert.Null(com.OnUpdate("COM_STANDBY_FREQUENCY:3", 126800));       // power-up: the first airband value is the silent baseline
+        Assert.Equal("COM 3 standby 126.900", com.OnUpdate("COM_STANDBY_FREQUENCY:3", 126900));
+
+        var seeded = new Md11ComAnnouncer();
+        Assert.False(seeded.SeedIfEmpty("COM_ACTIVE_FREQUENCY:1", 0));      // a cold-and-dark load's cached 0 seeds nothing
+        Assert.Null(seeded.Last("COM_ACTIVE_FREQUENCY:1"));
+        Assert.Null(seeded.OnUpdate("COM_ACTIVE_FREQUENCY:1", 135500));     // …so the power-up seeds, silently
     }
 
     [Fact]

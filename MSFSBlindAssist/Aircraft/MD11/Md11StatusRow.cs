@@ -23,7 +23,8 @@ public static class Md11StatusRow
 
     /// <summary>
     /// A read-out row: the exported number with its unit, "not set" for an unentered speed or
-    /// minimum, both units for an altimeter, the composer's panel wording for the AFS windows.
+    /// minimum, both units for an altimeter ("not available" until one is delivered), the
+    /// composer's panel wording for the AFS windows.
     /// Null for a key this class does not format (the caller then uses ValueDescriptions, its own
     /// overrides, or the bare number).
     /// </summary>
@@ -48,7 +49,10 @@ public static class Md11StatusRow
             case Md11Fcp.ReadCaptainBaro:
             case "MD11_FO_ALTIMETER":
             case "MD11_STBY_ALTIMETER":
-                return Md11Fcp.DescribeAltimeter(value);
+                // A setting is never zero or below: that is an export not yet delivered, and
+                // "0, 0.00" is neither true nor actionable (Md11Fcp.DescribeAltimeterShortfall's
+                // rule for the same three exports).
+                return value <= 0 ? "not available" : Md11Fcp.DescribeAltimeter(value);
 
             case "MD11_ATS_STATE":
                 return Md11AutoflightState.Autothrottle(value);

@@ -286,7 +286,9 @@ public class Md11SeedGateTests
         var def = new TFDiMD11Definition();
         foreach (var key in TFDiMD11Definition.SeededScalarKeys)
         {
-            double value = key == Md11SpeedbrakeSystem.LeverKey ? 0 : 145;    // the lever seeds only at a detent
+            // The lever seeds only at a detent, a COM key only inside the airband (a 145 kHz or 0
+            // reading is an unpowered radio's, never a baseline).
+            double value = key == Md11SpeedbrakeSystem.LeverKey ? 0 : Md11Radios.IsComKey(key) ? 127750 : 145;
             Assert.True(def.SeedScalar(key, value), key);
             Assert.False(def.SeedScalar(key, value + 1), key);
         }

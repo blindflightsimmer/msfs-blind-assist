@@ -50,6 +50,9 @@ public class Md11StatusRowTests
     [InlineData("MD11_CAP_ALTIMETER", 29.92, "standard")]
     [InlineData("MD11_FO_ALTIMETER", 30.12, "1020, 30.12")]
     [InlineData("MD11_STBY_ALTIMETER", 995, "995, 29.38")]
+    [InlineData("MD11_CAP_ALTIMETER", 0, "not available")]      // not yet delivered: never "0, 0.00"
+    [InlineData("MD11_FO_ALTIMETER", 0, "not available")]
+    [InlineData("MD11_STBY_ALTIMETER", -1, "not available")]
     [InlineData("MD11_ATS_STATE", 1, "on")]
     [InlineData("MD11_ATS_STATE", 0, "off")]
     [InlineData("MD11_APU_N1", 25.4, "25 percent")]
