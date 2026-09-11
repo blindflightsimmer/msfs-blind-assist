@@ -433,6 +433,12 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
             IsAnnounced = true,                 // batch-covered; ProcessSimVarUpdate consumes it silently
             ExcludeFromMonitorManager = true,
             RenderAsReadOnlyStatus = true,
+            // Half a volt, not the shared 0.001: the power gate needs only the 20 V line (battery or
+            // ground power reads 24 V, cold and dark 0 V — steps, never a drift across it), and this
+            // key is in every state-bearing row's StateVariables, so with the shared tolerance each
+            // ripple of the bus re-composed every stateful row of the open panel (~32 on Electrical)
+            // once a second. The DC1 BUS OFF lamp, the gate's other half, still relabels on its own.
+            ChangeTolerance = 0.5,
         };
 
         // End-to-end MobiFlight probe target — the same var the FBW defs register. MainForm

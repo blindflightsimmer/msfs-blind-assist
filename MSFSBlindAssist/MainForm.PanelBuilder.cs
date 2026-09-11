@@ -190,6 +190,11 @@ public partial class MainForm
             return;
         }
         if (!currentControls.TryGetValue(key, out var control)) return;
+        // The type BEFORE composing: composing is not free (the MD-11 composes a control's legend
+        // lamps, its latch and the DC gate), and this runs for EVERY dependent of an update — on the
+        // MD-11 every stateful row of the open panel whenever the DC gate moves. A control that
+        // cannot show a composed state must not pay for one.
+        if (!ShowsDescribedState(control)) return;
         if (!currentAircraft.GetVariables().TryGetValue(key, out var def)) return;
         if (!currentAircraft.TryDescribeControlState(key, out var state)) return;
 
@@ -201,11 +206,18 @@ public partial class MainForm
                 if (btn.Text != label) { btn.Text = label; btn.AccessibleName = label; }
                 break;
             }
-            case TextBox tb when tb.ReadOnly:
+            case TextBox tb:                  // read-only: ShowsDescribedState admitted no other TextBox
                 if (tb.Text != state) tb.Text = state;
                 break;
         }
     }
+
+    /// <summary>
+    /// The controls a composed state can be shown on: a Button (its label) or a read-only TextBox
+    /// (its text). Anything else — an entry box, a combo, a slider — shows its own value, so
+    /// <see cref="RefreshDescribedState"/> composes nothing for it. Pinned by DescribedStateTargetTests.
+    /// </summary>
+    internal static bool ShowsDescribedState(Control control) => control is Button or TextBox { ReadOnly: true };
 
     /// <summary>
     /// Timer callback: Load panel controls after debounce delay.

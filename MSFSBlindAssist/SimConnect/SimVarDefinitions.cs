@@ -31,6 +31,18 @@ public class SimVarDefinition
     public bool OnlyAnnounceValueDescriptionMatches { get; set; }  // True to only announce when value matches a ValueDescriptions key (within tolerance), skip intermediate values
 
     /// <summary>
+    /// How far a delivered value must move from the cached one to count as a CHANGE — to fire
+    /// SimVarUpdated (unless force-read). Null, the default, means the shared
+    /// <see cref="SimConnectManager.ChangeTolerance"/> (0.001); both delivery paths apply it through
+    /// <see cref="SimConnectManager.IsValueChange"/>. Widen it only for a var whose readers need a
+    /// coarse line and whose ripple costs work — the TFDi MD-11's DC bus voltage (0.5 V) feeds a
+    /// power gate that needs only the 20 V line. The cache still takes every delivery, so a drift
+    /// slower than the tolerance per sample never fires a change: never widen a var whose reader
+    /// acts on a small cumulative change.
+    /// </summary>
+    public double? ChangeTolerance { get; set; }
+
+    /// <summary>
     /// When true, exclude this variable from the batched continuous monitoring (GenericBatch1..5)
     /// and register it as its own per-second continuous subscription. Used when the batched read
     /// has been observed to deliver wrong/oscillating values due to data-definition position

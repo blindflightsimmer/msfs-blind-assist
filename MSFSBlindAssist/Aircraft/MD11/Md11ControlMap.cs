@@ -48,7 +48,17 @@ public sealed class Md11ControlMap
         AllowTrailingCommas = true,
     };
 
-    private static Md11ControlMap? _cached;
+    /// <summary>
+    /// The memoized map, built ONCE however many threads ask at the same moment
+    /// (<see cref="LazyThreadSafetyMode.ExecutionAndPublication"/>). The app loads it from the
+    /// definition's constructor on the UI thread, but the test suite's parallel classes race the
+    /// first load from their static initialisers, and the check-then-assign static this replaced
+    /// could deserialize the map twice and hand two callers different instances. The factory never
+    /// throws — every failure degrades to an empty map — so the Lazy never caches an exception, and
+    /// a failed load stays memoized exactly as it always was.
+    /// </summary>
+    private static readonly Lazy<Md11ControlMap> Cached =
+        new Lazy<Md11ControlMap>(LoadEmbedded, LazyThreadSafetyMode.ExecutionAndPublication);
 
     /// <summary>
     /// Loads (and memoizes) the embedded control map. Returns an EMPTY map rather than throwing
@@ -56,10 +66,10 @@ public sealed class Md11ControlMap
     /// panels" — annoying but survivable, and loudly logged — never to an unhandled exception on
     /// the aircraft-switch path, which would take the whole app down with it.
     /// </summary>
-    public static Md11ControlMap Load()
-    {
-        if (_cached != null) return _cached;
+    public static Md11ControlMap Load() => Cached.Value;
 
+    private static Md11ControlMap LoadEmbedded()
+    {
         try
         {
             var asm = Assembly.GetExecutingAssembly();
@@ -72,24 +82,24 @@ public sealed class Md11ControlMap
             if (name == null)
             {
                 Log.Error("MD11", "md11_control_map.json embedded resource not found — MD-11 will have no controls.");
-                return _cached = new Md11ControlMap();
+                return new Md11ControlMap();
             }
 
             using var stream = asm.GetManifestResourceStream(name);
             if (stream == null)
             {
                 Log.Error("MD11", $"Could not open embedded resource {name} — MD-11 will have no controls.");
-                return _cached = new Md11ControlMap();
+                return new Md11ControlMap();
             }
 
             var map = JsonSerializer.Deserialize<Md11ControlMap>(stream, Options) ?? new Md11ControlMap();
             Log.Info("MD11", $"Control map loaded: {map.Controls.Count} controls, {map.ExportVars.Count} export vars.");
-            return _cached = map;
+            return map;
         }
         catch (Exception ex)
         {
             Log.Error("MD11", $"Failed to load md11_control_map.json: {ex.Message} — MD-11 will have no controls.");
-            return _cached = new Md11ControlMap();
+            return new Md11ControlMap();
         }
     }
 }
