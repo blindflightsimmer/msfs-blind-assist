@@ -579,19 +579,6 @@ class CaseLabelTests(unittest.TestCase):
                         empty_cases=empty)
         self.assertEqual([], empty)
 
-    def test_the_engine_fire_handles_nested_case_is_unchanged(self):
-        # TFDi's Engine 1 handle, verbatim: the rotation's whole %{case} sits inside position 2 of
-        # the pull's, and the flat scan lets the nested 0/1/2 overwrite the pull's words -- which
-        # is what the shipped map carries. Changing it is a position change on an operable
-        # control, which the regeneration review stops on (spec D9); this rule leaves it alone.
-        _, var, value_map = g.parse_tooltip(
-            "Engine 1 Fire Handle (%((L:MD11_AOVHD_ENG1FIRE_SW))%{case}%{:0}Normal"
-            "%{:1}Generator Field Disconnect%{:2}%((L:MD11_AOVHD_ENG1FIRE_KB))%{case}%{:0}Bottle 1"
-            "%{:1}Fuel and Hydraulic Disconnect%{:2}Bottle 2%{end}%{end})")
-        self.assertEqual("MD11_AOVHD_ENG1FIRE_SW", var)
-        self.assertEqual({"0": "Bottle 1", "1": "Fuel and Hydraulic Disconnect", "2": "Bottle 2"},
-                         value_map)
-
 
 class EmptyCaseReportTests(unittest.TestCase):
     def test_main_counts_and_prints_every_empty_position(self):
@@ -792,6 +779,84 @@ class DeterministicOutputTests(unittest.TestCase):
         self.assertEqual("Y Alpha", by["MD11_OVHD_ELEC_Y_BT"]["label"])
         self.assertIn("MD11_OVHD_ELEC_X_OFF_LT", by)
         self.assertNotIn("MD11_OVHD_ELEC_X_OFF_LT001", by)
+
+
+class CompositeTests(unittest.TestCase):
+    """D10: an outer %{case} on ANOTHER var that hands one position over to a nested %{case} on the
+    control's OWN var. TFDi's engine fire handles: the pull (0 Normal, 1 Generator Field Disconnect)
+    and, fully pulled, the handle's own rotation (0 Bottle 1, 1 Fuel and Hydraulic Disconnect,
+    2 Bottle 2). Scanned flat, the rotation's 0/1/2 overwrote the pull's words, so a stowed handle
+    read "Bottle 1" and the row's walker turned the bottle-discharge wheel while it read the pull."""
+
+    ENG1 = ("Engine 1 Fire Handle (%((L:MD11_AOVHD_ENG1FIRE_SW))%{case}%{:0}Normal"
+            "%{:1}Generator Field Disconnect%{:2}%((L:MD11_AOVHD_ENG1FIRE_KB))%{case}%{:0}Bottle 1"
+            "%{:1}Fuel and Hydraulic Disconnect%{:2}Bottle 2%{end}%{end})")
+
+    BLOCK = {
+        "outer_var": "MD11_AOVHD_ENG1FIRE_SW",
+        "outer_words": {"0": "Normal", "1": "Generator Field Disconnect"},
+        "delegate": "2",
+        "inner_var": "MD11_AOVHD_ENG1FIRE_KB",
+        "inner_words": {"0": "Bottle 1", "1": "Fuel and Hydraulic Disconnect", "2": "Bottle 2"},
+    }
+
+    def test_an_engine_fire_handle_is_a_composite_with_no_value_map(self):
+        # TFDi's Engine 1 handle, verbatim (2 and 3 differ only in the digit).
+        block = {}
+        label, var, value_map = g.parse_tooltip(self.ENG1, node_id="MD11_AOVHD_ENG1FIRE_KB",
+                                                composite=block)
+        self.assertEqual("Engine 1 Fire Handle", label)
+        self.assertEqual("MD11_AOVHD_ENG1FIRE_SW", var)     # the row's key keeps reading the pull
+        self.assertEqual({}, value_map)
+        self.assertEqual(self.BLOCK, block)
+        self.assertEqual(["0", "1"], list(block["outer_words"]))
+
+    def test_the_apu_fire_handle_is_not_a_composite(self):
+        # Its OUTER case reads its OWN var (the rotation); the block nested at position 1 is an
+        # if/else on the pull, which D2 names by its resting word. It stays a walkable combo.
+        block = {}
+        _, var, value_map = g.parse_tooltip(CaseLabelTests.APU, node_id="MD11_AOVHD_APUFIRE_KB",
+                                            composite=block)
+        self.assertEqual({}, block)
+        self.assertEqual("MD11_AOVHD_APUFIRE_KB", var)
+        self.assertEqual({"0": "Bottle 1", "1": "Normal", "2": "Bottle 2"}, value_map)
+
+    def test_a_nested_case_on_a_third_var_is_not_a_composite(self):
+        # Only the control's OWN var can take a position over; a nested case on any other var
+        # describes that other control and is left exactly as the flat scan reads it.
+        block = {}
+        _, _, value_map = g.parse_tooltip(self.ENG1, node_id="MD11_AOVHD_OTHER_KB", composite=block)
+        self.assertEqual({}, block)
+        self.assertEqual({"0": "Bottle 1", "1": "Fuel and Hydraulic Disconnect", "2": "Bottle 2"},
+                         value_map)
+
+    def test_a_control_without_nesting_is_unchanged(self):
+        block = {}
+        label, var, value_map = g.parse_tooltip(
+            "Emergency Power (%((L:MD11_OVHD_ELEC_EMER_PWR_KB))%{case}%{:0}Off%{:1}Armed%{:2}On%{end})",
+            node_id="MD11_OVHD_ELEC_EMER_PWR_KB", composite=block)
+        self.assertEqual({}, block)
+        self.assertEqual(("Emergency Power", "MD11_OVHD_ELEC_EMER_PWR_KB"), (label, var))
+        self.assertEqual({"0": "Off", "1": "Armed", "2": "On"}, value_map)
+
+    def test_collect_writes_the_block_on_the_composite_only(self):
+        xml = (use_template("TFDi_Design_MD11_ENG_Fire_Handle", GUARD_ID="MD11_AOVHD_ENG1FIRE_GRD",
+                            WHEEL_UP="73734", WHEEL_DOWN="73735", PULL_DOWN="73732", PUSH_UP="73733",
+                            TOOLTIPID=self.ENG1, NODE_ID="MD11_AOVHD_ENG1FIRE_KB")
+               + use_template("TFDi_Design_MD11_Switch_Template", NODE_ID="MD11_OVHD_ELEC_EMER_PWR_KB",
+                              TOOLTIPID="Emergency Power (%((L:MD11_OVHD_ELEC_EMER_PWR_KB))%{case}"
+                                        "%{:0}Off%{:1}Armed%{:2}On%{end})",
+                              LEFT_BUTTON_DOWN="1", RIGHT_BUTTON_DOWN="2"))
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg, _ = write_package(tmp, {"FlightDeck/AftOverhead.xml": xml})
+            controls, _ = g.collect(pkg)
+        by = {c["node_id"]: c for c in controls}
+        handle = by["MD11_AOVHD_ENG1FIRE_KB"]
+        self.assertEqual("handle", handle["kind"])
+        self.assertEqual("MD11_AOVHD_ENG1FIRE_SW", handle["state_var"])
+        self.assertEqual({}, handle["value_map"])
+        self.assertEqual(self.BLOCK, handle["composite"])
+        self.assertNotIn("composite", by["MD11_OVHD_ELEC_EMER_PWR_KB"])
 
 
 if __name__ == "__main__":

@@ -1007,7 +1007,89 @@ def _reads_one_state_var(text):
     return len(names) == 1 and names[0] not in LABEL_ONLY_VARS
 
 
-def parse_tooltip(tooltip, node_id=None, empty_cases=None):
+def _case_labels(text, empty_cases=None):
+    """value -> label for every %{case} position marker in `text`, in TFDi's words.
+
+    A position's label runs from its marker to the NEXT marker, so it can hold a nested block: the
+    APU fire handle's centre is
+      %{:1}%((L:MD11_AOVHD_APUFIRE_SW))%{if}Shutoff%{else}Normal%{end}
+    and cutting at the first '%' threw that position away (the combo sat blank at rest, and the
+    centre could not be selected). A nested if/else names the position by its resting (false)
+    word -- the word the inline collapse also reads first -- and '%%' is a literal percent sign
+    ("70%% N1" -> "70% N1"). Anything else is still cut at its first directive, and a later marker
+    with the same value wins: a nested %{case} read here whole overwrites the outer words with its
+    own, which is why a composite is split before its words are read (_composite_block).
+
+    `empty_cases`, when given, collects the value of every position TFDi left without words (TEXT,
+    not live data): it cannot be a combo entry, but it is reported for curation, never dropped
+    unseen.
+    """
+    out = {}
+    marks = list(CASE_MARK_RE.finditer(text))
+    for i, mark in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+        seg = text[mark.end():end].replace("%%", _LITERAL_PERCENT)
+        seg = INLINE_IF_RE.sub(lambda nested: nested.group(2), seg)
+        seg = seg.split("%{end}", 1)[0]
+        lbl = seg.split("%", 1)[0].replace(_LITERAL_PERCENT, "%").strip()
+        if lbl:
+            out[mark.group(1)] = lbl
+        elif empty_cases is not None and "%(" not in seg:
+            empty_cases.append(mark.group(1))
+    return out
+
+
+# D10: a state expression that is ONE outer %{case} on one var: '%((L:<var>))%{case}...%{end}'.
+OUTER_CASE_RE = re.compile(r"%\(\s*\(L:([A-Za-z0-9_]+)\)\s*\)\s*%\{case\}(.*)%\{end\}", re.S)
+# A %{case} nested inside it, ending at its own (first) %{end}.
+NESTED_CASE_RE = re.compile(r"%\(\s*\(L:([A-Za-z0-9_]+)\)\s*\)\s*%\{case\}.*?%\{end\}", re.S)
+# Stands in for the nested block while the outer positions are read, so the position it fills is
+# recognisable by its label.
+_NESTED_CASE_MARK = "\x01"
+
+
+def _composite_block(expr, node_id, empty_cases=None):
+    """The `composite` block of a state expression, or None.
+
+    A composite is an outer %{case} on ANOTHER var one of whose positions is, whole, a nested
+    %{case} on the control's OWN var (`node_id`). TFDi's three engine fire handles are exactly
+    that: the outer case reads the PULL (MD11_AOVHD_ENGnFIRE_SW: 0 Normal, 1 Generator Field
+    Disconnect) and position 2, fully pulled, hands over to the handle's own ROTATION
+    (MD11_AOVHD_ENGnFIRE_KB: 0 Bottle 1, 1 Fuel and Hydraulic Disconnect, 2 Bottle 2). No single
+    value_map can say that: scanned flat, the nested 0/1/2 overwrote the pull's words, so a stowed
+    handle read "Bottle 1", and the row's walker turned the bottle-discharge wheel while it read
+    the pull -- a walk that could never land. The block keeps both halves in TFDi's words:
+    outer_var, outer_words (without the delegate position), delegate, inner_var, inner_words.
+
+    Not a composite: an outer case on the control's own var (the APU fire handle -- its nested
+    block is an if/else on the pull, named by its resting word), a nested case on a third var, and
+    anything reading an airframe variant flag (a variant's words are never positions, D1).
+    """
+    if LABEL_ONLY_VARS.intersection(_lvars(expr)):
+        return None
+    m = OUTER_CASE_RE.fullmatch(expr.strip())
+    if not m or m.group(1) == node_id:
+        return None
+    body = m.group(2)
+    nested = list(NESTED_CASE_RE.finditer(body))
+    if len(nested) != 1 or nested[0].group(1) != node_id:
+        return None
+    n = nested[0]
+    outer = _case_labels(body[:n.start()] + _NESTED_CASE_MARK + body[n.end():], empty_cases)
+    delegates = [k for k, v in outer.items() if v == _NESTED_CASE_MARK]
+    inner = _case_labels(n.group(0), empty_cases)
+    if len(delegates) != 1 or not inner:
+        return None
+    return {
+        "outer_var": m.group(1),
+        "outer_words": {k: speakable(v) for k, v in outer.items() if k != delegates[0]},
+        "delegate": delegates[0],
+        "inner_var": node_id,
+        "inner_words": {k: speakable(v) for k, v in inner.items()},
+    }
+
+
+def parse_tooltip(tooltip, node_id=None, empty_cases=None, composite=None):
     """Split a TOOLTIPID into (label, state_var, value_map).
 
     TFDi tooltips come in two shapes.
@@ -1032,6 +1114,10 @@ def parse_tooltip(tooltip, node_id=None, empty_cases=None):
     variant flag (LABEL_ONLY_VARS) is refused unless LABEL_FIXES names the node. `empty_cases`,
     when given, collects the value of every %{case} position TFDi left without words (text, not
     live data) -- collect() reports those rather than letting them vanish.
+
+    `node_id` is also the control's OWN var for the composite rule (_composite_block): a state
+    expression that is one gets NO value_map, and `composite`, when given (a dict), receives the
+    block. Without a node id nothing is a composite.
     """
     if not tooltip:
         return None, None, {}
@@ -1079,35 +1165,16 @@ def parse_tooltip(tooltip, node_id=None, empty_cases=None):
     value_map = {}
 
     def _cases(text):
-        # A position's label runs from its marker to the NEXT marker, so it can hold a nested
-        # block: the APU fire handle's centre is
-        #   %{:1}%((L:MD11_AOVHD_APUFIRE_SW))%{if}Shutoff%{else}Normal%{end}
-        # and cutting at the first '%' threw that position away (the combo sat blank at rest, and
-        # the centre could not be selected). A nested if/else names the position by its resting
-        # (false) word -- the word the inline collapse also reads first -- and '%%' is a literal
-        # percent sign ("70%% N1" -> "70% N1"). Anything else is still cut at its first directive,
-        # and a later marker with the same value still wins: the engine fire handles nest the
-        # rotation's whole %{case} inside the pull's position 2, and the shipped map is what this
-        # flat scan makes of it -- changing that is a position change on an operable control.
-        out = {}
-        marks = list(CASE_MARK_RE.finditer(text))
-        for i, mark in enumerate(marks):
-            end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
-            seg = text[mark.end():end].replace("%%", _LITERAL_PERCENT)
-            seg = INLINE_IF_RE.sub(lambda nested: nested.group(2), seg)
-            seg = seg.split("%{end}", 1)[0]
-            lbl = seg.split("%", 1)[0].replace(_LITERAL_PERCENT, "%").strip()
-            if lbl:
-                out[mark.group(1)] = lbl
-            elif empty_cases is not None and "%(" not in seg:
-                # Empty TEXT, not live data: a position with no name. It cannot be a combo entry,
-                # but it is reported for curation, never dropped unseen.
-                empty_cases.append(mark.group(1))
-        return out
+        return _case_labels(text, empty_cases)
 
+    # A composite (D10) takes no value_map: its words describe TWO vars (_composite_block).
+    block = _composite_block(expr, node_id, empty_cases) if expr and node_id else None
+    if block is not None:
+        if composite is not None:
+            composite.update(block)
     # A variant flag's words are never positions: nothing is lifted from an expression that
     # reads one (LABEL_ONLY_VARS).
-    if expr and not LABEL_ONLY_VARS.intersection(_lvars(expr)):
+    elif expr and not LABEL_ONLY_VARS.intersection(_lvars(expr)):
         value_map = _cases(expr)
         if not value_map:
             m = re.search(r"%\{if\}([^%]*)%\{else\}([^%]*)%\{end\}", expr)
@@ -1347,8 +1414,10 @@ def collect(pkg_dir):
                 # An annunciator with no events is a lamp; its lit state is the
                 # L:var itself (VIS_VAR overrides which var drives visibility).
                 empty_cases = []
+                composite = {}
                 label, state_var, value_map = parse_tooltip(
-                    fields.get("TOOLTIPID"), node_id=node_id, empty_cases=empty_cases)
+                    fields.get("TOOLTIPID"), node_id=node_id, empty_cases=empty_cases,
+                    composite=composite)
 
                 key = (node_id, kind, tuple(sorted(events.items())))
                 if key in seen:
@@ -1393,6 +1462,8 @@ def collect(pkg_dir):
                         ),
                         "state_var": state_var or fields.get("VIS_VAR") or node_id,
                         "value_map": value_map,
+                        # Only on a composite (D10): every other control's JSON is unchanged.
+                        **({"composite": composite} if composite else {}),
                         "num_states": int(num_states)
                         if num_states and num_states.isdigit()
                         else None,
