@@ -48,6 +48,13 @@ public class ScreenshotService
     [DllImport("gdi32.dll")]
     private static extern bool DeleteObject(IntPtr hObject);
 
+    /// <summary>Sets the CALLING THREAD's DPI awareness; returns the previous context, or NULL when Windows does not know the one asked for.</summary>
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
+
+    /// <summary>DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 (windef.h): every coordinate in physical pixels, on every monitor.</summary>
+    private static readonly IntPtr DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = (IntPtr)(-4);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT
     {
@@ -61,18 +68,58 @@ public class ScreenshotService
 
     #endregion
 
+    /// <summary>How long a capture may run before it is abandoned and reported as a failed capture.</summary>
+    internal static readonly TimeSpan CaptureTimeout = TimeSpan.FromSeconds(10);
+
     /// <summary>
-    /// Captures the MSFS window as PNG bytes, or null if the window is not found.
+    /// Captures the MSFS window as PNG bytes, or null if the window is not found or the capture
+    /// did not finish within <see cref="CaptureTimeout"/>.
     ///
     /// PrintWindow with full-content rendering first: it asks the compositor for the window's own
     /// pixels, so a window sitting on top of the simulator — one of this app's, typically — does
     /// not end up in the picture (live-verified 2026-09-08 with the sim fully hidden behind
     /// another app). Some fullscreen setups hand back a black frame instead; that falls through
     /// to the screen copy this method always used, so nothing is worse than before.
+    ///
+    /// Bounded because PrintWindow is a synchronous cross-process call with no timeout of its own:
+    /// into a simulator that has stopped pumping messages it never returns, and a display read
+    /// holds <c>BaseAircraftDefinition._displayReadInFlight</c> until this method does — so one
+    /// hung capture used to refuse every later display read for the rest of the session. Both
+    /// callers already speak a failed capture when this returns null.
     /// </summary>
-    public async Task<byte[]?> CaptureAsync()
+    public Task<byte[]?> CaptureAsync() => CaptureWithinAsync(CaptureOnWorker, CaptureTimeout);
+
+    /// <summary>
+    /// Runs <paramref name="capture"/> on a pool thread and gives up after <paramref name="timeout"/>:
+    /// null, and a warning in debug.log. The abandoned worker is left to finish (or not) on its own
+    /// and its result is dropped. Only the timeout is swallowed — a capture that throws still throws
+    /// to the caller, exactly as before. Internal for ScreenshotServiceTests.
+    /// </summary>
+    internal static async Task<byte[]?> CaptureWithinAsync(Func<byte[]?> capture, TimeSpan timeout)
     {
-        return await Task.Run(() =>
+        try
+        {
+            return await Task.Run(capture).WaitAsync(timeout);
+        }
+        catch (TimeoutException)
+        {
+            Log.Warn("Services", $"Screenshot capture did not finish within {timeout.TotalMilliseconds:0} ms; abandoned it (the simulator may not be responding)");
+            return null;
+        }
+    }
+
+    /// <summary>The capture itself, on the pool thread <see cref="CaptureAsync"/> gives it.</summary>
+    private byte[]? CaptureOnWorker()
+    {
+        // Physical pixels for the whole capture. Program.cs makes this process SystemAware, and for
+        // such a thread GetWindowRect is DPI-VIRTUALISED on a monitor whose scale differs from the
+        // system DPI, while PrintWindow blits the window's real pixels: the bitmap sized from that
+        // rect crops or black-pads the frame, and the screen copy's source rectangle (the same rect)
+        // is off as well. So this thread — only for this capture — is per-monitor aware (V2), and the
+        // finally puts the old context back before the pool reuses the thread. Never await in here:
+        // the change and its restore must run on one thread.
+        IntPtr previousDpiContext = EnterPerMonitorDpiAwareness();
+        try
         {
             IntPtr hwnd = FindMsfsWindow();
             if (hwnd == IntPtr.Zero)
@@ -94,7 +141,32 @@ public class ScreenshotService
             }
 
             return CaptureByPrintWindow(hwnd, width, height) ?? CaptureByScreenCopy(rect, width, height);
-        });
+        }
+        finally
+        {
+            if (previousDpiContext != IntPtr.Zero)
+            {
+                SetThreadDpiAwarenessContext(previousDpiContext);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Makes the calling thread per-monitor DPI aware (V2) and returns the context to put back, or
+    /// <see cref="IntPtr.Zero"/> when nothing changed: the call returns NULL for a context Windows
+    /// does not know (V2 arrived in Windows 10 1703), and the function itself is missing before
+    /// 1607. Either way the capture runs exactly as it did before this was added.
+    /// </summary>
+    private static IntPtr EnterPerMonitorDpiAwareness()
+    {
+        try
+        {
+            return SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return IntPtr.Zero;
+        }
     }
 
     /// <summary>The window's composed content via PrintWindow; null when it fails or comes back blank.</summary>
@@ -102,7 +174,9 @@ public class ScreenshotService
     {
         try
         {
-            using var bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+            // 24-bit: GDI leaves a 32-bit bitmap's alpha byte undefined, and a PNG with no alpha
+            // channel cannot come out transparent.
+            using var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
             using (var graphics = Graphics.FromImage(bitmap))
             {
                 IntPtr hdc = graphics.GetHdc();

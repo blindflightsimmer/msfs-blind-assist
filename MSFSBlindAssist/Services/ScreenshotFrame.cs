@@ -10,20 +10,31 @@ namespace MSFSBlindAssist.Services;
 internal static class ScreenshotFrame
 {
     /// <summary>
-    /// True when every sample on a <paramref name="gridColumns"/> × <paramref name="gridRows"/>
-    /// grid is near black (R+G+B ≤ <paramref name="darkThreshold"/>). A bitmap smaller than the
-    /// grid is sampled pixel by pixel.
+    /// True when the frame is a failed capture: every sample on a <paramref name="gridColumns"/> ×
+    /// <paramref name="gridRows"/> grid is near black (R+G+B ≤ <paramref name="darkThreshold"/>)
+    /// AND the samples are uniform (their R+G+B values span at most <paramref name="uniformSpread"/>).
+    /// A failed PrintWindow frame is flat black. A night cockpit is dark too, but its dim lighting
+    /// varies from sample to sample, and a darkness-only test sent that real picture to the screen
+    /// copy — which captures whatever is on top of the simulator, an MSFSBA window included. A
+    /// bitmap smaller than the grid is sampled pixel by pixel.
     /// </summary>
-    internal static bool LooksBlank(Bitmap bitmap, int gridColumns = 24, int gridRows = 14, int darkThreshold = 30)
+    internal static bool LooksBlank(Bitmap bitmap, int gridColumns = 24, int gridRows = 14, int darkThreshold = 30,
+        int uniformSpread = 6)
     {
         int stepX = Math.Max(1, bitmap.Width / gridColumns);
         int stepY = Math.Max(1, bitmap.Height / gridRows);
+        int darkest = int.MaxValue;
+        int brightest = int.MinValue;
         for (int y = 0; y < bitmap.Height; y += stepY)
         {
             for (int x = 0; x < bitmap.Width; x += stepX)
             {
                 var c = bitmap.GetPixel(x, y);
-                if (c.R + c.G + c.B > darkThreshold) return false;
+                int sum = c.R + c.G + c.B;
+                if (sum > darkThreshold) return false;
+                darkest = Math.Min(darkest, sum);
+                brightest = Math.Max(brightest, sum);
+                if (brightest - darkest > uniformSpread) return false;
             }
         }
         return true;

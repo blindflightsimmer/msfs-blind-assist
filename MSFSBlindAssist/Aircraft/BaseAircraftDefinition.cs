@@ -822,7 +822,9 @@ public abstract class BaseAircraftDefinition : IAircraftDefinition
                     }
                     if (!view.Verified)
                     {
-                        announcer.Announce("Could not switch the cockpit view, reading the current view.");
+                        // "Could not confirm", never "could not switch": Switch and Unknown both WRITE the
+                        // view before verifying, so only the read-back failed and the camera may have moved.
+                        announcer.Announce("Could not confirm the cockpit view switch; reading what is on screen.");
                     }
                 }
 
