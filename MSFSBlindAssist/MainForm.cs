@@ -1068,6 +1068,10 @@ public partial class MainForm : Form
         // Coherent allows for that view. Forms first, then the client, as on the swap path.
         if (md11McduForm != null && !md11McduForm.IsDisposed) md11McduForm.Dispose();
         if (md11EfbForm != null && !md11EfbForm.IsDisposed) md11EfbForm.Dispose();
+        // The Ctrl+M monitor manager holds no timer or socket; disposed here so every MD-11 window
+        // ends the same way on exit as on a swap (MainForm.AircraftSwitch.cs).
+        if (md11MonitorManagerForm != null && !md11MonitorManagerForm.IsDisposed) md11MonitorManagerForm.Dispose();
+        md11MonitorManagerForm = null;
         coherentMd11Efb?.Dispose();
 
         // Clean up 787 forms + the IRS / CAS Coherent clients

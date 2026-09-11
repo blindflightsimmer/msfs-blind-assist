@@ -855,6 +855,17 @@ public partial class MainForm
             md11McduForm = null;
         }
 
+        // The MD-11 monitor manager (Ctrl+M), for the stale-snapshot reason its A380/Fenix/A32NX/
+        // HS787/iFly siblings are disposed on swap: its rows are built from the definition's
+        // variables when it is constructed, so a surviving instance — left open, or re-shown after
+        // the MD-11 is loaded again — lists the OUTGOING definition. The next Ctrl+M rebuilds it
+        // from the live one (ShowMd11MonitorManagerDialog's null/IsDisposed check).
+        if (md11MonitorManagerForm != null && !md11MonitorManagerForm.IsDisposed)
+        {
+            md11MonitorManagerForm.Dispose();
+            md11MonitorManagerForm = null;
+        }
+
         // The MD-11 EFB client holds the ONE inspector socket Coherent allows for that view —
         // leaving it open would block the page for the rest of the process, so the next aircraft
         // (or a re-loaded MD-11) could never connect to its EFB again.
