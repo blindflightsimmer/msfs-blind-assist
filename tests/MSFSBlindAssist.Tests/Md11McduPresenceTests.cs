@@ -205,3 +205,68 @@ public class Md11McduEraseRedrawTests
             Md11McduPresence.Decide(Md11McduPresenceState.NoData, TimeSpan.Zero));
     }
 }
+
+/// <summary>
+/// What the window shows the moment it STARTS following a unit — a unit switch, a first open, a
+/// re-show (review round 2, C5).
+///
+/// Before, the switch drew only a unit with content; anything else waited for the poll, whose
+/// "hold the page through a repaint" then held the PREVIOUS unit's rows under the new unit's
+/// name — for up to the blank settle on a unit caught mid-erase, because each unit's blank clock
+/// runs only while the window polls. A first open onto a blank unit showed an empty list for as
+/// long. Now the list is replaced at once: the unit's page, its advisory, or a waiting row.
+/// </summary>
+public class Md11McduResyncTests
+{
+    [Fact]
+    public void A_unit_with_a_page_is_drawn_at_once() =>
+        Assert.Equal(Md11McduDisplayAction.ShowContent,
+            Md11McduPresence.DecideOnResync(Md11McduPresenceState.Content, TimeSpan.Zero));
+
+    [Fact]
+    public void A_unit_that_never_delivered_shows_its_no_data_row_at_once() =>
+        Assert.Equal(Md11McduDisplayAction.ShowAdvisory,
+            Md11McduPresence.DecideOnResync(Md11McduPresenceState.NoData, TimeSpan.Zero));
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(438)]
+    [InlineData(Md11McduPresence.BlankSettleMs - 1)]
+    public void A_blank_that_has_not_settled_shows_the_waiting_row_never_the_previous_page(int ms) =>
+        Assert.Equal(Md11McduDisplayAction.ShowWaiting,
+            Md11McduPresence.DecideOnResync(Md11McduPresenceState.Blank, TimeSpan.FromMilliseconds(ms)));
+
+    [Fact]
+    public void A_settled_blank_shows_the_blank_advisory_at_once() =>
+        Assert.Equal(Md11McduDisplayAction.ShowAdvisory,
+            Md11McduPresence.DecideOnResync(Md11McduPresenceState.Blank,
+                TimeSpan.FromMilliseconds(Md11McduPresence.BlankSettleMs)));
+
+    [Fact]
+    public void The_per_tick_decision_never_answers_with_the_waiting_row()
+    {
+        // Poll keeps holding what the list shows (this unit's page, or the waiting row) through a
+        // repaint; only the resync may put the waiting row up.
+        foreach (var state in new[] { Md11McduPresenceState.NoData, Md11McduPresenceState.Blank, Md11McduPresenceState.Content })
+            foreach (var ms in new[] { 0, 438, Md11McduPresence.BlankSettleMs, 30_000 })
+                Assert.NotEqual(Md11McduDisplayAction.ShowWaiting,
+                    Md11McduPresence.Decide(state, TimeSpan.FromMilliseconds(ms)));
+    }
+
+    [Theory]
+    [InlineData(Md11McduUnit.Left, "Left")]
+    [InlineData(Md11McduUnit.Center, "Center")]
+    [InlineData(Md11McduUnit.Right, "Right")]
+    public void The_waiting_row_names_the_unit_and_claims_nothing_about_it(Md11McduUnit unit, string name)
+    {
+        // The unit may be mid-repaint or genuinely dark; which is not known yet.
+        var row = Md11McduPresence.Waiting(unit);
+        Assert.Contains(name, row);
+        Assert.DoesNotContain("blank", row, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("no data", row, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void The_waiting_row_reads_as_a_sentence() =>
+        Assert.Equal("Waiting for the Right MCDU.", Md11McduPresence.Waiting(Md11McduUnit.Right));
+}

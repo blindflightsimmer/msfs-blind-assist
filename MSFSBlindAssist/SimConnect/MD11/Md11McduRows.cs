@@ -86,6 +86,22 @@ public static class Md11McduRows
             : -1;
     }
 
+    /// <summary>
+    /// Where the cursor lands when the PAGE changes, and when a redraw left nothing selected:
+    /// LSK line 1's VALUE row, found by identity. Never "item 1" — the window used that, and item
+    /// 1 is line 1's LABEL on every page whose first label is not blank (the F-PLN page's FROM
+    /// header), a row no line-select key acts on. Falls back to the title row, then the first
+    /// row; -1 for an empty list.
+    /// </summary>
+    public static int PageStart(IReadOnlyList<Md11McduRow> rows)
+    {
+        int line1 = IndexOf(rows, Md11McduRowKind.Value, 1);
+        if (line1 >= 0) return line1;
+        int title = IndexOf(rows, Md11McduRowKind.Title, 0);
+        if (title >= 0) return title;
+        return rows.Count > 0 ? 0 : -1;
+    }
+
     private static int IndexOf(IReadOnlyList<Md11McduRow> rows, Md11McduRowKind kind, int line)
     {
         for (int i = 0; i < rows.Count; i++)

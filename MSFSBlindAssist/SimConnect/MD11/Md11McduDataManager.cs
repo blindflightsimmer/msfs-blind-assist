@@ -337,35 +337,23 @@ public sealed class Md11McduDataManager : IDisposable
     /// under its label, right-aligned fields align to column 23). Collapsing blanks would destroy
     /// the column relationship the layout encodes. Trailing blanks ARE trimmed, since padding to
     /// 24 columns just makes a screen reader announce a run of spaces.
+    ///
+    /// Each cell's font-size flag is not read: nothing renders it, and it takes no part in what
+    /// counts as a change (see <see cref="Md11McduChar.Large"/>).
     /// </summary>
     private static Md11McduScreen Decode(Md11McduUnit unit, Md11McduExportData raw)
     {
         var lines = new string[Md11McduLayout.Rows];
-        var isLarge = new bool[Md11McduLayout.Rows];
 
         for (var row = 0; row < Md11McduLayout.Rows; row++)
         {
             var sb = new StringBuilder(Md11McduLayout.Cols);
-            var large = 0;
-            var glyphs = 0;
-
             for (var col = 0; col < Md11McduLayout.Cols; col++)
             {
                 var cell = raw.Text[row * Md11McduLayout.Cols + col];
-                var ch = cell.Value == 0 ? ' ' : (char)cell.Value;
-                sb.Append(ch);
-
-                if (ch != ' ')
-                {
-                    glyphs++;
-                    if (cell.Large) large++;
-                }
+                sb.Append(cell.Value == 0 ? ' ' : (char)cell.Value);
             }
-
             lines[row] = sb.ToString().TrimEnd();
-            // "Predominantly large" rather than "any large": a line is a title/value line or a
-            // label line as a whole, and a stray large glyph shouldn't flip its role.
-            isLarge[row] = glyphs > 0 && large * 2 > glyphs;
         }
 
         return new Md11McduScreen
@@ -376,25 +364,21 @@ public sealed class Md11McduDataManager : IDisposable
             Msg = raw.Msg,
             Ofst = raw.Ofst,
             Lines = lines,
-            LineIsLarge = isLarge,
         };
     }
 
     /// <summary>
-    /// Content equality. Compares the flags too: `msg` lighting up is a real event with no text
-    /// change behind it, and a blind pilot has no other way to notice it. And the per-line font
-    /// size: this is the STORAGE gate as well as the event gate (an identical repeat keeps the old
-    /// object), and the size carries meaning the window does not yet render — a font-only change
-    /// must still reach it once it does.
+    /// Content equality — the STORAGE gate: an identical repeat keeps the old object, so the
+    /// window's reference shortcut skips it. Compares the flags too: `msg` lighting up is a real
+    /// event with no text change behind it, and a blind pilot has no other way to notice it. NOT
+    /// the font size: nothing renders it, and counting it made a font-only change re-render the
+    /// page and re-restore the window's cursor for no difference anyone could see or hear.
     /// </summary>
     private static bool SameContent(Md11McduScreen a, Md11McduScreen b)
     {
         if (a.Dspy != b.Dspy || a.Fail != b.Fail || a.Msg != b.Msg || a.Ofst != b.Ofst) return false;
         for (var i = 0; i < Md11McduLayout.Rows; i++)
-        {
             if (!string.Equals(a.Lines[i], b.Lines[i], StringComparison.Ordinal)) return false;
-            if (a.LineIsLarge[i] != b.LineIsLarge[i]) return false;
-        }
         return true;
     }
 

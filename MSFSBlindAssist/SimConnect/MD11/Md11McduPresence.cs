@@ -11,6 +11,12 @@ public enum Md11McduDisplayAction
 
     /// <summary>Render the frame normally.</summary>
     ShowContent,
+
+    /// <summary>
+    /// Show the waiting row (<see cref="Md11McduPresence.Waiting"/>). Only ever the answer of
+    /// <see cref="Md11McduPresence.DecideOnResync"/>, never of <see cref="Md11McduPresence.Decide"/>.
+    /// </summary>
+    ShowWaiting,
 }
 
 /// <summary>What a unit's exported screen actually amounts to.</summary>
@@ -101,6 +107,29 @@ public static class Md11McduPresence
             ? Md11McduDisplayAction.ShowAdvisory
             : Md11McduDisplayAction.HoldLastPage,
     };
+
+    /// <summary>
+    /// What the window shows at the moment it STARTS following a unit — a unit switch, a first
+    /// open, a re-show — as opposed to <see cref="Decide"/>, which judges each later tick.
+    ///
+    /// The one difference is the blank that has not settled yet. On a tick, holding the page on
+    /// screen is right: it is this unit's page and the blank is its repaint. At a switch the list
+    /// holds ANOTHER unit's page, and on a first open nothing at all, so "hold" would show that
+    /// page under this unit's name — or an empty list — for up to <see cref="BlankSettleMs"/>.
+    /// The waiting row stands in until the unit's page arrives or its blank settles.
+    /// </summary>
+    public static Md11McduDisplayAction DecideOnResync(Md11McduPresenceState state, TimeSpan blankFor)
+    {
+        var action = Decide(state, blankFor);
+        return action == Md11McduDisplayAction.HoldLastPage ? Md11McduDisplayAction.ShowWaiting : action;
+    }
+
+    /// <summary>
+    /// The one row shown between a switch (or an open) and the unit's first believable frame. It
+    /// names the unit and claims nothing about it — mid-repaint and dark look the same until the
+    /// blank settles. Read when focus is on the list, like the advisory rows; never spoken.
+    /// </summary>
+    public static string Waiting(Md11McduUnit unit) => $"Waiting for the {unit} MCDU.";
 
     public static Md11McduPresenceState Classify(Md11McduScreen? screen)
     {

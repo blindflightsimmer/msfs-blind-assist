@@ -267,7 +267,9 @@ public class Md11McduForm : Form
 
     /// <summary>
     /// Adopts the selected unit's CURRENT screen as the baseline without speaking any of it, and
-    /// draws it at once when it has content.
+    /// replaces the list at once with what that unit shows: its page, its advisory, or — for a
+    /// blank that has not settled yet — the waiting row (<see cref="Md11McduPresence.DecideOnResync"/>).
+    /// The list never goes on showing the page the window was following a moment ago.
     ///
     /// Shared by the unit switch and by <see cref="ShowForm"/> — the two moments the window starts
     /// following a screen it was not following a moment ago. After a switch the cached page
@@ -298,12 +300,34 @@ public class Md11McduForm : Form
             _scratchpad.OnPoll(current.Scratchpad.Trim(), DateTime.UtcNow);
         _lastAnnouncedFlags = current == null ? "" : FlagsOf(current);
 
-        // Render at once only when the unit has CONTENT. A blank or never-delivered unit waits
-        // for the next 250 ms tick, whose blank-hold judgement (Md11McduPresence.Decide) this
-        // direct call bypasses — a unit caught mid-erase would otherwise speak a spurious "blank"
-        // some 300 ms before its page appears.
-        if (Md11McduPresence.Classify(current) == Md11McduPresenceState.Content)
-            Render(silentTitle: true);
+        // Replace the list NOW with this unit's own state. Waiting for the next tick kept the
+        // PREVIOUS unit's rows on screen under this unit's name — for up to the blank settle on a
+        // unit caught mid-erase, since its blank clock runs only while the window polls — and a
+        // first open onto a blank unit showed an empty list for as long. The clocks are ticked
+        // first so a blank that has already settled is believed at once; one that has not gets
+        // the waiting row, and Poll takes over from there (its HoldLastPage now holds the waiting
+        // row). Still nothing is SPOKEN: every branch is silent, and a unit caught mid-erase shows
+        // the waiting row, never a spurious "blank".
+        var manager = _sim.Md11McduDataManager;
+        if (manager != null) TickBlankClocks(manager);
+        var presence = Md11McduPresence.Classify(current);
+        var since = _blankSince[(int)_unit];
+        var blankFor = since == null ? TimeSpan.Zero : DateTime.UtcNow - since.Value;
+
+        switch (Md11McduPresence.DecideOnResync(presence, blankFor))
+        {
+            case Md11McduDisplayAction.ShowContent:
+                Render(silentTitle: true);
+                break;
+            case Md11McduDisplayAction.ShowAdvisory:
+                // A never-delivered unit or a settled blank: the rows Poll would show, at once.
+                // Re-drawn identically by the next tick, and silent — the flags were re-baselined above.
+                RenderAdvisory(presence, current);
+                break;
+            default:
+                RenderWaiting();
+                break;
+        }
     }
 
     // ---------------------------------------------------------------------------------
@@ -698,7 +722,7 @@ public class Md11McduForm : Form
 
             if (change.PageChanged)
             {
-                if (mcduDisplay.Items.Count > 1) mcduDisplay.SelectedIndex = 1;
+                SelectPageStart();
             }
             else
             {
@@ -713,8 +737,7 @@ public class Md11McduForm : Form
         // Never leave the list with nothing selected (a first-ever render of a frame whose title
         // row is empty adopts no title and restores no cursor): the screen reader would announce
         // an empty list and Space/Enter would act on nothing. Line 1, as a page change lands.
-        if (mcduDisplay.SelectedIndex < 0 && mcduDisplay.Items.Count > 0)
-            mcduDisplay.SelectedIndex = mcduDisplay.Items.Count > 1 ? 1 : 0;
+        if (mcduDisplay.SelectedIndex < 0) SelectPageStart();
     }
 
     /// <summary>
@@ -760,6 +783,18 @@ public class Md11McduForm : Form
         return _rows != null && i >= 0 && i < _rows.Count ? _rows[i] : null;
     }
 
+    /// <summary>
+    /// Puts the cursor on line 1 — its VALUE row, by identity (<see cref="Md11McduRows.PageStart"/>),
+    /// never list item 1, which on most pages is line 1's label.
+    /// </summary>
+    private void SelectPageStart()
+    {
+        if (_rows == null) return;
+        int index = Md11McduRows.PageStart(_rows);
+        if (index >= 0 && index < mcduDisplay.Items.Count && mcduDisplay.SelectedIndex != index)
+            mcduDisplay.SelectedIndex = index;
+    }
+
     /// <summary>Puts the cursor back on the row it was on before the redraw, if that row still exists.</summary>
     private void RestoreCursor(Md11McduRow? previous)
     {
@@ -767,6 +802,23 @@ public class Md11McduForm : Form
         int index = Md11McduRows.Restore(_rows, previous);
         if (index >= 0 && index < mcduDisplay.Items.Count && mcduDisplay.SelectedIndex != index)
             mcduDisplay.SelectedIndex = index;
+    }
+
+    /// <summary>
+    /// Replaces the list with the ONE waiting row (<see cref="Md11McduPresence.Waiting"/>): the
+    /// resync's answer for a unit whose blank has not settled — shown instead of the page the
+    /// window was following before, which belongs to another unit, or (on a first open) instead
+    /// of an empty list. Poll replaces it with the unit's page when one arrives, or with the
+    /// blank advisory once the blank settles. Nothing is spoken: the row is read when focus is on
+    /// the list, the channel the advisory rows use.
+    /// </summary>
+    private void RenderWaiting()
+    {
+        if (_rows != null) _memory.RememberCursor(_unit, CursorRow());   // a re-show keeps this unit's own row remembered
+        mcduDisplay.SetLines(new[] { Md11McduPresence.Waiting(_unit) });
+        _rows = null;
+        if (mcduDisplay.SelectedIndex < 0 && mcduDisplay.Items.Count > 0) mcduDisplay.SelectedIndex = 0;
+        statusBox.Text = $"MCDU: {_unit} waiting";
     }
 
     /// <summary>

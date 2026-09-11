@@ -82,9 +82,15 @@ public struct Md11McduChar
     public ushort Value;
 
     /// <summary>
-    /// Large font vs small. The MD-11 draws page titles and primary values large and their
-    /// labels small, so this is the aircraft telling us the line's ROLE — keep it: it is what
-    /// lets the read-out distinguish a title/value from its label without guessing from position.
+    /// Large font vs small, per cell. KEPT because it is one of the two fields of TFDi's packed
+    /// 3-byte cell (<c>struct MCDUCHAR { char16_t value; bool large; }</c>), which this struct
+    /// mirrors field for field — Md11McduLayoutTests pins the 3 bytes. Nothing READS it: the
+    /// window's rows come from their position on the 14-row grid (<see cref="Md11McduRows"/>),
+    /// and a font-only change is deliberately not a content change
+    /// (<c>Md11McduDataManager.SameContent</c>). The flag does carry meaning — on the F-PLN page
+    /// entered values are large and FMS predictions small (docs/md11.md) — but a consumer would
+    /// need per-CELL sizes on the screen model; the per-line majority once decoded from it had no
+    /// reader and was removed.
     /// </summary>
     [MarshalAs(UnmanagedType.U1)]
     public bool Large;
@@ -136,9 +142,6 @@ public sealed class Md11McduScreen
 
     /// <summary>14 lines, each up to 24 characters, trailing blanks trimmed.</summary>
     public string[] Lines { get; init; } = new string[Md11McduLayout.Rows];
-
-    /// <summary>Per-line "is this line predominantly large font" — the title/value vs label cue.</summary>
-    public bool[] LineIsLarge { get; init; } = new bool[Md11McduLayout.Rows];
 
     /// <summary>
     /// The scratchpad. On the MD-11 the scratchpad is the BOTTOM line of the display (row 13),

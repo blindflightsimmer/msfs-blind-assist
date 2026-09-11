@@ -191,6 +191,53 @@ public class Md11McduCursorTests
         Assert.Equal(-1, Md11McduRows.Restore(Md11McduRows.Build(LiveMenuPage()), null));
     }
 
+    // ----------------------------------------------------------- Page start
+
+    /// <summary>
+    /// Review round 2 (C4): a page change put the cursor on list ITEM 1 — line 1's LABEL on the
+    /// F-PLN page (" FROM    ATO  SPD   ALT"), a row no line-select key acts on. It lands on line
+    /// 1's VALUE row, found by identity, and so does the "nothing selected" fallback.
+    /// </summary>
+    [Fact]
+    public void A_page_change_lands_on_line_1s_value_row_not_on_item_1()
+    {
+        var fpln = Md11McduRows.Build(LiveFplnPage1());
+        var start = Md11McduRows.PageStart(fpln);
+
+        Assert.Equal(Md11McduRowKind.Value, fpln[start].Kind);
+        Assert.Equal(1, fpln[start].Line);
+        Assert.Equal(2, start);
+        Assert.Equal(Md11McduRowKind.Label, fpln[1].Kind);   // what index 1 used to land on
+    }
+
+    [Fact]
+    public void Line_1s_value_row_is_item_1_only_when_its_label_is_blank()
+    {
+        var rows = Md11McduRows.Build(Screen(
+            "        INIT",
+            "",
+            "<INDEX"));
+
+        Assert.Equal(1, Md11McduRows.PageStart(rows));
+        Assert.Equal("1: <INDEX", rows[1].Text);
+    }
+
+    [Fact]
+    public void Without_a_line_1_row_the_cursor_goes_to_the_title_then_to_the_first_row()
+    {
+        var titleAndScratchpad = new[]
+        {
+            new Md11McduRow("Title: MENU", Md11McduRowKind.Title, 0),
+            new Md11McduRow("Scratchpad: ", Md11McduRowKind.Scratchpad, 0),
+        };
+        Assert.Equal(0, Md11McduRows.PageStart(titleAndScratchpad));
+
+        var scratchpadOnly = new[] { new Md11McduRow("Scratchpad: ", Md11McduRowKind.Scratchpad, 0) };
+        Assert.Equal(0, Md11McduRows.PageStart(scratchpadOnly));
+
+        Assert.Equal(-1, Md11McduRows.PageStart(Array.Empty<Md11McduRow>()));
+    }
+
     // --------------------------------------------------------------- Title
 
     [Fact]
