@@ -76,12 +76,6 @@ public sealed class Md11McduDataManager : IDisposable
     // this initializer — see that constructor for why that matters.
     private readonly Md11McduRegistrationSteps _steps = new();
 
-    /// <summary>Raised when a screen's CONTENT changes (not on every delivery).</summary>
-    public event EventHandler<Md11McduScreen>? ScreenUpdated;
-
-    /// <summary>True once at least one screen has arrived — the "is ready" gate.</summary>
-    public bool IsReady { get; private set; }
-
     public Md11McduDataManager(Microsoft.FlightSimulator.SimConnect.SimConnect simConnect)
     {
         _simConnect = simConnect;
@@ -320,8 +314,6 @@ public sealed class Md11McduDataManager : IDisposable
             // records an event never once observed, while implying to a later reader that someone
             // has seen one. A settled blank already reaches the pilot as a row in the window,
             // which is the channel that matters and the one they can report from.
-            IsReady = true;
-            if (changed) ScreenUpdated?.Invoke(this, screen);
         }
         catch (Exception ex)
         {
@@ -383,8 +375,8 @@ public sealed class Md11McduDataManager : IDisposable
     }
 
     /// <summary>
-    /// Forgets every cached screen and the readiness gate, keeping the registration, the
-    /// subscriptions and the listeners. Called when the MD-11 is loaded again on a connection
+    /// Forgets every cached screen, keeping the registration and the subscriptions. Called when the
+    /// MD-11 is loaded again on a connection
     /// this manager already serves, right before <see cref="RequestAll"/> re-issues the
     /// snapshot: the aircraft was unloaded in between, so what is cached is the PREVIOUS load's
     /// page. It buys two things — a later-opened window cannot read that page as current if the
@@ -396,13 +388,11 @@ public sealed class Md11McduDataManager : IDisposable
     public void Reset()
     {
         lock (_lock) Array.Clear(_screens);
-        IsReady = false;
     }
 
     /// <summary>Teardown for the CONNECTION going away — the only time this manager is let go.</summary>
     public void Dispose()
     {
-        ScreenUpdated = null;
         Reset();
     }
 }

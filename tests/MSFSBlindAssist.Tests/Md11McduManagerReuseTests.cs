@@ -15,10 +15,11 @@ namespace MSFSBlindAssist.Tests;
 /// The fix keeps the manager across aircraft switches and, on reuse, RESETS its cache before the
 /// snapshot is re-issued: the aircraft was unloaded in between, so the cached page belongs to the
 /// previous load, and a later-opened window must not read it as current if the snapshot never
-/// answers. That reset is what these tests pin — it must forget the pages and the readiness gate
-/// while KEEPING the listeners (Dispose, the only cache-clearing path before, also detached them),
-/// and a snapshot identical to the old page must land as a first delivery again rather than be
-/// dropped as an identical repeat.
+/// answers. That reset is what these tests pin, through the only members the MCDU window reads —
+/// GetScreen, fed by Deliver: Reset must forget every unit's page, and a snapshot identical to the
+/// old page must land as a first delivery again — a NEW screen object, which the window's
+/// reference shortcut (it skips a render when GetScreen hands back the object it last drew) then
+/// renders — rather than be dropped as an identical repeat.
 /// </summary>
 public class Md11McduManagerReuseTests
 {
@@ -34,38 +35,37 @@ public class Md11McduManagerReuseTests
     private static readonly Md11McduUnit[] AllUnits = { Md11McduUnit.Left, Md11McduUnit.Center, Md11McduUnit.Right };
 
     [Fact]
-    public void Reset_forgets_every_screen_and_the_readiness_gate_so_the_window_reports_no_data_until_the_snapshot_lands()
+    public void Reset_forgets_every_screen_so_the_window_reports_no_data_until_the_snapshot_lands()
     {
         var manager = new Md11McduDataManager();
         manager.Deliver(Md11McduUnit.Left, Page("MENU"));
         manager.Deliver(Md11McduUnit.Right, Page("A/C STATUS"));
-        Assert.True(manager.IsReady);
         Assert.NotNull(manager.GetScreen(Md11McduUnit.Left));
+        Assert.NotNull(manager.GetScreen(Md11McduUnit.Right));
 
         manager.Reset();
 
-        Assert.False(manager.IsReady);
         foreach (var unit in AllUnits)
             Assert.Null(manager.GetScreen(unit));
     }
 
     [Fact]
-    public void A_delivery_after_Reset_repopulates_and_reaches_the_still_subscribed_listener_even_when_the_page_did_not_change()
+    public void A_snapshot_identical_to_the_old_page_lands_again_after_Reset_as_a_new_screen()
     {
         var manager = new Md11McduDataManager();
-        var updates = 0;
-        manager.ScreenUpdated += (_, _) => updates++;
-
         manager.Deliver(Md11McduUnit.Left, Page("MENU"));
-        Assert.Equal(1, updates);
+        var beforeReset = manager.GetScreen(Md11McduUnit.Left);
 
         manager.Reset();
         // The re-issued start-up snapshot: the aircraft came back on the same page.
         manager.Deliver(Md11McduUnit.Left, Page("MENU"));
 
-        Assert.Equal(2, updates);                       // Reset kept the listener AND made this a first delivery again
-        Assert.True(manager.IsReady);
-        Assert.Equal("MENU", manager.GetScreen(Md11McduUnit.Left)!.Title);
+        var afterReset = manager.GetScreen(Md11McduUnit.Left);
+        Assert.NotNull(afterReset);
+        Assert.Equal("MENU", afterReset!.Title);
+        // A NEW object: the snapshot landed as a first delivery. Dropped as an identical repeat, it
+        // would still be the pre-Reset object and the window's reference shortcut would skip it.
+        Assert.NotSame(beforeReset, afterReset);
     }
 
     [Fact]
@@ -74,14 +74,25 @@ public class Md11McduManagerReuseTests
         // The snapshot echoing what the subscription just delivered must keep the OLD object —
         // the form's reference shortcut depends on it. Reset must not have loosened this.
         var manager = new Md11McduDataManager();
-        var updates = 0;
-        manager.ScreenUpdated += (_, _) => updates++;
 
         manager.Deliver(Md11McduUnit.Center, Page("MENU"));
         var first = manager.GetScreen(Md11McduUnit.Center);
         manager.Deliver(Md11McduUnit.Center, Page("MENU"));
 
-        Assert.Equal(1, updates);
         Assert.Same(first, manager.GetScreen(Md11McduUnit.Center));
+    }
+
+    [Fact]
+    public void A_changed_page_replaces_the_cached_screen()
+    {
+        var manager = new Md11McduDataManager();
+        manager.Deliver(Md11McduUnit.Right, Page("MENU"));
+        var first = manager.GetScreen(Md11McduUnit.Right);
+
+        manager.Deliver(Md11McduUnit.Right, Page("A/C STATUS"));
+
+        var current = manager.GetScreen(Md11McduUnit.Right);
+        Assert.NotSame(first, current);
+        Assert.Equal("A/C STATUS", current!.Title);
     }
 }

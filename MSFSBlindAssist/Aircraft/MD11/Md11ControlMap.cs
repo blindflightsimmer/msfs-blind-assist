@@ -19,6 +19,13 @@ namespace MSFSBlindAssist.Aircraft.MD11;
 /// <c>Resources\</c> is a per-file <c>&lt;None Update&gt;</c> + CopyToOutputDirectory (the build
 /// does not wildcard-copy that folder), but a missing copied file degrades to an MD-11 with
 /// ZERO controls and no obvious cause. Embedding makes that failure impossible.
+///
+/// The JSON carries two fields this model deliberately does not read: each control's
+/// <c>template</c> (the ModelBehaviorDefs template it was generated from) and the top-level
+/// <c>state_only_vars</c> list (control-table vars no clickable control references — animation
+/// ranges, exterior states, the FCP push/pull latches). Both are there for whoever reviews the
+/// generated map; nothing in the app consumes them, and System.Text.Json skips a key with no
+/// property, so a property for either would only be dead code again.
 /// </summary>
 public sealed class Md11ControlMap
 {
@@ -33,14 +40,6 @@ public sealed class Md11ControlMap
     /// </summary>
     [JsonPropertyName("export_vars")]
     public List<string> ExportVars { get; set; } = new();
-
-    /// <summary>
-    /// Control-table vars that no ModelBehaviorDefs control references — animation ranges
-    /// (<c>_RNG</c>), exterior states, and the FCP push/pull latch vars. Kept for reference;
-    /// MSFSBA does not register them wholesale.
-    /// </summary>
-    [JsonPropertyName("state_only_vars")]
-    public List<string> StateOnlyVars { get; set; } = new();
 
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -108,9 +107,6 @@ public sealed class Md11Control
     /// </summary>
     [JsonPropertyName("kind")]
     public string Kind { get; set; } = string.Empty;
-
-    [JsonPropertyName("template")]
-    public string Template { get; set; } = string.Empty;
 
     /// <summary>Cockpit area label ("Overhead", "Pedestal", …) — becomes the panel section.</summary>
     [JsonPropertyName("area")]

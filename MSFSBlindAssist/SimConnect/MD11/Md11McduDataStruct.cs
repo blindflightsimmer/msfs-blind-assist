@@ -60,9 +60,6 @@ public static class Md11McduLayout
     public const int OffsetCenter = DataSize;        // 1012
     public const int OffsetRight = DataSize * 2;     // 2024
 
-    /// <summary>Whole area = three MCDUs back to back.</summary>
-    public const int AreaSize = DataSize * 3;        // 3036
-
     /// <summary>The SimConnect client-data-area registration name.</summary>
     public const string AreaName = "MD11MCDU";
 }
@@ -151,7 +148,4 @@ public sealed class Md11McduScreen
 
     /// <summary>The page title — conventionally the top line.</summary>
     public string Title => Lines[0] ?? string.Empty;
-
-    /// <summary>Whole screen as text, one line per row, for a snapshot read-out.</summary>
-    public override string ToString() => string.Join(Environment.NewLine, Lines);
 }

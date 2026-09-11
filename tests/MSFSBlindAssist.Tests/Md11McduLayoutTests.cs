@@ -84,8 +84,11 @@ public class Md11McduLayoutTests
         Assert.Equal(0, Md11McduLayout.OffsetLeft);
         Assert.Equal(1012, Md11McduLayout.OffsetCenter);
         Assert.Equal(2024, Md11McduLayout.OffsetRight);
-        Assert.Equal(3036, Md11McduLayout.AreaSize);
-        Assert.Equal(Md11McduLayout.DataSize * 3, Md11McduLayout.AreaSize);
+        // Each unit starts where the one before it ends, and the right unit ends at byte 3036:
+        // three units back to back, no gap and no tail.
+        Assert.Equal(Md11McduLayout.OffsetLeft + Md11McduLayout.DataSize, Md11McduLayout.OffsetCenter);
+        Assert.Equal(Md11McduLayout.OffsetCenter + Md11McduLayout.DataSize, Md11McduLayout.OffsetRight);
+        Assert.Equal(3036, Md11McduLayout.OffsetRight + Md11McduLayout.DataSize);
     }
 
     [Fact]

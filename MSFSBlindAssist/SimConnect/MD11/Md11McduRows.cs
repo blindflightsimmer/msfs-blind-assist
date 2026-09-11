@@ -36,7 +36,7 @@ public readonly record struct Md11McduRow(string Text, Md11McduRowKind Kind, int
 public static class Md11McduRows
 {
     /// <summary>The MD-11's MCDU is a 14-row grid: title, six label/value pairs, scratchpad.</summary>
-    public const int LskRows = 6;
+    private const int LskRows = 6;
 
     private const int TitleRow = 0;
     private const int ScratchpadRow = Md11McduLayout.Rows - 1;   // 13
