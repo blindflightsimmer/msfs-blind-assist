@@ -566,7 +566,7 @@ def finalize_controls(controls):
     """Labels, duplicates, areas and option flags — pure, so it is testable on fixtures.
 
     Order matters: duplicates are collapsed FIRST (so a guard names the surviving button),
-    then areas, then labels.
+    then areas, then labels, and guard labels LAST (from the covered control's final label).
     """
     # 1. Collapse duplicates: a second clickspot of one control (same kind, same events — see
     #    _second_clickspots), and a second lamp node on the same L:var (VIS_VAR duplicates: the
@@ -583,8 +583,6 @@ def finalize_controls(controls):
         elif c["node_id"] in second_clickspots:
             continue
         kept.append(c)
-
-    labels = {c["node_id"]: c["label"] for c in kept}
 
     for c in kept:
         nid = c["node_id"]
@@ -605,21 +603,19 @@ def finalize_controls(controls):
         if c["kind"] == "guard":
             c["state_var"] = nid
             c["value_map"] = {}
-        # 4. Labels.
+        # 4. Labels. The guard test comes before the breaker and MCDU ones: a guard over a
+        #    breaker or an MCDU key is still a guard (the breaker branch read the guard's own id as
+        #    a grid position, "GRD ..."). Its label is composed in step 6, once the control it
+        #    covers has its FINAL label -- composed here, it read that label as it arrived, before
+        #    this loop repaired it (a stale "... button guard", or a name LABEL_FIXES replaces).
         if nid in LABEL_FIXES:
             c["label"], c["label_source"] = LABEL_FIXES[nid], "curated"
+        elif c["kind"] == "guard":
+            pass
         elif nid.startswith("MD11_BKR_"):
             c["label"] = breaker_label(nid, c["label"])
         elif nid.split("_")[1:2] and nid.split("_")[1] in MCDU_SIDES and c["kind"] != "annun":
             c["label"] = mcdu_key_label(nid, c["label"])
-        elif c["kind"] == "guard":
-            covered = next((o for o in kept if o.get("guard_id") == nid), None)
-            if covered is not None:
-                c["label"] = f"{labels.get(covered['node_id']) or covered['node_id']} guard"
-            elif c["label"] and c["label"].lower().endswith(" guard"):
-                pass
-            else:
-                c["label"] = f"{c['label'] or humanize(nid)} guard"
         elif c["label_source"] == "derived":
             # collect() already runs humanize() when there is no tooltip, so in the real
             # pipeline `c["label"]` is never actually None here -- but finalize_controls is a
@@ -637,6 +633,20 @@ def finalize_controls(controls):
             c["value_map"] = dict(curated_map)
         if c["label"]:
             c["label"] = speakable(c["label"])
+
+    # 6. Guard labels, from the covered control's final label (see step 4).
+    for c in kept:
+        nid = c["node_id"]
+        if c["kind"] != "guard" or nid in LABEL_FIXES:
+            continue
+        covered = next((o for o in kept if o.get("guard_id") == nid), None)
+        if covered is not None:
+            c["label"] = f"{covered['label'] or covered['node_id']} guard"
+        elif c["label"] and c["label"].lower().endswith(" guard"):
+            pass
+        else:
+            c["label"] = f"{c['label'] or humanize(nid)} guard"
+        c["label"] = speakable(c["label"])
     return kept
 
 
@@ -733,8 +743,12 @@ def pair_lamps(controls):
 
 
 def _owner_by_stem(lamp_id, non_buttons):
-    """The knob/switch/handle/lever whose stem the lamp id starts with, if any."""
-    for c in non_buttons:
+    """The knob/switch/handle/lever whose stem the lamp id starts with, if any.
+
+    Longest stem first, as pair_lamps' stem pass does for buttons: a lamp under two stems
+    ('MD11_X_TEST_ON_LT' under 'MD11_X' and 'MD11_X_TEST') belongs to the more specific one, not
+    to whichever control happened to be listed first."""
+    for c in sorted(non_buttons, key=lambda c: len(_strip_suffix(c["node_id"])), reverse=True):
         stem = _strip_suffix(c["node_id"])
         if lamp_id.startswith(stem + "_") and lamp_id.endswith("_LT"):
             return c, lamp_id[len(stem) + 1:-3]
@@ -941,8 +955,12 @@ def strip_outer_parens(label):
     return label
 
 
+# `Name = "..."` is the same attribute as `Name="..."`. TFDi's Lighting.xml spells 58 blocks with
+# spaces around the '=' (48 MD11_IntegralLighting_Template, 10 MD11_PA_Lights_Template -- skipped
+# templates, so the map does not change), and a CONTROL spelt that way was skipped by the scan
+# without a trace: never counted, never reported, and invisible to the nesting check too.
 USETEMPLATE_RE = re.compile(
-    r'<UseTemplate\s+Name="([^"]+)"\s*(/>|>(.*?)</UseTemplate>)', re.S
+    r'<UseTemplate\s+Name\s*=\s*"([^"]+)"\s*(/>|>(.*?)</UseTemplate>)', re.S
 )
 FIELD_RE = re.compile(r"<([A-Z0-9_]+)>(.*?)</\1>", re.S)
 
@@ -1028,11 +1046,16 @@ def parse_tooltip(tooltip, node_id=None, empty_cases=None):
         state_var = None
 
     # --- (a) peel off a trailing '(<formatting expr>)' -------------------------
+    # The expression ends at the FIRST ')' after which nothing but an optional plain parenthetical
+    # remains, and that parenthetical stays in the label: 'Nosewheel Steering (%(...)%{end})
+    # (Tiller)' reads 'Nosewheel Steering (Tiller)'. Greedy, the match ran to the last ')' and
+    # swallowed the qualifier into the expression. Making it lazy alone would not do: the '$'
+    # anchor still drags a lazy match to the final ')'; the optional tail group is what stops it.
     expr = ""
-    m = re.search(r"\s\((%.*)\)\s*$", tooltip, re.S)
+    m = re.search(r"\s\((%.*?)\)(\s*\([^()%]*\))?\s*$", tooltip, re.S)
     if m:
         expr = m.group(1)
-        label = tooltip[: m.start()].strip()
+        label = (tooltip[: m.start()] + (m.group(2) or "")).strip()
     else:
         label = tooltip
 
@@ -1232,6 +1255,29 @@ def humanize(node_id):
     return text[:1].upper() + text[1:]
 
 
+NODE_ID_RE = re.compile(r"<NODE_ID>(.*?)</NODE_ID>", re.S)
+
+
+def _nested_template_error(source, tmpl, text, m):
+    """The error for a <UseTemplate> found inside another block's body (see collect()).
+
+    The parse is flat: a block's body runs to the FIRST </UseTemplate>, so a nested block ends its
+    parent early, lends the parent its fields and drops the parent's remainder -- all silently.
+    Names the file, the parent's node (its NODE_ID sits before the nested block, or after the
+    nested block's close, where this match stopped reading) and the nested node."""
+    body = m.group(3) or ""
+    cut = body.find("<UseTemplate")
+    after = text[m.end():]
+    close = after.find("</UseTemplate>")
+    parent = NODE_ID_RE.search(body[:cut]) or NODE_ID_RE.search(after[:close] if close >= 0 else after)
+    nested = NODE_ID_RE.search(body[cut:])
+    return ValueError(
+        f"{source}: a <UseTemplate> is nested inside a {tmpl} block "
+        f"(node {parent.group(1).strip() if parent else 'unknown'}, nested node "
+        f"{nested.group(1).strip() if nested else 'unknown'}) -- the flat parse would merge the two "
+        f"silently; teach collect() nesting before regenerating")
+
+
 def collect(pkg_dir):
     base = os.path.join(pkg_dir, md11_paths.PACKAGE_MARKER)
     if not os.path.isdir(base):
@@ -1255,6 +1301,8 @@ def collect(pkg_dir):
             for m in USETEMPLATE_RE.finditer(text):
                 tmpl = m.group(1)
                 body = m.group(3) or ""
+                if "<UseTemplate" in body:
+                    raise _nested_template_error(source, tmpl, text, m)
                 kind = TEMPLATE_KINDS.get(tmpl)
                 if kind is None:
                     stats["skipped_template:" + tmpl] += 1

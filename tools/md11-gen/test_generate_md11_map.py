@@ -606,5 +606,126 @@ class EmptyCaseReportTests(unittest.TestCase):
         self.assertEqual({"0": "Off", "2": "On"}, data["controls"][0]["value_map"])
 
 
+class TrailingStateTests(unittest.TestCase):
+    """D7: the trailing state block ends where the tooltip's own text resumes."""
+
+    def test_a_parenthetical_after_the_state_block_stays_in_the_label(self):
+        label, var, value_map = g.parse_tooltip(
+            "Nosewheel Steering (%((L:MD11_PED_NWS_SW))%{if}On%{else}Off%{end}) (Tiller)")
+        self.assertEqual("Nosewheel Steering (Tiller)", label)
+        self.assertEqual("MD11_PED_NWS_SW", var)
+        self.assertEqual({"1": "On", "0": "Off"}, value_map)
+
+    def test_a_parenthetical_inside_the_state_block_stays_in_its_position(self):
+        # Every real tooltip's shape: the block runs to the end, and a lazy match must not stop at
+        # the ')' inside a position's name. Passes before and after the change.
+        label, _, value_map = g.parse_tooltip(
+            "Slat Handle (%((L:MD11_X_SW))%{case}%{:0}Up (Retracted)%{:1}Down%{end})")
+        self.assertEqual("Slat Handle", label)
+        self.assertEqual({"0": "Up (Retracted)", "1": "Down"}, value_map)
+
+
+class NestedTemplateTests(unittest.TestCase):
+    """D6: the parse is flat, so a nested <UseTemplate> must stop the generator, not merge."""
+
+    def test_a_nested_use_template_names_the_file_and_both_nodes(self):
+        xml = ('<UseTemplate Name="TFDi_Design_MD11_Button_Template">'
+               '<TOOLTIPID>Outer Button</TOOLTIPID>'
+               + use_template("TFDi_Design_MD11_Annunciator", NODE_ID="MD11_OVHD_INNER_LT")
+               + '<NODE_ID>MD11_OVHD_OUTER_BT</NODE_ID></UseTemplate>')
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg, _ = write_package(tmp, {"FlightDeck/Panel.xml": xml})
+            with self.assertRaises(ValueError) as cm:
+                g.collect(pkg)
+        message = str(cm.exception)
+        self.assertIn("FlightDeck/Panel.xml", message)
+        self.assertIn("MD11_OVHD_OUTER_BT", message)
+        self.assertIn("MD11_OVHD_INNER_LT", message)
+
+    def test_sibling_blocks_are_not_nesting(self):
+        # TFDi's Lighting.xml writes 58 of its (skipped) blocks as Name = "..." (48
+        # MD11_IntegralLighting_Template, 10 MD11_PA_Lights_Template). They sit BETWEEN the other
+        # blocks, never inside one, and since D12 they are read too -- as the skipped templates
+        # they are -- so the nesting check sees their bodies as well.
+        xml = (use_template("TFDi_Design_MD11_Annunciator", NODE_ID="MD11_OVHD_A_LT")
+               + '<UseTemplate Name = "MD11_IntegralLighting_Template">'
+                 '<NODE_ID>MD11_OVHD_B_KB</NODE_ID></UseTemplate>'
+               + use_template("TFDi_Design_MD11_Annunciator", NODE_ID="MD11_OVHD_C_LT"))
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg, _ = write_package(tmp, {"FlightDeck/Lighting.xml": xml})
+            controls, stats = g.collect(pkg)
+        self.assertEqual(["MD11_OVHD_A_LT", "MD11_OVHD_C_LT"], [c["node_id"] for c in controls])
+        self.assertEqual(1, stats["skipped_template:MD11_IntegralLighting_Template"])
+
+
+class GuardLabelTests(unittest.TestCase):
+    """D3 and D8: a guard is named after the FINAL label of the control it covers."""
+
+    def test_a_guard_uses_its_controls_final_label(self):
+        # finalize_controls repairs the covered control's label itself -- a LABEL_FIXES name, or a
+        # derived label losing its " button" -- so the guard must be named after the repaired one.
+        fixed = ctl("MD11_OVHD_L_RAIN_REPLNT_BT", guard_id="MD11_OVHD_L_RAIN_REPLNT_GRD",
+                    events={"LEFT_BUTTON_DOWN": 1, "LEFT_BUTTON_UP": 2})
+        derived = ctl("MD11_OVHD_FUEL_X_BT", guard_id="MD11_OVHD_FUEL_X_GRD",
+                      events={"LEFT_BUTTON_DOWN": 3, "LEFT_BUTTON_UP": 4})
+        derived["label"] = "Fuel x button"       # humanize()'s form, as collect() stores it
+        out = g.finalize_controls([
+            ctl("MD11_OVHD_L_RAIN_REPLNT_GRD", kind="guard", events={"LEFT_BUTTON_DOWN": 5}),
+            fixed,
+            ctl("MD11_OVHD_FUEL_X_GRD", kind="guard", events={"LEFT_BUTTON_DOWN": 6}),
+            derived,
+        ])
+        labels = {c["node_id"]: c["label"] for c in out}
+        self.assertEqual("Left Rain Repellent guard", labels["MD11_OVHD_L_RAIN_REPLNT_GRD"])
+        self.assertEqual("Fuel x guard", labels["MD11_OVHD_FUEL_X_GRD"])
+
+    def test_a_guard_over_a_breaker_or_an_mcdu_key_is_still_named_as_a_guard(self):
+        # The breaker branch read the guard's own id as a grid position ("GRD ..."), and the MCDU
+        # branch as a keycap ("CLR_GRD"), because both were tested before the guard branch.
+        out = g.finalize_controls([
+            ctl("MD11_BKR_BWU_C24", label="Tank 1 Transfer Pump Power Breaker",
+                guard_id="MD11_BKR_BWU_C24_GRD", events={"LEFT_BUTTON_DOWN": 1}),
+            ctl("MD11_BKR_BWU_C24_GRD", kind="guard", label="Breaker Guard", events={"LEFT_BUTTON_DOWN": 2}),
+            ctl("MD11_LMCDU_CLR_BT", guard_id="MD11_LMCDU_CLR_GRD",
+                events={"LEFT_BUTTON_DOWN": 3, "LEFT_BUTTON_UP": 4}),
+            ctl("MD11_LMCDU_CLR_GRD", kind="guard", events={"LEFT_BUTTON_DOWN": 5}),
+        ])
+        labels = {c["node_id"]: c["label"] for c in out}
+        self.assertEqual("C24 Tank 1 Transfer Pump Power guard", labels["MD11_BKR_BWU_C24_GRD"])
+        self.assertEqual("CLR guard", labels["MD11_LMCDU_CLR_GRD"])
+
+
+class LampOwnerTests(unittest.TestCase):
+    """D5: a lamp under two knob/switch stems belongs to the longer, more specific one."""
+
+    def test_a_lamp_under_two_stems_belongs_to_the_longer_one(self):
+        short = ctl("MD11_OVHD_X_KB", kind="knob", label="X")
+        longer = ctl("MD11_OVHD_X_TEST_KB", kind="knob", label="X Test")
+        owner, rest = g._owner_by_stem("MD11_OVHD_X_TEST_ON_LT", [short, longer])
+        self.assertEqual("MD11_OVHD_X_TEST_KB", owner["node_id"])
+        self.assertEqual("ON", rest)
+        out = {c["node_id"]: c for c in g.apply_state(g.finalize_controls(
+            [short, longer, ctl("MD11_OVHD_X_TEST_ON_LT", kind="annun")]))}
+        self.assertEqual("X Test ON light", out["MD11_OVHD_X_TEST_ON_LT"]["label"])
+
+
+class UseTemplateSpellingTests(unittest.TestCase):
+    """D12: `Name = "..."` is the same attribute as `Name="..."`. TFDi's Lighting.xml spells 58
+    blocks that way (48 MD11_IntegralLighting_Template, 10 MD11_PA_Lights_Template: skipped
+    templates, so the map does not change), and a CONTROL spelt so used to vanish without a trace."""
+
+    def test_a_control_written_with_spaces_around_the_equals_sign_is_collected(self):
+        xml = "".join(
+            f'<UseTemplate Name{equals}"TFDi_Design_MD11_Button_Template">'
+            f"<TOOLTIPID>Test {n}</TOOLTIPID><NODE_ID>MD11_OVHD_X{n}_BT</NODE_ID>"
+            f"<LEFT_BUTTON_DOWN>{n}</LEFT_BUTTON_DOWN></UseTemplate>"
+            for n, equals in enumerate(("=", " = ", " =", "= "), start=1))
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg, _ = write_package(tmp, {"FlightDeck/Overhead.xml": xml})
+            controls, _ = g.collect(pkg)
+        self.assertEqual(["MD11_OVHD_X1_BT", "MD11_OVHD_X2_BT", "MD11_OVHD_X3_BT", "MD11_OVHD_X4_BT"],
+                         [c["node_id"] for c in controls])
+
+
 if __name__ == "__main__":
     unittest.main()
