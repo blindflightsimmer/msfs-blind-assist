@@ -706,7 +706,7 @@ public partial class TFDiMD11Definition
             if (!ok)
             {
                 Log.Debug("MD11", $"{control.NodeId}: failed to reach {target} (walk and direct write).");
-                OnUiThread(() => announcer.Announce($"{control.DisplayLabel} did not move. It may be guarded, unpowered, or inhibited."));
+                OnUiThread(() => announcer.Announce(Md11WalkFailure.Sentence(control.DisplayLabel)));
             }
         }
         catch (OperationCanceledException)
@@ -716,6 +716,13 @@ public partial class TFDiMD11Definition
         catch (Exception ex)
         {
             Log.Error("MD11", $"{control.NodeId}: set threw: {ex.Message}");
+            // A walk that THREW failed as surely as one that returned false, and this method's own
+            // contract applies: a silently-failed selection looks identical to a successful one.
+            // Silent only when the definition is gone (Dispose nulled the bus) or a newer selection
+            // owns the outcome.
+            if (Md11WalkFailure.AfterThrow(control.DisplayLabel, disposed: _bus == null,
+                    cancelled: ct.IsCancellationRequested) is { } sentence)
+                OnUiThread(() => announcer.Announce(sentence));
         }
     }
 
@@ -735,7 +742,10 @@ public partial class TFDiMD11Definition
     /// </summary>
     private async Task<bool> TryDirectSetAsync(Md11Control control, double target, SimConnectManager sim)
     {
-        if (_bus == null) return false;
+        // Read the field ONCE: this runs on a pool thread while Dispose nulls it on the UI thread, so
+        // a second load between the check and the write could see null.
+        var bus = _bus;
+        if (bus == null) return false;
         GetVariables().TryGetValue(control.NodeId, out var def);
         var refusal = Md11DirectSet.Refuse(control, def?.Name);
         if (refusal != null)
@@ -744,7 +754,7 @@ public partial class TFDiMD11Definition
             return false;
         }
 
-        _bus.WriteExternal(control.StateVar, target);
+        bus.WriteExternal(control.StateVar, target);
         await Task.Delay(600).ConfigureAwait(false);         // ANIM_LAG is 100–1000 ms: the value travels before it rests
         // Read on DELIVERY: every walked control's var has its own data definition, so this
         // completes on the PERIOD.ONCE response (or the cache for a SIM_FRAME-streamed var), never

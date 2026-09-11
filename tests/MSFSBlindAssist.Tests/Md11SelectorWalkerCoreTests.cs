@@ -225,6 +225,70 @@ public class Md11SelectorWalkerCoreTests : IDisposable
         Assert.True(Md11SelectorWalker.PolarityFor(id) ?? true);
     }
 
+    /// <summary>
+    /// The APU fire handle's shape as mapped today: two positions {0 Bottle 1, 2 Bottle 2}, walked on
+    /// its wheel pair — so every index is an end stop. <paramref name="kind"/> is the only difference
+    /// between the tests below, which is what pins the KIND as the discriminator.
+    /// </summary>
+    private static Md11Control TwoPosition(string id, string kind) => new()
+    {
+        NodeId = id,
+        Kind = kind,
+        StateVar = id,
+        ValueMap = new Dictionary<string, string> { ["0"] = "Bottle 1", ["2"] = "Bottle 2" },
+        Events = new Dictionary<string, int> { ["WHEEL_UP"] = Left, ["WHEEL_DOWN"] = Right },
+    };
+
+    /// <summary>
+    /// A fire HANDLE never probes, at any index: its walked axis is the bottle discharge, so the
+    /// "other" event fired at an end stop can discharge a bottle the pilot never asked for — and on a
+    /// two-position handle every index IS an end stop, so the end-stop rule alone always allowed it.
+    /// One event, then give up, polarity untouched.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 2)]   // the bottom end stop, walking up
+    [InlineData(2, 0)]   // the top end stop, walking down
+    public async Task AHandle_StallingAtAnEndStop_FiresOneEvent_NeverTheProbe(int start, int target)
+    {
+        var id = NewId();
+        var sw = new FakeSwitch(start) { Inhibited = true };
+
+        Assert.False(await Walk(TwoPosition(id, Md11Kinds.Handle), target, sw));
+
+        Assert.Single(sw.Clicks);
+        Assert.True(Md11SelectorWalker.PolarityFor(id) ?? true);
+    }
+
+    /// <summary>
+    /// The price of the rule above, pinned so nobody "fixes" it back: a handle whose polarity guess is
+    /// wrong cannot learn it at an end stop, because learning it there takes the probe. The walk fails
+    /// (SafeWalk then tries the direct write, and speaks "did not move" if that fails too) rather than
+    /// risk a discharge.
+    /// </summary>
+    [Fact]
+    public async Task AnInvertedHandle_AtAnEndStop_StillDoesNotProbe_AndLearnsNothing()
+    {
+        var id = NewId();
+        var sw = new FakeSwitch(0) { LeftIncreases = false };
+
+        Assert.False(await Walk(TwoPosition(id, Md11Kinds.Handle), 2, sw));
+
+        Assert.Equal(new[] { Left }, sw.Clicks);
+        Assert.Equal(0, sw.Position);
+        Assert.True(Md11SelectorWalker.PolarityFor(id) ?? true);
+    }
+
+    /// <summary>The same two-position shape as a SWITCH keeps the end-stop probe (existing behaviour): the kind decides, not the position count.</summary>
+    [Fact]
+    public async Task ATwoPositionSwitch_AtAnEndStop_StillProbesTheOtherWay()
+    {
+        var sw = new FakeSwitch(0) { Inhibited = true };
+
+        Assert.False(await Walk(TwoPosition(NewId(), Md11Kinds.Switch), 2, sw));
+
+        Assert.Equal(new[] { Left, Right }, sw.Clicks);
+    }
+
     [Fact]
     public async Task LaggingReadBack_IsNotMistakenForNoMovement()
     {

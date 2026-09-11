@@ -34,7 +34,7 @@ namespace MSFSBlindAssist.Aircraft.MD11;
 /// called real movement "no movement", and mis-learned polarity (the autobrake flipped its learned
 /// sign twice in one session). That protocol survives, unchanged, for a var that answers only with
 /// the next 1 Hz delivery — batch-covered, or on its own PERIOD.SECOND subscription
-/// (<see cref="SimConnectManager.SupportsFreshReads"/> decides) — and for the analog walk. The flap
+/// (<see cref="SimConnectManager.SupportsFreshReads"/> decides). The flap
 /// lever and speedbrake stream on their own SIM_FRAME subscription, so their fresh read is the
 /// cache, at most a frame old. A walk also waits out <see cref="ClickSettleMs"/> after the last
 /// click recorded on its node before its first read, because a walk cancelled by fast arrowing can
@@ -46,7 +46,9 @@ namespace MSFSBlindAssist.Aircraft.MD11;
 /// means inhibited (give up). A stall at mid-range can only be a dropped or refused click, because a
 /// wrong guess would have MOVED the control, and probing there would actuate the control the wrong
 /// way (on the engine fire handles the walked axis is the agent discharge) — so it gives up at once,
-/// and so does a second no-movement in the same walk.
+/// and so does a second no-movement in the same walk. So does ANY stall on a HANDLE, end stops
+/// included: a fire handle's walked axis is the bottle discharge, and on a two-position handle every
+/// index is an end stop, so the probe there would be a discharge the pilot never asked for.
 ///
 /// A control on TFDi's SINGLE-CLICK template has one event that toggles its two positions (the
 /// IRS selectors, fuel switches, starters, parking brake, gear lever, QNH/QFE, minimums mode, the
@@ -72,7 +74,7 @@ public static class Md11SelectorWalker
     /// </summary>
     private const int MaxSteps = 24;
 
-    /// <summary>Legacy protocol and analog walk: how long to wait after a step before the first cache poll.</summary>
+    /// <summary>Legacy protocol: how long to wait after a step before the first cache poll.</summary>
     private const int SettleMs = 90;
 
     /// <summary>Fresh protocol: the interval between reads after a step.</summary>
@@ -204,8 +206,14 @@ public static class Md11SelectorWalker
                 // protocol always did. Only at an END STOP is a stall ambiguous (inhibited, or the
                 // guess is wrong and the asked direction is the stop itself), and there the other
                 // event either moves toward the target — polarity learned — or cannot move at all.
+                // A HANDLE never probes, at ANY index: a fire handle's walked axis is the bottle
+                // discharge, so the "other" event can fire a bottle the pilot never asked for — and on
+                // a two-position handle (the APU's, as mapped) every index is an end stop, so the
+                // end-stop rule alone would always allow it. The cost is deliberate: a handle whose
+                // polarity guess is wrong fails its walk here instead of learning it.
                 bool atEndStop = currentIdx == 0 || currentIdx == ordered.Count - 1;
-                if (!io.FreshReads || !atEndStop || noMovement > 1)
+                bool isHandle = control.Kind == Md11Kinds.Handle;
+                if (!io.FreshReads || !atEndStop || isHandle || noMovement > 1)
                 {
                     Log.Debug("MD11",
                         $"{node}: step produced no movement at value {current.Value} " +
@@ -315,8 +323,8 @@ public static class Md11SelectorWalker
     private static async Task<double?> StepAndReadAsync(Md11Control control, List<double> ordered, Md11WalkIo io,
         int eventId, int beforeIdx, CancellationToken ct)
     {
-        // The bus writes queued CEVENTs MinGapMs apart, so a click behind a burst (the Dial-A-Flap
-        // analog walk can queue dozens) lands later than it is fired. Stamp the click, and the
+        // The bus writes queued CEVENTs MinGapMs apart, so a click behind a burst (an MCDU
+        // scratchpad send queues dozens) lands later than it is fired. Stamp the click, and the
         // no-movement deadline below, at the time it will WRITE: judged at enqueue time, a still-
         // queued click reads as "no movement", the direct-write fallback runs, and the click then
         // lands and undoes it — silently, with the combo showing the target.
@@ -369,7 +377,7 @@ public static class Md11SelectorWalker
     /// <summary>
     /// The legacy read: request, sleep, read the cache, until two consecutive reads agree or the
     /// cap elapses. Still the right protocol for a batch-covered var, whose delivery comes at most
-    /// once a second whatever we do; the analog walk uses it too.
+    /// once a second whatever we do.
     /// </summary>
     private static async Task<double?> LegacyReadAsync(Md11WalkIo io, CancellationToken ct)
     {
@@ -386,9 +394,6 @@ public static class Md11SelectorWalker
         }
         return prev;
     }
-
-    private static Task<double?> ReadAsync(string varKey, SimConnectManager sim, CancellationToken ct = default)
-        => LegacyReadAsync(Md11WalkIo.ForSim(sim, null, varKey), ct);
 
     /// <summary>
     /// The (increase, decrease) CEVENT pair, under the CONVENTIONAL assumption that WHEEL_UP and
@@ -533,107 +538,6 @@ public static class Md11SelectorWalker
         }
         return best;
     }
-
-    /// <summary>
-    /// Walks a CONTINUOUS (non-detented) control to a raw target value — the Dial-A-Flap
-    /// thumbwheel being the motivating case.
-    ///
-    /// Detent-walking one step at a time does not work here. The thumbwheel's raw range is
-    /// 0–100 spanning 10°–25°, and nothing tells us how far one wheel click moves it: if a click
-    /// is one raw unit, crossing the full range is 100 clicks — four times
-    /// <see cref="MaxSteps"/>, and 100 CEVENT writes at a channel TFDi asks us not to overuse.
-    ///
-    /// So measure instead of assume. One probe click yields a SIGNED delta, which gives both the
-    /// step size and the polarity in a single observation; from there the remaining distance is
-    /// arithmetic. Fire that many clicks, verify, and allow a couple of correction rounds for
-    /// rounding and for clicks the aircraft dropped. Typically ~3 rounds and well under 20 writes
-    /// even for a full-range move.
-    /// </summary>
-    /// <param name="tolerance">Raw units within which the target counts as reached.</param>
-    public static async Task<bool> WalkAnalogAsync(
-        Md11Control control,
-        double targetRaw,
-        string varKey,
-        SimConnectManager sim,
-        Md11EventBus bus,
-        double tolerance,
-        int maxRounds = 8,
-        CancellationToken ct = default)
-    {
-        var (incEvent, decEvent) = StepEvents(control);
-        if (incEvent == null || decEvent == null) return false;
-
-        Log.Info("MD11", $"{control.NodeId}: analog walk START target={targetRaw:0.##} tol={tolerance:0.##}.");
-
-        for (var round = 0; round < maxRounds; round++)
-        {
-            if (ct.IsCancellationRequested) return false;   // superseded by a newer target
-            var current = await ReadAsync(varKey, sim).ConfigureAwait(false);
-            if (current == null) return false;
-            if (Math.Abs(current.Value - targetRaw) <= tolerance)
-            {
-                Log.Info("MD11", $"{control.NodeId}: reached {current.Value:0.##} (target {targetRaw:0.##}) in {round} rounds.");
-                return true;
-            }
-
-            // Probe: one click in the direction we believe is "toward target", then measure what
-            // actually happened. This single observation carries BOTH unknowns — how big a click
-            // is, and which way it goes.
-            var conventional = ResolvePolarity(control.NodeId);
-            var wantUp = targetRaw > current.Value;
-            bus.Fire((wantUp == conventional) ? incEvent.Value : decEvent.Value);
-            await Task.Delay(SettleMs).ConfigureAwait(false);
-
-            var probed = await ReadAsync(varKey, sim).ConfigureAwait(false);
-            if (probed == null) return false;
-
-            var delta = probed.Value - current.Value;
-            if (Math.Abs(delta) < 1e-6)
-            {
-                Log.Debug("MD11", $"{control.NodeId}: analog probe produced no movement at {current.Value} — end stop or inhibited.");
-                return Math.Abs(probed.Value - targetRaw) <= tolerance;
-            }
-
-            // Movement away from the target means our polarity assumption was wrong. Record it;
-            // the next round probes the other way.
-            var movingUp = delta > 0;
-            if (movingUp != wantUp)
-            {
-                SetPolarity(control.NodeId, !conventional);
-                Log.Info("MD11", $"{control.NodeId}: analog step polarity calibrated to {(!conventional ? "INVERTED" : "conventional")}.");
-                continue;
-            }
-
-            if (Math.Abs(probed.Value - targetRaw) <= tolerance) return true;
-
-            // Remaining distance / measured step size = clicks to go.
-            var clicks = (int)Math.Round((targetRaw - probed.Value) / delta);
-            Log.Info("MD11", $"{control.NodeId}: round {round} current={current.Value:0.##} probed={probed.Value:0.##} " +
-                $"delta/click={delta:0.###} target={targetRaw:0.##} → {clicks} clicks.");
-            if (clicks <= 0) continue;
-
-            clicks = Math.Min(clicks, MaxSteps * 4);   // hard bound; the loop re-verifies anyway
-            var eventId = (targetRaw > probed.Value) == movingUp ? incEvent.Value : decEvent.Value;
-            for (var i = 0; i < clicks && !ct.IsCancellationRequested; i++) bus.Fire(eventId);
-            if (ct.IsCancellationRequested) return false;
-
-            // Wait for the whole burst to LAND before re-reading, or the re-read counts a
-            // half-finished walk and the next round's click math is wrong. The bus paces each
-            // CEVENT write at its MinGapMs (60 ms); this per-click budget must exceed that with
-            // margin. (It was 35 ms — fine when the pump paced at 30 ms, too short once the
-            // press-release gap was raised to 60 ms, which is what made the walk undershoot.)
-            await Task.Delay(SettleMs + clicks * 80).ConfigureAwait(false);
-        }
-
-        var final = await ReadAsync(varKey, sim).ConfigureAwait(false);
-        var ok = final != null && Math.Abs(final.Value - targetRaw) <= tolerance;
-        Log.Info("MD11", $"{control.NodeId}: analog walk END final={final?.ToString("0.##") ?? "null"} " +
-            $"target={targetRaw:0.##} converged={ok} after {maxRounds} rounds.");
-        return ok;
-    }
-
-    /// <summary>Test seam: clears learned polarity so a test can assert calibration from scratch.</summary>
-    internal static void ResetPolarity() => Polarity.Clear();
 
     /// <summary>Test seam: the learned polarity for a node, null until a walk has touched it.</summary>
     internal static bool? PolarityFor(string nodeId) => Polarity.TryGetValue(nodeId, out var v) ? v : null;

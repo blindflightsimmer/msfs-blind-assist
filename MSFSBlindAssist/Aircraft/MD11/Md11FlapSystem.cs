@@ -154,12 +154,6 @@ public sealed class Md11FlapSystem
     }
 
     /// <summary>
-    /// Half a degree in raw units — the convergence tolerance for a thumbwheel walk. Anything
-    /// inside this rounds to the requested whole degree.
-    /// </summary>
-    public double DialToleranceRaw => DialSpec.UnitsPerDeg / 2.0;
-
-    /// <summary>
     /// The listed whole degree nearest a raw thumbwheel value, clamped to the wheel's 10–25° span.
     ///
     /// Rounds half AWAY from zero — the rule <c>ToString("0")</c> applies in
@@ -188,29 +182,6 @@ public sealed class Md11FlapSystem
     // ---------------------------------------------------------------------------------
     // Actuation
     // ---------------------------------------------------------------------------------
-
-    /// <summary>
-    /// Moves the handle to the detent whose representative value is <paramref name="targetRng"/>.
-    /// Closed-loop: the handle only exposes relative wheel events, and their direction is not
-    /// documented, so the walker calibrates against the aircraft rather than guessing.
-    /// </summary>
-    public Task<bool> SetLeverAsync(double targetRng, SimConnectManager sim, Md11EventBus bus)
-        => _lever == null
-            ? Task.FromResult(false)
-            : Md11SelectorWalker.WalkAsync(_lever, targetRng, LeverKey, sim, bus);
-
-    /// <summary>
-    /// Sets the thumbwheel to a whole take-off flap angle (10–25°).
-    /// Analog walk: one probe click measures both step size and direction, then the rest is
-    /// arithmetic — see <see cref="Md11SelectorWalker.WalkAnalogAsync"/>.
-    /// </summary>
-    public Task<bool> SetDialDegreesAsync(int degrees, SimConnectManager sim, Md11EventBus bus)
-    {
-        if (_dial == null) return Task.FromResult(false);
-        var clamped = Math.Clamp(degrees, (int)Math.Round(DialSpec.MinDeg), (int)Math.Round(DialSpec.MaxDeg));
-        return Md11SelectorWalker.WalkAnalogAsync(
-            _dial, DialSpec.ToRaw(clamped), DialKey, sim, bus, DialToleranceRaw);
-    }
 
     /// <summary>
     /// Sets the thumbwheel from a RAW units target (what the combo's value carries).

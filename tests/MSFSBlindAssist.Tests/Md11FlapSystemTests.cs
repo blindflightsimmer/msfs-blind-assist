@@ -267,15 +267,6 @@ public class Md11FlapSystemTests
         Assert.Equal("25 degrees", d[Math.Round(sys.DialSpec.ToRaw(25), 4)]);
     }
 
-    /// <summary>Half a degree in raw units — anything inside rounds to the requested whole degree.</summary>
-    [Fact]
-    public void DialTolerance_IsHalfADegreeInRawUnits()
-    {
-        var sys = System();
-
-        Assert.Equal(sys.DialSpec.UnitsPerDeg / 2.0, sys.DialToleranceRaw, precision: 4);
-    }
-
     // ---------------------------------------------------------------------------------
     // Seeding a combo from a var that is not keyed the way the combo is
     // ---------------------------------------------------------------------------------
