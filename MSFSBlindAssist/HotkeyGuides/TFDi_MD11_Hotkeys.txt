@@ -191,9 +191,10 @@ AI Display Reading (needs an AI provider and its key in File > Settings > AI tab
   refuses to switch to, so a restore worked only for the built-in views and silently did
   nothing for a custom one. If the simulator is in an external or drone camera the app says
   "Switch to a cockpit view first" and does nothing.
-  If the view could not be switched (the simulator is paused or on a menu) the app says "Could
-  not switch the cockpit view, reading the current view" and reads whatever is on screen. One
-  read runs at a time: a second key while one is in progress is refused out loud.
+  If the switch cannot be confirmed (the simulator is paused or on a menu) the app says "Could
+  not confirm the cockpit view switch; reading what is on screen" and reads whatever is on
+  screen. The camera may have moved all the same. One read runs at a time: a second key while
+  one is in progress is refused out loud.
 
 
 INDICATOR LIGHTS ON THE PANELS

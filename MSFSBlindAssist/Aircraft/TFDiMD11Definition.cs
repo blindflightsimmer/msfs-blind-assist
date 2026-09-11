@@ -68,7 +68,7 @@ namespace MSFSBlindAssist.Aircraft;
 ///   • Wheel/click polarity: the walker self-calibrates, but confirm it converges and that the
 ///     log line "step polarity calibrated to …" appears at most once per control.
 ///   • Flap handle: all six detents, and that the 28 gate behaves (35/50 → 28 on a go-around).
-///   • Dial-A-Flap: 10–25° selection lands on whole degrees; check the analog walk converges.
+///   • Dial-A-Flap: 10–25° selection lands on the chosen whole degree (one direct write of the wheel's own var).
 ///   • Annunciator chattiness: 488 announcing lamps may be a torrent on startup. If so, the
 ///     answer is Ctrl+M (monitor manager) and/or trimming IsAnnounced to a safety subset here.
 /// </summary>
