@@ -9,9 +9,11 @@ namespace MSFSBlindAssist.Tests;
 /// release it that much early — behind a guard lift or a burst of walker clicks, a 3 s hold
 /// could shrink below what the 1 Hz lamp batch needs to show the lights at all.
 ///
-/// And the bus must END clean: Dispose writes what is queued and releases any button still
-/// held, because cancelling the pump first discarded both and left a test button pressed in the
-/// aircraft whenever the MD-11 was re-selected inside the 3 s hold.
+/// And the bus must END clean: Dispose stops the pump, writes the UP of every button whose DOWN
+/// reached the aircraft FIRST, and only then writes what is still queued, in order, on the calling
+/// thread. Cancelling the pump and discarding the queue once left a test button pressed whenever the
+/// MD-11 was re-selected inside the 3 s hold; draining through the pump then put the release at the
+/// TAIL, where a long backlog (an MCDU scratchpad send, 48 ids) pushed it past the drain bound.
 /// </summary>
 public class Md11EventBusTests
 {
@@ -158,24 +160,26 @@ public class Md11EventBusTests
 
     /// <summary>
     /// A GUARD on the invariant above, not a reproduction of the race it describes. The window the
-    /// fix closed is a few instructions wide — inside the single <c>lock (_heldUps)</c> that
-    /// <see cref="TrackHeldAndFireDown"/> and <see cref="ReleaseHeldAndFireUp"/> take to register
-    /// and fire, and that <see cref="Dispose"/>'s <see cref="TakeAllHeld"/> takes to flip
-    /// <c>_closed</c> and drain the table — and nothing outside the bus can land inside it
-    /// deterministically; doing that would need a production test seam planted exactly where the
-    /// fix removed the gap (the old two-step register-then-queue this class used to have). Measured
-    /// on this machine, all 12 rounds below run in around 145 ms total — far under even one
-    /// <see cref="MinGapMs"/> write — so Dispose's release sweep wins every round before a single
-    /// hold reaches registration: the loop never actually provokes the interleaving. Its value is
-    /// that across many attempts it can NEVER observe a button left held, not that it forces the
-    /// race open. The real correctness argument is the LOCK'S SCOPE: register-and-fire-DOWN and
-    /// take-and-fire-UP both run inside <c>lock (_heldUps)</c>, and the sweep takes that same lock
-    /// to close the table, so whichever wins, the two can never interleave — which is what the
-    /// assertions below are actually pinning, whether or not any round lands in the gap.
+    /// fix closed is a few instructions wide — inside the single <c>lock (_held)</c> that
+    /// <c>TrackHeldAndFireDown</c> and <c>ReleaseHeldAndFireUp</c> take to register or take back
+    /// and queue, and that <c>Dispose</c> takes to flip <c>_closed</c> — and nothing outside the bus
+    /// can land inside it deterministically; doing that would need a production test seam planted
+    /// exactly where the fix removed the gap (the old two-step register-then-queue this class used
+    /// to have). Measured on this machine, all 12 rounds below run in around 145 ms total — far under
+    /// even one <see cref="Md11EventBus.MinGapMs"/> write — so Dispose's close wins every round
+    /// before a single hold reaches registration: the loop never actually provokes the
+    /// interleaving. Its value is that across many attempts it can NEVER observe a button left held,
+    /// not that it forces the race open. The real correctness argument is the LOCK'S SCOPE:
+    /// register-and-queue-DOWN and take-back-and-queue-UP both run inside <c>lock (_held)</c>, and
+    /// Dispose takes that same lock to close the table, so whichever wins, the two can never
+    /// interleave. Since 2026-09-11 a hold that ends after the close leaves its entry to Dispose,
+    /// which writes the UP only behind a DOWN the pump actually wrote and takes a DOWN still queued
+    /// back out with nothing owed — so a hold may show NEITHER half, and never an UP without its
+    /// DOWN. That is what the assertions below pin, whether or not any round lands in the gap.
     /// HoldsPerRound is kept small (down from an earlier 32) so that even the practically
-    /// unreachable worst case — every hold registering before the sweep runs — drains well inside
-    /// <see cref="DrainTimeoutMs"/> instead of risking the sweep discarding a queued write past that
-    /// timeout and flaking the assertions over a slow drain rather than a real bug.
+    /// unreachable worst case — every hold registering before the close — drains well inside
+    /// <see cref="Md11EventBus.DrainTimeoutMs"/> instead of discarding a queued write past that
+    /// bound and flaking the assertions over a slow drain rather than a real bug.
     /// </summary>
     [Fact]
     public async Task AHoldRacingDispose_NeverLeavesItsButtonHeld()
@@ -221,5 +225,132 @@ public class Md11EventBusTests
 
         Assert.Equal(0, rec.CountOf(300));
         Assert.Equal(0, rec.CountOf(301));
+    }
+
+    // ---- Dispose: release first, never ahead of the DOWN ------------------------------------
+
+    /// <summary>
+    /// A recorder that parks the PUMP inside its first write of <c>gateId</c> — how these tests hold
+    /// the pump mid-backlog without a single sleep. The parked write returns only once the test has
+    /// queued what it wants behind it (<see cref="BacklogQueued"/>) AND the bus reports nothing
+    /// pending: with the pump parked here, nothing but <c>Dispose</c> taking the queue off the
+    /// cancelled pump can empty it, so the pump is released exactly after Dispose has stopped it.
+    /// <see cref="Seal"/>, called right after Dispose returns, counts any later write as a violation.
+    /// </summary>
+    private sealed class GatedRecorder
+    {
+        private readonly List<int> _ids = new();
+        private readonly int _gateId;
+        private bool _sealed;
+
+        public GatedRecorder(int gateId) => _gateId = gateId;
+
+        public Md11EventBus? Bus;
+        public readonly ManualResetEventSlim Entered = new();
+        public readonly ManualResetEventSlim BacklogQueued = new();
+        public int WritesAfterSeal;
+
+        public void Write(string rpn)
+        {
+            var id = int.Parse(rpn.Split(' ')[3]);
+            if (id == _gateId && !Entered.IsSet)
+            {
+                Entered.Set();
+                BacklogQueued.Wait(TimeSpan.FromSeconds(5));
+                SpinWait.SpinUntil(() => Bus is { } bus && bus.Pending == 0, TimeSpan.FromSeconds(5));
+            }
+            lock (_ids)
+            {
+                if (_sealed) WritesAfterSeal++;
+                _ids.Add(id);
+            }
+        }
+
+        public void Seal() { lock (_ids) _sealed = true; }
+
+        public IReadOnlyList<int> Ids { get { lock (_ids) return _ids.ToList(); } }
+    }
+
+    /// <summary>
+    /// B2: a held button whose DOWN has reached the aircraft is released by the FIRST write Dispose
+    /// makes — ahead of a 40-id backlog (an MCDU scratchpad send is 48). Drained through the pump,
+    /// the UP sat at the tail, the drain bound (sixteen ids) dropped it, and a 3 s test button was
+    /// left held in the aircraft. And the release never goes out ahead of its own DOWN.
+    /// </summary>
+    [Fact]
+    public async Task Dispose_ReleasesAPressedHoldFirst_AheadOfTheBacklog_NeverAheadOfItsDown()
+    {
+        var rec = new GatedRecorder(gateId: 100);   // the pump is parked INSIDE the DOWN's write
+        var bus = new Md11EventBus(rec.Write);
+        rec.Bus = bus;
+        var hold = bus.PressAndHoldAsync(TestButton(down: 100, up: 101), holdMs: 1500);
+        Assert.True(rec.Entered.Wait(TimeSpan.FromSeconds(5)), "the pump never took the DOWN");
+
+        var backlog = Enumerable.Range(1000, 40).ToArray();
+        foreach (var id in backlog) bus.Fire(id);
+        rec.BacklogQueued.Set();
+
+        bus.Dispose();
+        rec.Seal();
+        await hold;                                  // its own release comes after the close: refused
+
+        var ids = rec.Ids;
+        Assert.Equal(new[] { 100, 101 }, ids.Take(2).ToArray());       // the DOWN, then its UP: Dispose's first write
+        Assert.Equal(1, ids.Count(i => i == 101));
+        var drained = ids.Skip(2).ToArray();
+        Assert.NotEmpty(drained);                                       // the backlog still drains behind the release…
+        Assert.Equal(backlog.Take(drained.Length).ToArray(), drained);  // …in FIFO order, a prefix of what was queued
+        Assert.Equal(0, rec.WritesAfterSeal);                           // and nothing lands after Dispose returned
+    }
+
+    /// <summary>
+    /// A hold whose DOWN never left the queue pressed nothing, so it is owed nothing: Dispose takes the
+    /// DOWN back out and writes neither half, while everything else keeps its order. Drained through
+    /// the pump, the aircraft saw a press AND a release for a button the hold never reached.
+    /// </summary>
+    [Fact]
+    public async Task Dispose_WritesNeitherHalf_OfAHoldWhoseDownNeverLeftTheQueue()
+    {
+        var rec = new GatedRecorder(gateId: 500);   // the pump is parked inside an EARLIER write
+        var bus = new Md11EventBus(rec.Write);
+        rec.Bus = bus;
+        bus.Fire(500);
+        Assert.True(rec.Entered.Wait(TimeSpan.FromSeconds(5)), "the pump never took the first id");
+
+        var hold = bus.PressAndHoldAsync(TestButton(down: 100, up: 101), holdMs: 1500);   // DOWN queued behind it
+        bus.Fire(600);
+        bus.Fire(601);
+        rec.BacklogQueued.Set();
+
+        bus.Dispose();
+        rec.Seal();
+        await hold;
+
+        Assert.Equal(new[] { 500, 600, 601 }, rec.Ids);
+        Assert.Equal(0, rec.WritesAfterSeal);
+    }
+
+    /// <summary>
+    /// The drop above is for a hold still REGISTERED. A hold that already ended has its DOWN and its
+    /// UP both still queued, in order, and Dispose writes both — dropping the DOWN there would leave
+    /// its UP a release with no press ahead of it.
+    /// </summary>
+    [Fact]
+    public async Task Dispose_WritesAReleasedHoldStillQueued_DownThenUp()
+    {
+        var rec = new GatedRecorder(gateId: 500);
+        var bus = new Md11EventBus(rec.Write);
+        rec.Bus = bus;
+        bus.Fire(500);
+        Assert.True(rec.Entered.Wait(TimeSpan.FromSeconds(5)), "the pump never took the first id");
+
+        await bus.PressAndHoldAsync(TestButton(down: 100, up: 101), holdMs: 0);   // ends in one pacing gap: UP queued behind its DOWN
+        rec.BacklogQueued.Set();
+
+        bus.Dispose();
+        rec.Seal();
+
+        Assert.Equal(new[] { 500, 100, 101 }, rec.Ids);
+        Assert.Equal(0, rec.WritesAfterSeal);
     }
 }
