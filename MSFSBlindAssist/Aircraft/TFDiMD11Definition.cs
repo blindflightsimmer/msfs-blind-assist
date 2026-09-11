@@ -347,7 +347,10 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     /// This nudges the wheel once to engage the mode, then writes the exact value AFTER the nudge
     /// has landed. Ordering is load-bearing: the wheel step rides the paced CEVENT queue while the
     /// EXTCTL write is immediate, so writing the value first would let the later wheel click drag it
-    /// back off target. The single-detent transient is corrected the instant the value lands.
+    /// back off target. The single-detent transient is corrected the instant the value lands. The
+    /// wait is measured from the click's expected WRITE (<see cref="Md11EventBus.ReadBackDelayMs"/>:
+    /// the 250 ms settle plus the backlog queued ahead of the click), not from when it was queued —
+    /// a fixed 250 ms covered only four queued ids.
     ///
     /// UNVERIFIED IN SIM — whether one wheel step reliably engages, and whether the EXTCTL value
     /// then holds, is exactly what the in-sim test must confirm; the manual wheel controls (FCP
@@ -359,13 +362,16 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
         if (_bus == null) return;
 
         _bus.WriteExternal(Md11Fcp.WriteVerticalSpeedUnit, unit);
+        var backlogMs = _bus.BacklogMs;                             // sampled BEFORE the wheel click joins the queue
         FireControlEvent(Md11Fcp.VerticalSpeedKnob, "WHEEL_UP");   // engage V/S / FPA pitch mode
-        _ = SetAfterEngage(value);
+        _ = SetAfterEngage(value, backlogMs);
 
-        async Task SetAfterEngage(double v)
+        async Task SetAfterEngage(double v, int backlog)
         {
-            // Let the paced wheel event land before correcting the rate to the typed value.
-            await Task.Delay(250).ConfigureAwait(false);
+            // Let the paced wheel event land before correcting the rate to the typed value — its
+            // settle runs from the click's expected WRITE, so behind a burst (an MCDU scratchpad
+            // send) the late click can no longer land after the value and drag it off target.
+            await Task.Delay(Md11EventBus.ReadBackDelayMs(250, backlog)).ConfigureAwait(false);
             _bus?.WriteExternal(Md11Fcp.WriteVerticalSpeed, v);
         }
     }
