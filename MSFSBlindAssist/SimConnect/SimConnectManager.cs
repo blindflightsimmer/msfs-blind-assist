@@ -480,6 +480,8 @@ public partial class SimConnectManager
         REQUEST_GSX_COUATL_STARTED = 340,
         // The simulator camera (CAMERA STATE + CAMERA VIEW TYPE AND INDEX:0/:1), one-shot —
         // see SimConnectManager.Camera.cs. Backs the instrument-view switch of AI display reads.
+        // The FIRST of CameraReadIdCount (8) ids, 341-348: each read goes out under its own id
+        // (CameraReadWaiters), so keep 342-348 free (pinned by CameraReadWaitersTests).
         REQUEST_CAMERA_VIEW = 341,
         REQUEST_AI_TRAFFIC = 500,
         // Aircraft-specific InputEvent (B:) catalog enumeration.

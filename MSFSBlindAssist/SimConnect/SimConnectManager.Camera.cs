@@ -25,12 +25,15 @@ public partial class SimConnectManager : ICameraViewIo
         public double ViewIndex;
     }
 
-    // One waiter shared by concurrent readers, completed on the dispatch of REQUEST_CAMERA_VIEW
-    // and released with null on disconnect / aircraft switch (FailCameraViewRead). A waiter
-    // abandoned by a timeout or a failed request is released at once (ReleaseCameraViewWaiter),
-    // so its late delivery lands on nobody.
-    private readonly object _cameraReadLock = new();
-    private TaskCompletionSource<CameraViewReading?>? _cameraRead;
+    // Each read goes out under its OWN request id — one of the CameraReadIdCount ids counting up
+    // from REQUEST_CAMERA_VIEW, rotating — and only the answer to that id completes it (the
+    // dispatch matches the range before its switch). A read abandoned by a timeout or a failed
+    // request is forgotten at once, so its late answer lands on nobody; the single shared waiter
+    // this replaces let that late answer complete the NEXT read. Released with null on
+    // disconnect / aircraft switch (FailCameraViewRead).
+    internal const int CameraReadIdCount = 8;
+    private readonly CameraReadWaiters _cameraReads =
+        new((int)DATA_REQUESTS.REQUEST_CAMERA_VIEW, CameraReadIdCount);
 
     /// <summary>
     /// Registers the camera definition with the other fixed definitions. Its own try/catch, like
@@ -65,84 +68,64 @@ public partial class SimConnectManager : ICameraViewIo
     {
         if (!IsConnected || simConnect == null) return Task.FromResult<CameraViewReading?>(null);
 
-        TaskCompletionSource<CameraViewReading?> tcs;
-        lock (_cameraReadLock)
+        var (requestId, answer) = _cameraReads.Begin();
+        if (requestId == CameraReadWaiters.NoRequestId)
         {
-            _cameraRead ??= new TaskCompletionSource<CameraViewReading?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            tcs = _cameraRead;
+            // Every id in the range is still awaited (display reads run one at a time, so this is
+            // not expected): a read without an id of its own could not be told from theirs.
+            Log.Debug("SimConnect", "Camera view read skipped: every camera request id is still awaited");
+            return answer;
         }
 
         try
         {
-            simConnect.RequestDataOnSimObject(DATA_REQUESTS.REQUEST_CAMERA_VIEW,
+            simConnect.RequestDataOnSimObject((DATA_REQUESTS)requestId,
                 DATA_DEFINITIONS.DEF_CAMERA_VIEW, SIMCONNECT_OBJECT_ID_USER,
                 SIMCONNECT_PERIOD.ONCE, SIMCONNECT_DATA_REQUEST_FLAG.DEFAULT, 0, 0, 0);
         }
         catch (Exception ex)
         {
-            Log.Debug("SimConnect", $"Camera view request failed: {ex.Message}");
-            ReleaseCameraViewWaiter(tcs);
+            Log.Debug("SimConnect", $"Camera view request {requestId} failed: {ex.Message}");
+            _cameraReads.Abandon(requestId);
             return Task.FromResult<CameraViewReading?>(null);
         }
 
-        return AwaitCameraViewAsync(tcs, timeoutMs);
+        return AwaitCameraViewAsync(requestId, answer, timeoutMs);
     }
 
     // No ConfigureAwait(false): the caller (an AI display read on the UI thread) writes SimVars
     // right after this returns, and SimConnect calls stay on the UI thread in this app.
-    private async Task<CameraViewReading?> AwaitCameraViewAsync(TaskCompletionSource<CameraViewReading?> tcs, int timeoutMs)
+    private async Task<CameraViewReading?> AwaitCameraViewAsync(int requestId, Task<CameraViewReading?> answer, int timeoutMs)
     {
         try
         {
-            return await tcs.Task.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs));
+            return await answer.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs));
         }
         catch (TimeoutException)
         {
-            // A timed-out request is abandoned: its late delivery must not answer the next read.
-            ReleaseCameraViewWaiter(tcs);
+            // A timed-out read is abandoned: the late answer to ITS id must not complete a later read.
+            _cameraReads.Abandon(requestId);
             return null;
         }
     }
 
     /// <summary>
-    /// Forgets <paramref name="tcs"/> if it is still the registered waiter, so a late delivery
-    /// for an abandoned request lands on nobody instead of answering a newer read with the
-    /// camera as it was before an earlier switch.
+    /// Called from the dispatch for a request id in the camera range: completes the read that
+    /// asked under <paramref name="requestId"/>, if it is still waiting. The late answer to an
+    /// abandoned read completes nothing.
     /// </summary>
-    private void ReleaseCameraViewWaiter(TaskCompletionSource<CameraViewReading?> tcs)
+    private void CompleteCameraViewRead(int requestId, CameraViewData data)
     {
-        lock (_cameraReadLock)
-        {
-            if (ReferenceEquals(_cameraRead, tcs)) _cameraRead = null;
-        }
-    }
-
-    /// <summary>Called from the dispatch for <c>REQUEST_CAMERA_VIEW</c>.</summary>
-    private void CompleteCameraViewRead(CameraViewData data)
-    {
-        TaskCompletionSource<CameraViewReading?>? tcs;
-        lock (_cameraReadLock)
-        {
-            tcs = _cameraRead;
-            _cameraRead = null;
-        }
-        tcs?.TrySetResult(new CameraViewReading(
+        var reading = new CameraViewReading(
             (int)Math.Round(data.State),
             (int)Math.Round(data.ViewType),
-            (int)Math.Round(data.ViewIndex)));
+            (int)Math.Round(data.ViewIndex));
+        if (!_cameraReads.Complete(requestId, reading))
+            Log.Debug("SimConnect", $"Dropped a late camera view answer (request {requestId}): its read had already given up.");
     }
 
-    /// <summary>A disconnect or aircraft switch means no delivery is coming: release the waiter with null.</summary>
-    private void FailCameraViewRead()
-    {
-        TaskCompletionSource<CameraViewReading?>? tcs;
-        lock (_cameraReadLock)
-        {
-            tcs = _cameraRead;
-            _cameraRead = null;
-        }
-        tcs?.TrySetResult(null);
-    }
+    /// <summary>A disconnect or aircraft switch means no delivery is coming: release every waiting read with null.</summary>
+    private void FailCameraViewRead() => _cameraReads.FailAll();
 
     /// <summary>
     /// Moves the camera: the view type first, then the index within it (the order verified live —

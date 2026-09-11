@@ -18,8 +18,8 @@ namespace MSFSBlindAssist.SimConnect;
 /// next read of the key is answered by its own request and never by a value SimConnect sampled
 /// before it asked. The first version issued the ONCE under the var's data-definition id — no
 /// identity on the wire — and left a timed-out waiter registered, so the abandoned request's late
-/// answer satisfied the next caller with a pre-request value. Mirrors
-/// <c>SimConnectManager.ReleaseCameraViewWaiter</c>. A continuous-batch or periodic-subscription
+/// answer satisfied the next caller with a pre-request value. The camera read follows the same
+/// rule (<see cref="CameraReadWaiters"/>). A continuous-batch or periodic-subscription
 /// delivery answers no request; it is a sample taken after the waiter registered and so never
 /// stale for it, which is what the id-less <see cref="Complete(string, double)"/> is for.
 ///

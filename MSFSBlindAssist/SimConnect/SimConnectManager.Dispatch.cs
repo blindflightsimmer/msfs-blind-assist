@@ -57,6 +57,14 @@ public partial class SimConnectManager
             return;
         }
 
+        // A camera read answers under its OWN id from the small range counting up from
+        // REQUEST_CAMERA_VIEW (CameraReadWaiters), so it is matched by range, not by a case label.
+        if (_cameraReads.Owns((int)data.dwRequestID))
+        {
+            CompleteCameraViewRead((int)data.dwRequestID, (CameraViewData)data.dwData[0]);
+            return;
+        }
+
         switch ((DATA_REQUESTS)data.dwRequestID)
         {
                 
@@ -309,10 +317,6 @@ public partial class SimConnectManager
                 // be drained before SetupEvents attached this handler); no event, no
                 // announcement — MainForm's gate-list predicate polls the property.
                 GsxCouatlStartedLVar = ((SingleValue)data.dwData[0]).value != 0;
-                break;
-
-            case DATA_REQUESTS.REQUEST_CAMERA_VIEW:
-                CompleteCameraViewRead((CameraViewData)data.dwData[0]);
                 break;
 
             case DATA_REQUESTS.REQUEST_SQUAWK_CODE:
