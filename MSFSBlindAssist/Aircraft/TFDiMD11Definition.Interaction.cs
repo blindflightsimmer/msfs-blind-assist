@@ -1276,6 +1276,43 @@ public partial class TFDiMD11Definition
     // =================================================================================
 
     /// <summary>
+    /// The gear key's answer, read FRESH: <c>MD11_MIP_GEAR_SW</c> is OnRequest, so the cache is
+    /// filled only while the Landing Gear panel is open — the read-out said "unavailable" until the
+    /// panel had been opened once, and went stale the moment the gear moved with the sim's own key.
+    /// The read completes on the var's own delivery (a frame or two, at most
+    /// <see cref="Md11SelectorWalker.FreshReadTimeoutMs"/>); the words are
+    /// <see cref="Md11GearLever.Describe"/>'s, "unavailable" only when nothing was delivered. The
+    /// read resumes off the UI thread, so the answer goes through <see cref="OnUiThread"/> — and is
+    /// not spoken at all once the definition has been disposed (an aircraft switch mid-read).
+    /// </summary>
+    private async Task ReadGearAsync(SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    {
+        try
+        {
+            var travel = await sim.ReadFreshAsync(Md11GearLever.Key, Md11SelectorWalker.FreshReadTimeoutMs).ConfigureAwait(false);
+            if (travel == null)
+                Log.Debug("MD11", $"Gear read-out: nothing delivered for {Md11GearLever.Key} within {Md11SelectorWalker.FreshReadTimeoutMs} ms.");
+            var sentence = Md11GearLever.Describe(travel);
+            OnUiThread(() =>
+            {
+                try
+                {
+                    if (_sim == null) return;   // disposed meanwhile: never answer for the aircraft that left
+                    announcer.AnnounceImmediate(sentence);
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug("MD11", $"Gear read-out (UI-thread tail) threw: {ex.Message}");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("MD11", $"Gear read-out threw: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// On this aircraft the read-outs are not a convenience — the DUs are WASM-rendered, so the
     /// exported L:vars are the only way a blind pilot gets the numbers a sighted one reads off the
     /// glass, and the five AI display reads are the only way to read the glass itself.
@@ -1365,14 +1402,12 @@ public partial class TFDiMD11Definition
             // the right answer at either end and the WRONG one mid-travel — it would call a lever
             // at 10 "down" while the aircraft calls it up. The control map's {0:Up, 1:Down} is the
             // generator mis-reading the %{if}: the COMPARISON yields the boolean, not the var.
+            //
+            // Read FRESH, never from the cache (ReadGearAsync): the answer is spoken when the read
+            // delivers, and the hotkey itself returns at once.
             case HotkeyAction.ReadGear:
-            {
-                var g = simConnect.GetCachedVariableValue(Md11GearLever.Key);
-                announcer.AnnounceImmediate(g == null
-                    ? "Gear position unavailable"
-                    : Md11GearLever.IsDown(g.Value) ? "Gear down" : "Gear up");
+                _ = ReadGearAsync(simConnect, announcer);
                 return true;
-            }
 
             // B — the captain's altimeter in BOTH units, hPa first, exactly as the PMDG 737/777 and
             // Fenix say it ("Altimeter: 1013, 29.92"), or "Altimeter standard" (Md11Fcp.IsStandard).

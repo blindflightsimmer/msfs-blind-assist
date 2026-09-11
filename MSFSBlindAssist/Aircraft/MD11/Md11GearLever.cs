@@ -10,7 +10,7 @@ namespace MSFSBlindAssist.Aircraft.MD11;
 /// either end and is WRONG mid-travel — it calls a lever at 10 "down" while the aircraft says up.
 ///
 /// Two readers share this one rule so they cannot drift: the gear hotkey read-out
-/// (<see cref="IsDown"/>) and the Landing Gear panel's combo, which is keyed on the map's 0/1
+/// (<see cref="Describe"/>, over a fresh read) and the Landing Gear panel's combo, keyed on the map's 0/1
 /// (<see cref="DescriptionKey"/>, wired through <c>SimVarDefinition.ValueToDescriptionKey</c> —
 /// MainForm's combo lookup is an exact key match, so the parked lever's 25 selected nothing).
 /// The pick still writes the map key, which is what the walker's two-position toggle expects.
@@ -34,4 +34,13 @@ public static class Md11GearLever
 
     /// <summary>The ValueDescriptions key a travel value classifies onto (the map's 0 Up / 1 Down).</summary>
     public static double DescriptionKey(double travel) => IsDown(travel) ? DownKey : UpKey;
+
+    /// <summary>
+    /// The gear key's sentence for a FRESH read of the lever: "Gear down" / "Gear up" by TFDi's
+    /// threshold, and "Gear position unavailable" only when nothing was delivered
+    /// (<paramref name="travel"/> null) — never a cached value, which this OnRequest var holds
+    /// only while the Landing Gear panel is open.
+    /// </summary>
+    public static string Describe(double? travel)
+        => travel is not double t ? "Gear position unavailable" : IsDown(t) ? "Gear down" : "Gear up";
 }

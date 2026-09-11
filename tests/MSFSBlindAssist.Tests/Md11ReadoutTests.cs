@@ -84,6 +84,22 @@ public class Md11ReadoutTests
     }
 
     /// <summary>
+    /// The gear key reads the lever FRESH and speaks this: TFDi's threshold on a delivered travel,
+    /// "unavailable" only when nothing was delivered. It read the CACHE, which this OnRequest var
+    /// holds only while the Landing Gear panel is open — "unavailable" until the panel had been
+    /// opened, and stale after the gear was moved with the sim's own key.
+    /// </summary>
+    [Theory]
+    [InlineData(null, "Gear position unavailable")]
+    [InlineData(25.0, "Gear down")]
+    [InlineData(20.0, "Gear down")]
+    [InlineData(19.9, "Gear up")]
+    [InlineData(10.0, "Gear up")]
+    [InlineData(0.0, "Gear up")]
+    public void GearReadOut_SpeaksTheDeliveredTravel_AndUnavailableOnlyWithoutADelivery(double? travel, string expected)
+        => Assert.Equal(expected, Md11GearLever.Describe(travel));
+
+    /// <summary>
     /// A classifier belongs only to a control whose VALUE space is not its combo's KEY space: the
     /// gear lever's 0-25 travel against {0 Up, 1 Down}, the Dial-A-Flap wheel's continuous raw
     /// value against whole degrees, the flap handle's Dial-A-Flap BAND against the detent
