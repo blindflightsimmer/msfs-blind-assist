@@ -324,44 +324,30 @@ public partial class TFDiMD11Definition
     /// the pilot's own entry, an error condition, not a background change. Same shape as the
     /// minimums read-back and the altimeter settle: the UI-thread tail carries its own catch.
     /// </summary>
-    private async Task VerifyAltimetersAsync(SimConnectManager sim, ScreenReaderAnnouncer announcer,
+    private Task VerifyAltimetersAsync(SimConnectManager sim, ScreenReaderAnnouncer announcer,
         List<(string Side, string Read, double Value)> written, int entry)
     {
-        int generation = _announceGeneration;
-        try
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        return DeferToUiThreadAsync(Md11Fcp.VerifyAfterMs, async () =>
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            await Task.Delay(Md11Fcp.VerifyAfterMs).ConfigureAwait(false);
             // Every export is batch-covered: each fresh read completes on its next 1 Hz delivery.
             // The old fixed sleep read the cache and had to out-wait two deliveries to be sure of
             // seeing the write; an export not delivered stays null, which DescribeAltimeterShortfall
             // treats as no evidence.
             var reads = await Task.WhenAll(written.Select(w => sim.ReadFreshAsync(w.Read, BatchReadBackTimeoutMs))).ConfigureAwait(false);
             Log.Debug("MD11", $"Altimeter read-back: {reads.Count(r => r != null)} of {written.Count} exports delivered after {sw.ElapsedMilliseconds} ms.");
-            OnUiThread(() =>
+            return () =>
             {
-                try
+                if (entry != _altimeterEntrySeq) return;         // a newer entry owns the read-back
+                var shortfalls = new List<string>();
+                for (int i = 0; i < written.Count; i++)
                 {
-                    if (generation != _announceGeneration) return;   // aircraft switch / reconnect / flight load
-                    if (entry != _altimeterEntrySeq) return;         // a newer entry owns the read-back
-                    var shortfalls = new List<string>();
-                    for (int i = 0; i < written.Count; i++)
-                    {
-                        var text = Md11Fcp.DescribeAltimeterShortfall(written[i].Side, written[i].Value, reads[i]);
-                        if (text != null) shortfalls.Add(text);
-                    }
-                    if (shortfalls.Count > 0) announcer.Announce(string.Join(". ", shortfalls));
+                    var text = Md11Fcp.DescribeAltimeterShortfall(written[i].Side, written[i].Value, reads[i]);
+                    if (text != null) shortfalls.Add(text);
                 }
-                catch (Exception ex)
-                {
-                    Log.Debug("MD11", $"Altimeter read-back (UI-thread tail) threw: {ex.Message}");
-                }
-            });
-        }
-        catch (Exception ex)
-        {
-            Log.Debug("MD11", $"Altimeter read-back threw: {ex.Message}");
-        }
+                if (shortfalls.Count > 0) announcer.Announce(string.Join(". ", shortfalls));
+            };
+        }, "Altimeter read-back threw", "Altimeter read-back (UI-thread tail) threw", guardGeneration: true);
     }
 
     // ---------------------------------------------------------------------------------

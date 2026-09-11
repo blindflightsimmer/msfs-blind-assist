@@ -112,6 +112,53 @@ public partial class TFDiMD11Definition
         else action();
     }
 
+    /// <summary>
+    /// The ONE "wait, read, then act on the UI thread" shape every deferred read-back and settled
+    /// announcement on this aircraft shares — the ground-spoiler, COM, minimums, squawk, Ctrl+B and
+    /// STD read-backs, the take-off speed and altimeter settles, the deferred dark transition.
+    ///
+    /// After <paramref name="delayMs"/>, <paramref name="readThenCompose"/> runs OFF the UI thread:
+    /// it does the site's fresh reads, writes the site's timing log line, decides, and returns the
+    /// tail to run on the UI thread — or null when there is nothing to say, and then nothing is
+    /// posted. The tail runs through <see cref="OnUiThread"/> inside its own catch, because it runs
+    /// outside this method's try and an announcement must never be the thing that takes the message
+    /// pump down. <paramref name="guardGeneration"/> drops the tail when <see cref="_announceGeneration"/>
+    /// has moved since the call (an aircraft switch, a reconnect, a flight load); the verdicts on the
+    /// pilot's own entries never had that guard and pass false. Each site passes its own two log
+    /// texts and keeps its own Ctrl+M check inside its tail.
+    ///
+    /// The gear key's read-out passes a zero delay, which waits for nothing: Task.Delay(0) is
+    /// already complete, so <paramref name="readThenCompose"/> starts on the caller's thread and
+    /// issues its read before this returns, exactly as a direct call would.
+    /// </summary>
+    private async Task DeferToUiThreadAsync(int delayMs, Func<Task<Action?>> readThenCompose,
+        string failedLog, string tailFailedLog, bool guardGeneration = false)
+    {
+        int generation = _announceGeneration;
+        try
+        {
+            await Task.Delay(delayMs).ConfigureAwait(false);
+            var tail = await readThenCompose().ConfigureAwait(false);
+            if (tail == null) return;
+            OnUiThread(() =>
+            {
+                try
+                {
+                    if (guardGeneration && generation != _announceGeneration) return;   // aircraft switch / reconnect / flight load
+                    tail();
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug("MD11", $"{tailFailedLog}: {ex.Message}");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("MD11", $"{failedLog}: {ex.Message}");
+        }
+    }
+
     /// <summary>How long a lamp going DARK waits before it is allowed to speak — see <see cref="DeferDarkTransitionAsync"/>.</summary>
     private const int DarkSettleMs = 1500;
 
@@ -197,49 +244,30 @@ public partial class TFDiMD11Definition
     /// for a muted lamp so its dedup state stays what it would be unmuted; only the speech is
     /// dropped. Same reasoning as the altimeter settle announcement.
     /// </summary>
-    private async Task DeferDarkTransitionAsync(Md11Control lamp, ScreenReaderAnnouncer announcer)
-    {
-        int generation = _announceGeneration;
-        try
+    private Task DeferDarkTransitionAsync(Md11Control lamp, ScreenReaderAnnouncer announcer)
+        => DeferToUiThreadAsync(DarkSettleMs, () => Task.FromResult<Action?>(() =>
         {
-            await Task.Delay(DarkSettleMs).ConfigureAwait(false);
-            OnUiThread(() =>
+            long now = Environment.TickCount64;
+            bool powered = IsDcPowered();
+            bool muted = Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet.Contains(lamp.NodeId);
+
+            if (_lampOwners.TryGetValue(lamp.NodeId, out var owners))
             {
-                try
+                foreach (var owner in owners)
                 {
-                    if (generation != _announceGeneration) return;   // aircraft switch / reconnect / flight load
-
-                    long now = Environment.TickCount64;
-                    bool powered = IsDcPowered();
-                    bool muted = Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet.Contains(lamp.NodeId);
-
-                    if (_lampOwners.TryGetValue(lamp.NodeId, out var owners))
-                    {
-                        foreach (var owner in owners)
-                        {
-                            var text = _gate.SpeakDarkTransition(owner.NodeId,
-                                Md11ControlState.Compose(owner.State, ReadStateVar, powered), powered, now);
-                            if (text != null && !muted) announcer.Announce($"{owner.DisplayLabel}: {text}");
-                        }
-                        return;
-                    }
-
-                    // Standalone: whatever the lamp reads now, which may be lit again.
-                    bool litNow = _lampLastVal.TryGetValue(lamp.NodeId, out var v) && v > Md11ControlState.LitThreshold;
-                    var word = _gate.SpeakDarkTransition(lamp.NodeId, StandaloneWord(lamp, litNow), powered, now);
-                    if (word != null && !muted) announcer.Announce($"{lamp.DisplayLabel}: {word}");
+                    var text = _gate.SpeakDarkTransition(owner.NodeId,
+                        Md11ControlState.Compose(owner.State, ReadStateVar, powered), powered, now);
+                    if (text != null && !muted) announcer.Announce($"{owner.DisplayLabel}: {text}");
                 }
-                catch (Exception ex)
-                {
-                    Log.Debug("MD11", $"Deferred dark transition (UI-thread tail) for {lamp.NodeId} threw: {ex.Message}");
-                }
-            });
-        }
-        catch (Exception ex)
-        {
-            Log.Debug("MD11", $"Deferred dark transition for {lamp.NodeId} threw: {ex.Message}");
-        }
-    }
+                return;
+            }
+
+            // Standalone: whatever the lamp reads now, which may be lit again.
+            bool litNow = _lampLastVal.TryGetValue(lamp.NodeId, out var v) && v > Md11ControlState.LitThreshold;
+            var word = _gate.SpeakDarkTransition(lamp.NodeId, StandaloneWord(lamp, litNow), powered, now);
+            if (word != null && !muted) announcer.Announce($"{lamp.DisplayLabel}: {word}");
+        }), $"Deferred dark transition for {lamp.NodeId} threw",
+            $"Deferred dark transition (UI-thread tail) for {lamp.NodeId} threw", guardGeneration: true);
 
     /// <summary>
     /// Press feedback (spec §3.6): after the lamps and latch settle, speak the resulting state

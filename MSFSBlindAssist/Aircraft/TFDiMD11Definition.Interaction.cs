@@ -117,23 +117,18 @@ public partial class TFDiMD11Definition
     /// echo-suppressed by MainForm for three seconds, so a false failure here used to be the only
     /// thing the pilot heard.
     /// </summary>
-    private async Task VerifyGroundSpoilersAsync(double target, int backlogMs, SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    private Task VerifyGroundSpoilersAsync(double target, int backlogMs, SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
-        try
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        return DeferToUiThreadAsync(Md11EventBus.ReadBackDelayMs(ArmSettleMs, backlogMs), async () =>
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            await Task.Delay(Md11EventBus.ReadBackDelayMs(ArmSettleMs, backlogMs)).ConfigureAwait(false);
             var read = await sim.ReadFreshAsync(Md11SpeedbrakeSystem.ArmKey, BatchReadBackTimeoutMs).ConfigureAwait(false);
             Log.Debug("MD11", $"Ground spoiler read-back: {Md11SpeedbrakeSystem.ArmKey}={read?.ToString("0.##") ?? "null"} " +
                 $"after {sw.ElapsedMilliseconds} ms (backlog {backlogMs} ms), target {target:0}.");
             var failure = Md11SpeedbrakeSystem.ArmReadBack(target, read);
-            if (failure == null) return;
-            OnUiThread(() => announcer.Announce(failure));
-        }
-        catch (Exception ex)
-        {
-            Log.Debug("MD11", $"Ground spoiler read-back failed: {ex.Message}");
-        }
+            if (failure == null) return null;
+            return () => announcer.Announce(failure);
+        }, "Ground spoiler read-back failed", "Ground spoiler read-back (UI-thread tail) failed");
     }
 
     /// <summary>
@@ -210,25 +205,18 @@ public partial class TFDiMD11Definition
     /// mismatch ("… did not change, still 124.850"); a match was already announced by the COM
     /// announcer when the variable moved, and nothing delivered is no verdict (logged, not spoken).
     /// </summary>
-    private async Task VerifyComAsync(string key, double targetKhz, string failure, SimConnectManager sim, ScreenReaderAnnouncer announcer)
-    {
-        try
+    private Task VerifyComAsync(string key, double targetKhz, string failure, SimConnectManager sim, ScreenReaderAnnouncer announcer)
+        => DeferToUiThreadAsync(ComTuneSettleMs, async () =>
         {
-            await Task.Delay(ComTuneSettleMs).ConfigureAwait(false);
             var read = await sim.ReadFreshAsync(key, BatchReadBackTimeoutMs).ConfigureAwait(false);
             var sentence = Md11Radios.TuneReadBack(targetKhz, read, failure);
             if (sentence == null)
             {
                 if (read == null) Log.Debug("MD11", $"COM tuning read-back: nothing delivered for {key} within {BatchReadBackTimeoutMs} ms — no verdict.");
-                return;
+                return null;
             }
-            OnUiThread(() => announcer.Announce(sentence));
-        }
-        catch (Exception ex)
-        {
-            Log.Debug("MD11", $"COM tuning read-back failed: {ex.Message}");
-        }
-    }
+            return () => announcer.Announce(sentence);
+        }, "COM tuning read-back failed", "COM tuning read-back (UI-thread tail) failed");
 
     /// <summary>
     /// The inbox is consumed within the next FCC cycle — the EXTCTL apply allowance every inbox
@@ -257,12 +245,11 @@ public partial class TFDiMD11Definition
         _ = VerifyMinimumsAsync(side, feet, simConnect, announcer);
     }
 
-    private async Task VerifyMinimumsAsync(Md11MinimumsSide side, int feet, SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    private Task VerifyMinimumsAsync(Md11MinimumsSide side, int feet, SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
-        try
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        return DeferToUiThreadAsync(MinimumsSettleMs, async () =>
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            await Task.Delay(MinimumsSettleMs).ConfigureAwait(false);
             // Both keys are batch-covered (the read-back and the mode switch's silent mirror), so
             // each fresh read completes on its next 1 Hz delivery — one period at most, and the
             // ceiling only bounds a delivery that never comes. Requested together so neither waits
@@ -277,12 +264,8 @@ public partial class TFDiMD11Definition
                 $"after {sw.ElapsedMilliseconds} ms (typed {feet}).");
             bool? modeIsBaro = mode is double m ? m > 0.5 : null;
             var sentence = Md11Minimums.Confirmation(side, feet, read, modeIsBaro);
-            OnUiThread(() => announcer.Announce(sentence));
-        }
-        catch (Exception ex)
-        {
-            Log.Debug("MD11", $"Minimums read-back failed: {ex.Message}");
-        }
+            return () => announcer.Announce(sentence);
+        }, "Minimums read-back failed", "Minimums read-back (UI-thread tail) failed");
     }
 
     /// <summary>How long the aircraft gets to accept the fourth digit before the read-back.</summary>
@@ -358,10 +341,14 @@ public partial class TFDiMD11Definition
                 if (!_byNodeId.TryGetValue(Md11Squawk.DigitButton(digit), out var key) || _bus == null) return;
                 await _bus.PressAndSettleAsync(key, settleMs: 150).ConfigureAwait(false);
             }
-            await Task.Delay(SquawkCommitMs).ConfigureAwait(false);
-            var read = await sim.ReadFreshAsync(Md11Squawk.CodeKey, SquawkReadBackTimeoutMs).ConfigureAwait(false);
-            var readBack = read is double v ? Md11Squawk.Decode(v) : null;
-            OnUiThread(() => announcer.Announce(Md11Squawk.Confirmation(code, readBack)));
+            // Awaited INSIDE this try: the confirmation is posted before the finally posts
+            // EndEntry, and a read that throws is logged with this method's own words.
+            await DeferToUiThreadAsync(SquawkCommitMs, async () =>
+            {
+                var read = await sim.ReadFreshAsync(Md11Squawk.CodeKey, SquawkReadBackTimeoutMs).ConfigureAwait(false);
+                var readBack = read is double v ? Md11Squawk.Decode(v) : null;
+                return () => announcer.Announce(Md11Squawk.Confirmation(code, readBack));
+            }, "Squawk entry failed", "Squawk entry (UI-thread tail) failed").ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -928,37 +915,18 @@ public partial class TFDiMD11Definition
     /// and with every speed the pilot muted in Ctrl+M left out. The same shape as
     /// AnnounceAltimeterWhenSettledAsync: the UI-thread tail carries its own catch.
     /// </summary>
-    private async Task AnnounceVSpeedsWhenSettledAsync(ScreenReaderAnnouncer announcer)
-    {
-        int generation = _announceGeneration;
-        try
+    private Task AnnounceVSpeedsWhenSettledAsync(ScreenReaderAnnouncer announcer)
+        => DeferToUiThreadAsync(Md11VSpeedAnnouncer.SettleMs + 50, () => Task.FromResult<Action?>(() =>
         {
-            await Task.Delay(Md11VSpeedAnnouncer.SettleMs + 50).ConfigureAwait(false);
-            OnUiThread(() =>
+            var muted = Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet;
+            var sentence = _vSpeeds.Due(Environment.TickCount64, muted.Contains);
+            if (sentence == null)
             {
-                try
-                {
-                    if (generation != _announceGeneration) return;
-                    var muted = Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet;
-                    var sentence = _vSpeeds.Due(Environment.TickCount64, muted.Contains);
-                    if (sentence == null)
-                    {
-                        if (_vSpeeds.HasPending) _ = AnnounceVSpeedsWhenSettledAsync(announcer);   // checked early: one more round
-                        return;
-                    }
-                    announcer.Announce(sentence);
-                }
-                catch (Exception ex)
-                {
-                    Log.Debug("MD11", $"Take-off speed announcement (UI-thread tail) threw: {ex.Message}");
-                }
-            });
-        }
-        catch (Exception ex)
-        {
-            Log.Debug("MD11", $"Take-off speed announcement threw: {ex.Message}");
-        }
-    }
+                if (_vSpeeds.HasPending) _ = AnnounceVSpeedsWhenSettledAsync(announcer);   // checked early: one more round
+                return;
+            }
+            announcer.Announce(sentence);
+        }), "Take-off speed announcement threw", "Take-off speed announcement (UI-thread tail) threw", guardGeneration: true);
 
     /// <summary>
     /// The last SIM_ON_GROUND sample. Starts true: a ramp start is the norm, and an airborne start
@@ -1145,39 +1113,20 @@ public partial class TFDiMD11Definition
     /// DeferDarkTransitionAsync (TFDiMD11Definition.State.cs). An announcement must never be the
     /// thing that takes the message pump down.
     /// </summary>
-    private async Task AnnounceAltimeterWhenSettledAsync(ScreenReaderAnnouncer announcer)
-    {
-        int generation = _announceGeneration;
-        try
+    private Task AnnounceAltimeterWhenSettledAsync(ScreenReaderAnnouncer announcer)
+        => DeferToUiThreadAsync(Md11AltimeterAnnouncer.SettleMs + 50, () => Task.FromResult<Action?>(() =>
         {
-            await Task.Delay(Md11AltimeterAnnouncer.SettleMs + 50).ConfigureAwait(false);
-            OnUiThread(() =>
+            var sentence = _altimeter.Due(Environment.TickCount64);
+            if (sentence == null)
             {
-                try
-                {
-                    if (generation != _announceGeneration) return;
-                    var sentence = _altimeter.Due(Environment.TickCount64);
-                    if (sentence == null)
-                    {
-                        // Checked early: the value is still armed and nothing else will look at
-                        // it (each update arms one check). One more round, then it is spoken.
-                        if (_altimeter.HasPending) _ = AnnounceAltimeterWhenSettledAsync(announcer);
-                        return;
-                    }
-                    if (Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet.Contains(Md11Fcp.ReadCaptainBaro)) return;
-                    announcer.Announce(sentence);
-                }
-                catch (Exception ex)
-                {
-                    Log.Debug("MD11", $"Altimeter announcement (UI-thread tail) threw: {ex.Message}");
-                }
-            });
-        }
-        catch (Exception ex)
-        {
-            Log.Debug("MD11", $"Altimeter announcement threw: {ex.Message}");
-        }
-    }
+                // Checked early: the value is still armed and nothing else will look at
+                // it (each update arms one check). One more round, then it is spoken.
+                if (_altimeter.HasPending) _ = AnnounceAltimeterWhenSettledAsync(announcer);
+                return;
+            }
+            if (Settings.SettingsManager.Current.Md11DisabledMonitorVariablesSet.Contains(Md11Fcp.ReadCaptainBaro)) return;
+            announcer.Announce(sentence);
+        }), "Altimeter announcement threw", "Altimeter announcement (UI-thread tail) threw", guardGeneration: true);
 
     /// <summary>
     /// True when this annunciator update should be suppressed as blink chatter — 3+ transitions
@@ -1295,35 +1244,24 @@ public partial class TFDiMD11Definition
     /// The read completes on the var's own delivery (a frame or two, at most
     /// <see cref="Md11SelectorWalker.FreshReadTimeoutMs"/>); the words are
     /// <see cref="Md11GearLever.Describe"/>'s, "unavailable" only when nothing was delivered. The
-    /// read resumes off the UI thread, so the answer goes through <see cref="OnUiThread"/> — and is
-    /// not spoken at all once the definition has been disposed (an aircraft switch mid-read).
+    /// read resumes off the UI thread, so the answer goes through <see cref="DeferToUiThreadAsync"/>
+    /// — with a zero delay, so the read is still issued at once, on the hotkey's thread — and is not
+    /// spoken at all once the definition has been disposed (an aircraft switch mid-read: the tail's
+    /// own check, not the generation guard).
     /// </summary>
-    private async Task ReadGearAsync(SimConnectManager sim, ScreenReaderAnnouncer announcer)
-    {
-        try
+    private Task ReadGearAsync(SimConnectManager sim, ScreenReaderAnnouncer announcer)
+        => DeferToUiThreadAsync(0, async () =>
         {
             var travel = await sim.ReadFreshAsync(Md11GearLever.Key, Md11SelectorWalker.FreshReadTimeoutMs).ConfigureAwait(false);
             if (travel == null)
                 Log.Debug("MD11", $"Gear read-out: nothing delivered for {Md11GearLever.Key} within {Md11SelectorWalker.FreshReadTimeoutMs} ms.");
             var sentence = Md11GearLever.Describe(travel);
-            OnUiThread(() =>
+            return () =>
             {
-                try
-                {
-                    if (_sim == null) return;   // disposed meanwhile: never answer for the aircraft that left
-                    announcer.AnnounceImmediate(sentence);
-                }
-                catch (Exception ex)
-                {
-                    Log.Debug("MD11", $"Gear read-out (UI-thread tail) threw: {ex.Message}");
-                }
-            });
-        }
-        catch (Exception ex)
-        {
-            Log.Debug("MD11", $"Gear read-out threw: {ex.Message}");
-        }
-    }
+                if (_sim == null) return;   // disposed meanwhile: never answer for the aircraft that left
+                announcer.AnnounceImmediate(sentence);
+            };
+        }, "Gear read-out threw", "Gear read-out (UI-thread tail) threw");
 
     /// <summary>
     /// On this aircraft the read-outs are not a convenience — the DUs are WASM-rendered, so the
