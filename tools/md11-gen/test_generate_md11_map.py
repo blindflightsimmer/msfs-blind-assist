@@ -821,14 +821,14 @@ class CompositeTests(unittest.TestCase):
         self.assertEqual("MD11_AOVHD_APUFIRE_KB", var)
         self.assertEqual({"0": "Bottle 1", "1": "Normal", "2": "Bottle 2"}, value_map)
 
-    def test_a_nested_case_on_a_third_var_is_not_a_composite(self):
-        # Only the control's OWN var can take a position over; a nested case on any other var
-        # describes that other control and is left exactly as the flat scan reads it.
-        block = {}
-        _, _, value_map = g.parse_tooltip(self.ENG1, node_id="MD11_AOVHD_OTHER_KB", composite=block)
-        self.assertEqual({}, block)
-        self.assertEqual({"0": "Bottle 1", "1": "Fuel and Hydraulic Disconnect", "2": "Bottle 2"},
-                         value_map)
+    def test_a_nested_case_on_a_third_var_stops_the_generator(self):
+        # Only the control's OWN var can take a position over. Read flat, a nested case on any
+        # other var puts that var's words on the pull -- the wrong-axis map D10 removes -- so the
+        # generator refuses the expression, naming the node, rather than emit it.
+        with self.assertRaises(ValueError) as cm:
+            g.parse_tooltip(self.ENG1, node_id="MD11_AOVHD_OTHER_KB", composite={})
+        self.assertIn("MD11_AOVHD_OTHER_KB", str(cm.exception))
+        self.assertIn("MD11_AOVHD_ENG1FIRE_KB", str(cm.exception))
 
     def test_a_control_without_nesting_is_unchanged(self):
         block = {}
@@ -886,6 +886,233 @@ class IfElseWordTests(unittest.TestCase):
         _, _, value_map = g.parse_tooltip(
             "Test Flow (%((L:MD11_OVHD_X_FLOW_SW))%{if}Max 100%%%{else}Min 20%%%{end})")
         self.assertEqual({"1": "Max 100%", "0": "Min 20%"}, value_map)
+
+
+class IfCompositeTests(unittest.TestCase):
+    """D13: an outer %{if} on ANOTHER var whose TRUE branch is, whole, a nested %{case} on the
+    control's OWN var and whose ELSE branch is a plain word is a composite with two outer positions:
+    0 the else word, 1 handing over to the nested case. TFDi's Elevator Feel knob, the only one in
+    the package: its MANUAL latch reads "Auto" while it is off, and once it is on the knob's own five
+    reference-speed positions take over. Scanned flat, the knob's words became the latch's
+    positions, so an aircraft in Auto read "Decrease Reference Speed Fast" and the row's walker
+    turned the knob's wheel while it read the latch."""
+
+    ELEVFEEL = ("Elevator Feel (%((L:MD11_OVHD_FLTCTL_ELEVFEEL_BT))%{if}"
+                "%((L:MD11_OVHD_FLTCTL_ELEVFEEL_KB))%{case}%{:0}Decrease Reference Speed Fast"
+                "%{:1}Decrease Reference Speed Slow%{:2}Neutral%{:3}Increase Reference Speed Slow"
+                "%{:4}Increase Reference Speed Fast%{end}%{else}Auto%{end})")
+
+    KNOB_WORDS = {"0": "Decrease Reference Speed Fast", "1": "Decrease Reference Speed Slow",
+                  "2": "Neutral", "3": "Increase Reference Speed Slow",
+                  "4": "Increase Reference Speed Fast"}
+
+    BLOCK = {
+        "outer_var": "MD11_OVHD_FLTCTL_ELEVFEEL_BT",
+        "outer_words": {"0": "Auto"},
+        "delegate": "1",
+        "inner_var": "MD11_OVHD_FLTCTL_ELEVFEEL_KB",
+        "inner_words": KNOB_WORDS,
+    }
+
+    def _parse(self, tooltip, node_id="MD11_OVHD_FLTCTL_ELEVFEEL_KB"):
+        block = {}
+        label, var, value_map = g.parse_tooltip(tooltip, node_id=node_id, composite=block)
+        return label, var, value_map, block
+
+    def test_the_elevator_feel_knob_is_a_composite_with_no_value_map(self):
+        # TFDi's tooltip, verbatim (FlightDeck/Overhead.xml).
+        label, var, value_map, block = self._parse(self.ELEVFEEL)
+        self.assertEqual("Elevator Feel", label)
+        self.assertEqual("MD11_OVHD_FLTCTL_ELEVFEEL_BT", var)   # the row's key keeps reading the latch
+        self.assertEqual({}, value_map)
+        self.assertEqual(self.BLOCK, block)
+
+    # Not a composite, each for one reason. Where the nested case's var is not the outer one, read
+    # flat the knob's words would land on the latch, so the generator stops (_composite_block);
+    # otherwise the tooltip is read exactly as the flat scan reads it today.
+
+    def test_a_true_branch_on_a_third_var_stops_the_generator(self):
+        # The nested case reads the knob, which is not this control's own var.
+        with self.assertRaises(ValueError) as cm:
+            self._parse(self.ELEVFEEL, node_id="MD11_OVHD_FLTCTL_OTHER_KB")
+        self.assertIn("MD11_OVHD_FLTCTL_OTHER_KB", str(cm.exception))
+
+    def test_an_else_that_is_not_a_plain_word_stops_the_generator(self):
+        for where, else_branch in (("a directive", "%((L:MD11_OVHD_FLTCTL_ELEVFEEL_KB))%!d!"),
+                                   ("nothing", "")):
+            with self.subTest(else_holds=where), self.assertRaises(ValueError):
+                self._parse(self.ELEVFEEL.replace("%{else}Auto%{end}", "%{else}" + else_branch + "%{end}"))
+
+    def test_a_true_branch_that_is_not_the_whole_case_stops_the_generator(self):
+        for where, tooltip in (("before", self.ELEVFEEL.replace("%{if}%((L:", "%{if}Manual %((L:")),
+                               ("after", self.ELEVFEEL.replace("%{end}%{else}", "%{end} Manual%{else}"))):
+            with self.subTest(word=where), self.assertRaises(ValueError):
+                self._parse(tooltip)
+
+    def test_an_expression_reading_an_airframe_variant_flag_is_not_a_composite(self):
+        # The same shape keyed on the freighter/pax flag: a variant's words are never positions (D1),
+        # so nothing is lifted and nothing is refused.
+        _, var, value_map, block = self._parse(
+            self.ELEVFEEL.replace("L:MD11_OVHD_FLTCTL_ELEVFEEL_BT", "L:MD11_EFB_IS_CARGO"))
+        self.assertEqual({}, block)
+        self.assertIsNone(var)
+        self.assertEqual({}, value_map)
+
+    def test_an_if_on_the_controls_own_var_is_not_a_composite(self):
+        # One var throughout, so reading it flat mixes nothing, and nothing is refused.
+        _, var, value_map, block = self._parse(
+            self.ELEVFEEL.replace("L:MD11_OVHD_FLTCTL_ELEVFEEL_BT", "L:MD11_OVHD_FLTCTL_ELEVFEEL_KB"))
+        self.assertEqual({}, block)
+        self.assertEqual("MD11_OVHD_FLTCTL_ELEVFEEL_KB", var)
+        self.assertEqual(self.KNOB_WORDS, value_map)
+
+    def test_collect_writes_the_block_on_the_elevator_feel_knob_only(self):
+        xml = (use_template("TFDi_Design_MD11_ELEV_FEEL_Knob", NODE_ID="MD11_OVHD_FLTCTL_ELEVFEEL_KB",
+                            ANIM_NAME_PUSHPULL="MD11_OVHD_FLTCTL_ELEVFEEL_BT", PUSHPULL_ID="90480",
+                            RESET_ID="90481", WHEEL_UP="90388", WHEEL_DOWN="90389",
+                            TOOLTIPID=self.ELEVFEEL)
+               + use_template("TFDi_Design_MD11_Switch_Template", NODE_ID="MD11_OVHD_FLTCTL_X_SW",
+                              TOOLTIPID="Test Switch (%((L:MD11_OVHD_FLTCTL_X_SW))%{if}On%{else}Off%{end})",
+                              LEFT_BUTTON_DOWN="1", RIGHT_BUTTON_DOWN="2"))
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg, _ = write_package(tmp, {"FlightDeck/Overhead.xml": xml})
+            controls, _ = g.collect(pkg)
+        by = {c["node_id"]: c for c in controls}
+        knob = by["MD11_OVHD_FLTCTL_ELEVFEEL_KB"]
+        self.assertEqual("knob", knob["kind"])
+        self.assertEqual("MD11_OVHD_FLTCTL_ELEVFEEL_BT", knob["state_var"])
+        self.assertEqual({}, knob["value_map"])
+        self.assertEqual(self.BLOCK, knob["composite"])
+        # An ordinary if/else on the control's own var keeps its two words and gets no block.
+        switch = by["MD11_OVHD_FLTCTL_X_SW"]
+        self.assertNotIn("composite", switch)
+        self.assertEqual({"1": "On", "0": "Off"}, switch["value_map"])
+
+
+class CompositeHardeningTests(unittest.TestCase):
+    """D10 hardening (the Task 4.5 review): both composite rules read an inline if/else by its
+    resting word before they look for the nested case, a nested case they cannot split stops the
+    generator instead of reaching the flat scan, and a composite never gains a value_map."""
+
+    ENG1 = CompositeTests.ENG1
+
+    # The review's fixture W: an inline word inside a rotation position. Cut at that word's own
+    # %{end}, rotation position 3's word landed on the pull and the rotation lost it.
+    W = ("Test Handle (%((L:MD11_T_SW))%{case}%{:0}Normal%{:1}Pulled%{:2}%((L:MD11_T_KB))%{case}"
+         "%{:0}A%{:1}B%{:2}%((L:MD11_T_Q))%{if}Qon%{else}Qoff%{end}%{:3}D%{end}%{end})")
+
+    def _parse(self, tooltip, node_id, empty_cases=None):
+        block = {}
+        label, var, value_map = g.parse_tooltip(tooltip, node_id=node_id, empty_cases=empty_cases,
+                                                composite=block)
+        return label, var, value_map, block
+
+    def test_an_inline_word_in_a_rotation_position_is_read_by_its_resting_word(self):
+        _, _, value_map, block = self._parse(self.W, "MD11_T_KB")
+        self.assertEqual({}, value_map)
+        self.assertEqual({"outer_var": "MD11_T_SW", "outer_words": {"0": "Normal", "1": "Pulled"},
+                          "delegate": "2", "inner_var": "MD11_T_KB",
+                          "inner_words": {"0": "A", "1": "B", "2": "Qoff", "3": "D"}}, block)
+
+    def test_an_apu_style_centre_word_keeps_the_composite(self):
+        # The review's fixture C: TFDi's Engine 1 handle with the rotation's centre worded the way
+        # the APU handle words its own. Cut early, the delegate was lost and the handle fell back to
+        # the flat Bottle map over the pull -- the walkable combo D10 removes -- without a word.
+        apu_style = self.ENG1.replace(
+            "%{:1}Fuel and Hydraulic Disconnect",
+            "%{:1}%((L:MD11_AOVHD_ENG1FIRE_SW))%{if}Shutoff%{else}Fuel and Hydraulic Disconnect%{end}")
+        _, _, value_map, block = self._parse(apu_style, "MD11_AOVHD_ENG1FIRE_KB")
+        self.assertEqual({}, value_map)
+        self.assertEqual(CompositeTests.BLOCK, block)
+
+    def test_an_inline_word_in_a_knob_position_is_read_by_its_resting_word(self):
+        # The same collapse in the if rule (D13).
+        knob = IfCompositeTests.ELEVFEEL.replace(
+            "%{:2}Neutral", "%{:2}%((L:MD11_T_Q))%{if}Centre%{else}Neutral%{end}")
+        _, _, value_map, block = self._parse(knob, "MD11_OVHD_FLTCTL_ELEVFEEL_KB")
+        self.assertEqual({}, value_map)
+        self.assertEqual(IfCompositeTests.BLOCK, block)
+
+    def test_the_case_rule_never_takes_a_variant_flag_as_the_outer_var(self):
+        # Without that gate the flag would become outer_var; a variant's words are never positions.
+        _, var, value_map, block = self._parse(
+            self.ENG1.replace("L:MD11_AOVHD_ENG1FIRE_SW", "L:MD11_EFB_IS_CARGO"), "MD11_AOVHD_ENG1FIRE_KB")
+        self.assertEqual({}, block)
+        self.assertIsNone(var)
+        self.assertEqual({}, value_map)
+
+    def test_the_case_rule_never_takes_the_controls_own_var_as_the_outer_var(self):
+        # Without that gate outer_var and inner_var would be one var. One var throughout, so it is
+        # read flat, as before, and nothing is refused.
+        _, var, value_map, block = self._parse(
+            self.ENG1.replace("L:MD11_AOVHD_ENG1FIRE_SW", "L:MD11_AOVHD_ENG1FIRE_KB"), "MD11_AOVHD_ENG1FIRE_KB")
+        self.assertEqual({}, block)
+        self.assertEqual("MD11_AOVHD_ENG1FIRE_KB", var)
+        self.assertEqual({"0": "Bottle 1", "1": "Fuel and Hydraulic Disconnect", "2": "Bottle 2"},
+                         value_map)
+
+    def test_without_a_node_id_nothing_is_a_composite(self):
+        # collect() always passes one; a direct call without it gets the flat scan, and no refusal.
+        block = {}
+        _, var, value_map = g.parse_tooltip(self.ENG1, composite=block)
+        self.assertEqual({}, block)
+        self.assertEqual("MD11_AOVHD_ENG1FIRE_SW", var)
+        self.assertEqual({"0": "Bottle 1", "1": "Fuel and Hydraulic Disconnect", "2": "Bottle 2"},
+                         value_map)
+
+    def test_an_empty_position_is_reported_once_and_never_by_a_refusal(self):
+        empty_centre = self.ENG1.replace("%{:1}Fuel and Hydraulic Disconnect", "%{:1}")
+        empty = []
+        _, _, _, block = self._parse(empty_centre, "MD11_AOVHD_ENG1FIRE_KB", empty)
+        self.assertEqual("2", block["delegate"])
+        self.assertEqual(["1"], empty)
+        # Text after the nested block leaves no whole delegate position: refused, after both of
+        # the rule's scans ran.
+        empty = []
+        with self.assertRaises(ValueError):
+            self._parse(empty_centre.replace("Bottle 2%{end}%{end}", "Bottle 2%{end} Extra%{end}"),
+                        "MD11_AOVHD_ENG1FIRE_KB", empty)
+        self.assertEqual([], empty)
+
+    def test_a_composite_gets_no_value_map_from_its_label(self):
+        # The review's fixture L: an inline word in the LABEL filled the composite's empty value_map.
+        tooltip = ("Engine %((L:MD11_T_OPT))%{if}One%{else}Two%{end} Fire Handle "
+                   "(%((L:MD11_T_SW))%{case}%{:0}Normal%{:1}Pulled%{:2}%((L:MD11_T_KB))%{case}"
+                   "%{:0}A%{:1}B%{:2}C%{end}%{end})")
+        _, _, value_map, block = self._parse(tooltip, "MD11_T_KB")
+        self.assertEqual("MD11_T_SW", block["outer_var"])
+        self.assertEqual({}, value_map)
+
+    def test_collect_names_the_file_and_the_node_when_it_refuses(self):
+        xml = use_template("TFDi_Design_MD11_ENG_Fire_Handle", NODE_ID="MD11_AOVHD_ENG9FIRE_KB",
+                           WHEEL_UP="1", WHEEL_DOWN="2", TOOLTIPID=self.ENG1)
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg, _ = write_package(tmp, {"FlightDeck/AftOverhead.xml": xml})
+            with self.assertRaises(ValueError) as cm:
+                g.collect(pkg)
+        self.assertIn("FlightDeck/AftOverhead.xml", str(cm.exception))
+        self.assertIn("MD11_AOVHD_ENG9FIRE_KB", str(cm.exception))
+
+    def test_a_computed_condition_is_never_judged(self):
+        # TFDi's Spoilers and Flaps/Slats levers, verbatim (FlightDeck/FootPedestalLower.xml): each
+        # nests its %{case} under a COMPUTED %{if}, never a single-var one. Neither rule looks at
+        # them, nothing is refused, and each keeps the map it always had.
+        spoilers = ("Spoilers (%((L:MD11_SPDBRK_HANDLE) 1 == (L:MD11_SPDBRK_RNG) 0 == and)%{if}"
+                    "Ground Spoilers Armed%{else}%((L:MD11_SPDBRK_HANDLE) 2 ==)%{if}Ground Spoilers "
+                    "Extended%{else}%((L:MD11_SPDBRK_RNG))%{case}%{:0}Retracted%{:17.5}1/3 Extended"
+                    "%{:25}2/3 Extended%{:32.5}3/3 Extended%{end}%{end}%{end})")
+        flaps = ("Flaps/Slats (%(38 65 (L:MD11_FLAP_RNG) rng)%{if}Dial-A-Flap "
+                 "%(10 (L:MD11_DIALAFLAP_IND_RNG) 6.6667 / +)%!d!/Extended%{else}"
+                 "%((L:MD11_FLAP_RNG))%{case}%{:0}Up/Retracted%{:20}Up/Extended%{:70}28/Extended"
+                 "%{:82}35/Extended%{:100}50/Extended%{end}%{end})")
+        _, _, value_map, block = self._parse(spoilers, "MD11_SPDBRK_HANDLE")
+        self.assertEqual({}, block)
+        self.assertEqual({"0": "Retracted", "17.5": "1/3 Extended", "25": "2/3 Extended",
+                          "32.5": "3/3 Extended"}, value_map)
+        _, _, value_map, block = self._parse(flaps, "MD11_FLAP_LATCH")
+        self.assertEqual({}, block)
+        self.assertEqual({"0": "Up/Retracted", "20": "Up/Extended", "70": "28/Extended",
+                          "82": "35/Extended", "100": "50/Extended"}, value_map)
 
 
 if __name__ == "__main__":
