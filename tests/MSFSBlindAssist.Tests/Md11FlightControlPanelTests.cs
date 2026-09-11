@@ -1,4 +1,8 @@
+using MSFSBlindAssist.Accessibility;
+using MSFSBlindAssist.Aircraft;
 using MSFSBlindAssist.Aircraft.MD11;
+using MSFSBlindAssist.Forms.MD11;
+using MSFSBlindAssist.SimConnect;
 
 namespace MSFSBlindAssist.Tests;
 
@@ -161,5 +165,37 @@ public class Md11FlightControlPanelTests
         Assert.Equal("Auto", c!.ValueMap["0"]);
         Assert.Equal("25 degrees", c.ValueMap["5"]);
         Assert.Equal(6, c.ValueMap.Count);
+    }
+
+    /// <summary>
+    /// The Ctrl+P window's bank-limiter combo is built from the DEFINITION's own descriptions for
+    /// the knob and a pick writes their KEY — it was a hand-kept copy of the map written by row
+    /// index. Pinned here is that source: six positions keyed 0-5, in the map's words.
+    /// </summary>
+    [Fact]
+    public void BankAngleLimiter_TheDefinitionDescribesTheSixPositionsTheWindowOffers()
+    {
+        var d = new TFDiMD11Definition().GetVariables()["MD11_CGS_HDG_BASE_KB"].ValueDescriptions;
+
+        Assert.Equal(new[] { 0.0, 1, 2, 3, 4, 5 }, d.Keys.OrderBy(k => k).ToArray());
+        Assert.Equal("Auto", d[0]);
+        Assert.Equal("5 degrees", d[1]);
+        Assert.Equal("25 degrees", d[5]);
+    }
+
+    /// <summary>
+    /// The window writes its two combos through SetControl, past the panel path that marks a pick
+    /// in MainForm's echo window, so it must be handed MainForm's SuppressUiEcho — the PMDG Ctrl+P
+    /// window's arrangement. Pins the constructor the definition builds it with.
+    /// </summary>
+    [Fact]
+    public void AutopilotWindow_IsBuiltWithTheEchoSuppressionCallback()
+    {
+        var ctor = typeof(Md11AutopilotWindow).GetConstructor(new[]
+        {
+            typeof(TFDiMD11Definition), typeof(SimConnectManager), typeof(ScreenReaderAnnouncer), typeof(Action<string, double>),
+        });
+
+        Assert.NotNull(ctor);
     }
 }

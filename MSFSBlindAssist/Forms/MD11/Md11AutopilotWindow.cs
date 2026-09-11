@@ -44,6 +44,14 @@ public class Md11AutopilotWindow : Form
     private readonly TFDiMD11Definition _def;
     private readonly SimConnectManager _sim;
     private readonly ScreenReaderAnnouncer _announcer;
+
+    /// <summary>
+    /// Marks a combo pick in MainForm's echo window, (key, value), before it is written — so the
+    /// delivered change is not spoken over the screen reader's own read-out of the pick. The
+    /// window writes through <c>SetControl</c>, past the panel path that marks it; null leaves the
+    /// picks unmarked.
+    /// </summary>
+    private readonly Action<string, double>? _suppressEcho;
     private IntPtr _previousWindow;
 
     private ListBox _status = null!;
@@ -81,11 +89,13 @@ public class Md11AutopilotWindow : Form
     private const string AtsDiscL = "MD11_THR_L_ATS_BT";
     private const string AtsDiscR = "MD11_THR_R_ATS_BT";
 
-    public Md11AutopilotWindow(TFDiMD11Definition def, SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    public Md11AutopilotWindow(TFDiMD11Definition def, SimConnectManager sim, ScreenReaderAnnouncer announcer,
+        Action<string, double>? suppressEcho = null)
     {
         _def = def;
         _sim = sim;
         _announcer = announcer;
+        _suppressEcho = suppressEcho;
         BuildForm();
     }
 
@@ -154,11 +164,11 @@ public class Md11AutopilotWindow : Form
         // ---- Mode selects ---- each names its current mode, from the aircraft's own unit vars.
         y = AddSection("Mode select", y);
         y = AddButtonRow(y,
-            (Md11FcpButtons.IasMach, IasMachSel, () => Val(Md11Fcp.ModeSpeedIsMach) > 0.5 ? "Mach" : "IAS"),
-            (Md11FcpButtons.HeadingTrack, HdgTrkSel, () => Val(Md11Fcp.ModeHeadingIsTrack) > 0.5 ? "Track" : "Heading"));
+            (Md11FcpButtons.IasMach, IasMachSel, () => Md11AutoflightState.SpeedMode(Val(Md11Fcp.ModeSpeedIsMach))),
+            (Md11FcpButtons.HeadingTrack, HdgTrkSel, () => Md11AutoflightState.HeadingMode(Val(Md11Fcp.ModeHeadingIsTrack))));
         y = AddButtonRow(y,
-            (Md11FcpButtons.VsFpa, VsFpaSel, () => Val(Md11Fcp.ModeVerticalIsFpa) > 0.5 ? "FPA" : "V/S"),
-            (Md11FcpButtons.AltitudeUnit, AltUnitSel, () => Val(Md11Fcp.ModeAltitudeIsMetres) > 0.5 ? "metres" : "feet"));
+            (Md11FcpButtons.VsFpa, VsFpaSel, () => Md11AutoflightState.VerticalMode(Val(Md11Fcp.ModeVerticalIsFpa))),
+            (Md11FcpButtons.AltitudeUnit, AltUnitSel, () => Md11AutoflightState.AltitudeUnit(Val(Md11Fcp.ModeAltitudeIsMetres))));
 
         // ---- Vertical speed wheel ----
         // The MD-11 has no "engage V/S" button: rotating the V/S / FPA wheel is what engages the
@@ -183,10 +193,17 @@ public class Md11AutopilotWindow : Form
         AddLabel("Bank angle limiter", 10, y + 4);
         _bankLimit = NewCombo(new Point(170, y), "Bank angle limiter",
             "Autopilot bank angle limit: Auto, or a fixed limit from 5 to 25 degrees.");
+        // The positions are the definition's own descriptions for the knob — TFDi's value map,
+        // Auto then 5 to 25 degrees — ordered by key, and a pick writes the map KEY, never the row
+        // index: a hand-kept copy of the map was one TFDi update away from writing the wrong position.
+        if (_def.GetVariables().TryGetValue(BankLimitKnob, out var bankDef))
+            foreach (var kvp in bankDef.ValueDescriptions.OrderBy(k => k.Key))
+                _bankLimit.Items.Add(new ComboItem(kvp.Value, kvp.Key));
         _bankLimit.SelectedIndexChanged += (s, e) =>
         {
-            if (_populating) return;
-            _def.SetControl(BankLimitKnob, _bankLimit.SelectedIndex, _sim, _announcer);
+            if (_populating || _bankLimit.SelectedItem is not ComboItem item) return;
+            _suppressEcho?.Invoke(BankLimitKnob, item.Value);
+            _def.SetControl(BankLimitKnob, item.Value, _sim, _announcer);
         };
         y += 34;
 
@@ -204,6 +221,7 @@ public class Md11AutopilotWindow : Form
         _dialAFlap.SelectedIndexChanged += (s, e) =>
         {
             if (_populating || _dialAFlap.SelectedItem is not ComboItem item) return;
+            _suppressEcho?.Invoke(Md11FlapSystem.DialKey, item.Value);
             _def.SetControl(Md11FlapSystem.DialKey, item.Value, _sim, _announcer);
         };
         y += 42;
@@ -216,9 +234,6 @@ public class Md11AutopilotWindow : Form
         };
         close.Click += (s, e) => Close();   // same path as Escape: hide and restore focus
         Controls.Add(close);
-
-        // Auto/5/10/15/20/25 — the aircraft's own value map for the limiter knob.
-        _bankLimit.Items.AddRange(new object[] { "Auto", "5 degrees", "10 degrees", "15 degrees", "20 degrees", "25 degrees" });
 
         // Hide on close (Escape and &Close both route through Close()) — but let a real process
         // shutdown through. The house wiring gates on CloseReason: an unconditional cancel here
@@ -417,16 +432,23 @@ public class Md11AutopilotWindow : Form
             ApplyCaption(button, label, state());
     }
 
-    private double Val(string key) => _sim.GetCachedVariableValue(key) ?? 0;
+    /// <summary>
+    /// The cached value, or null while it has not been delivered — after a SimConnect drop the
+    /// cache is empty and this window keeps refreshing, so every row and caption goes through a
+    /// composer that says "not available" rather than reading a stand-in 0 as "Autopilot: off".
+    /// </summary>
+    private double? Val(string key) => _sim.GetCachedVariableValue(key);
 
     /// <summary>
-    /// The row carrying this <see cref="TFDiMD11Definition.DialAFlapChoices"/> key, or -1. Row values
-    /// and keys are the same rounded doubles from the same spec, so the equality is exact.
+    /// The row of <paramref name="combo"/> carrying this key, or -1. Both combos' rows carry the
+    /// definition's own keys — the Dial-A-Flap's the same rounded doubles its classifier returns
+    /// (<see cref="TFDiMD11Definition.NearestDialAFlapChoice"/>), the bank limiter's the map's whole
+    /// positions — so the equality is exact, and a value that is no key selects nothing.
     /// </summary>
-    private int IndexOfDialChoice(double key)
+    private static int IndexOfValue(ComboBox combo, double key)
     {
-        for (var i = 0; i < _dialAFlap.Items.Count; i++)
-            if (_dialAFlap.Items[i] is ComboItem item && item.Value == key) return i;
+        for (var i = 0; i < combo.Items.Count; i++)
+            if (combo.Items[i] is ComboItem item && item.Value == key) return i;
         return -1;
     }
 
@@ -463,14 +485,16 @@ public class Md11AutopilotWindow : Form
         // handle alive an assignment is one immediate CB_SETCURSEL raised under _populating, and
         // there is nothing left for handle creation to replay.
         _populating = true;
+        // The knob's value is a map KEY: an empty cache, or a value that is no key, leaves the
+        // combo unselected rather than showing a position the knob is not in.
         var bank = _sim.GetCachedVariableValue(BankLimitKnob);
-        if (bank is >= 0 && bank < _bankLimit.Items.Count) _bankLimit.SelectedIndex = (int)bank.Value;
+        _bankLimit.SelectedIndex = bank is double b ? IndexOfValue(_bankLimit, b) : -1;
         // The wheel's var is CONTINUOUS (raw 33.0 for TFDi's shipped 14.95°) while the rows are keyed
         // by whole degrees, so an exact-key match misses on every real value and the combo opened
         // with NO selection — where the first Down-arrow selects row 0 and writes 10° to the
         // take-off wheel. Seed the nearest listed degree; only an empty cache leaves it empty.
         var dialRaw = _sim.GetCachedVariableValue(Md11FlapSystem.DialKey);
-        _dialAFlap.SelectedIndex = dialRaw is double raw ? IndexOfDialChoice(_def.NearestDialAFlapChoice(raw)) : -1;
+        _dialAFlap.SelectedIndex = dialRaw is double raw ? IndexOfValue(_dialAFlap, _def.NearestDialAFlapChoice(raw)) : -1;
         _populating = false;
     }
 

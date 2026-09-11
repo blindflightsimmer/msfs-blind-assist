@@ -1505,8 +1505,12 @@ public partial class TFDiMD11Definition
             // switch disposes it along with everything else the definition owns.
             case HotkeyAction.FCUSetAutopilot:
                 hotkeyManager.ExitInputHotkeyMode();
+                // The window's two combos write through SetControl, past the panel path that marks
+                // a pick in MainForm's echo window, so it marks them itself — the PMDG Ctrl+P
+                // window's arrangement (BaseAircraftDefinition.ShowPMDGAutopilotWindow).
                 ShowTrackedWindow(
-                    () => new Forms.MD11.Md11AutopilotWindow(this, simConnect, announcer),
+                    () => new Forms.MD11.Md11AutopilotWindow(this, simConnect, announcer,
+                        (key, v) => (parentForm as MainForm)?.SuppressUiEcho(key, v)),
                     w => w.ShowForm());
                 return true;
         }
