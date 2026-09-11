@@ -1,5 +1,4 @@
 using MSFSBlindAssist.Aircraft.MD11;
-using MSFSBlindAssist.Forms;
 using MSFSBlindAssist.SimConnect.MD11;
 
 namespace MSFSBlindAssist.Tests;
@@ -85,11 +84,14 @@ public class Md11McduScratchpadTests
         Assert.Equal(Md11McduLayout.Cols + 4, Md11McduScratchpad.MaxClearPresses);
 
     // ------------------------------------------------------------ the read-back the window runs
+    //
+    // Built exactly as the window builds it — Md11McduScratchpad.CreateReadBack(): the burst hold
+    // AND two stable polls (review round 2, C13).
 
     [Fact]
     public void A_typed_entry_is_read_once_settled_and_none_of_its_intermediate_text_is()
     {
-        var readBack = new CduScratchpadAnnouncer(Md11McduScratchpad.ClearedText);
+        var readBack = Md11McduScratchpad.CreateReadBack();
         readBack.OnPoll("", T0);                                               // the window's silent seed
         readBack.SuppressUntil = Md11McduScratchpad.HoldUntil(readBack.SuppressUntil, T0, 4);
 
@@ -99,8 +101,9 @@ public class Md11McduScratchpadTests
             if (readBack.OnPoll(pad, T0.AddMilliseconds(ms)) is { } s) said.Add(s);
         }
         Poll("K", 250); Poll("KJ", 500); Poll("KJF", 750);                     // inside the 880 ms hold
-        Poll("KJFK", 1000);                                                    // the hold has ended
-        Poll("KJFK", 1250);
+        Poll("KJFK", 1000);                                                    // the hold has ended: one stable poll
+        Poll("KJFK", 1250);                                                    // the second: read here
+        Poll("KJFK", 1500);                                                    // and never again
 
         Assert.Equal(new[] { "KJFK" }, said);
     }
@@ -108,7 +111,7 @@ public class Md11McduScratchpadTests
     [Fact]
     public void A_clear_burst_ends_in_one_Scratchpad_cleared()
     {
-        var readBack = new CduScratchpadAnnouncer(Md11McduScratchpad.ClearedText);
+        var readBack = Md11McduScratchpad.CreateReadBack();
         readBack.OnPoll("KJFK", T0);
 
         // One CLR every 150 ms, each extending the hold — the clear loop's own rhythm.
@@ -120,9 +123,25 @@ public class Md11McduScratchpadTests
             readBack.SuppressUntil = Md11McduScratchpad.HoldUntil(readBack.SuppressUntil, now, 1);
             if (readBack.OnPoll(pads[i], now.AddMilliseconds(100)) is { } s) said.Add(s);
         }
+        // The last CLR's hold ends at 970 ms. The empty pad is read on the SECOND poll past it
+        // (1200 ms is the first, 1450 ms the second), and the polls after that stay silent.
         for (var ms = 700; ms <= 2000; ms += 250)
             if (readBack.OnPoll("", T0.AddMilliseconds(ms)) is { } s) said.Add(s);
 
         Assert.Equal(new[] { "Scratchpad cleared" }, said);
+    }
+
+    [Fact]
+    public void The_window_read_back_never_reads_a_one_poll_redraw_flicker()
+    {
+        // A redraw frame that blanks the scratchpad for one poll between two identical ones. With
+        // one stable poll (the iFly's) the blank is read as "Scratchpad cleared"; with the window's
+        // two it is neither that nor a re-read of the text. Fails if CreateReadBack loses its 2.
+        var readBack = Md11McduScratchpad.CreateReadBack();
+        readBack.OnPoll("KJFK", T0);                                           // the window's silent seed
+
+        Assert.Null(readBack.OnPoll("", T0.AddMilliseconds(250)));             // the redraw frame
+        Assert.Null(readBack.OnPoll("KJFK", T0.AddMilliseconds(500)));         // back: nothing happened
+        Assert.Null(readBack.OnPoll("KJFK", T0.AddMilliseconds(750)));
     }
 }

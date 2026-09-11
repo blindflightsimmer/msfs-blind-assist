@@ -93,4 +93,32 @@ public class CduScratchpadAnnouncerTests
         Assert.Null(a.OnPoll("", T0.AddSeconds(2)));                        // still held while suppressed
         Assert.Equal("Scratchpad cleared", a.OnPoll("", T0.AddSeconds(4))); // read once the hold ends
     }
+
+    [Fact]
+    public void Two_stable_polls_ignore_a_one_poll_flicker()
+    {
+        var a = new CduScratchpadAnnouncer("Scratchpad cleared", stablePolls: 2);
+        a.OnPoll("KJFK", T0);
+        Assert.Null(a.OnPoll("", T0.AddMilliseconds(250)));      // a redraw frame
+        Assert.Null(a.OnPoll("KJFK", T0.AddMilliseconds(500)));  // back: nothing happened
+        Assert.Null(a.OnPoll("KJFK", T0.AddMilliseconds(750)));
+    }
+
+    [Fact]
+    public void Two_stable_polls_announce_a_change_held_for_two_polls_once()
+    {
+        var a = new CduScratchpadAnnouncer("Scratchpad cleared", stablePolls: 2);
+        a.OnPoll("KJFK", T0);
+        Assert.Null(a.OnPoll("", T0.AddMilliseconds(250)));
+        Assert.Equal("Scratchpad cleared", a.OnPoll("", T0.AddMilliseconds(500)));
+        Assert.Null(a.OnPoll("", T0.AddMilliseconds(750)));
+    }
+
+    [Fact]
+    public void One_stable_poll_is_the_shipped_behaviour()
+    {
+        var a = new CduScratchpadAnnouncer();
+        a.OnPoll("KJFK", T0);
+        Assert.Equal("Cleared", a.OnPoll("", T0.AddMilliseconds(250)));
+    }
 }

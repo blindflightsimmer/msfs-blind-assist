@@ -12,14 +12,22 @@ namespace MSFSBlindAssist.Forms;
 internal sealed class CduScratchpadAnnouncer
 {
     private readonly string _clearedText;
+    private readonly int _stablePolls;
     private string _last = "";
     private bool _first = true;
+    private string? _candidate;
+    private int _candidatePolls;
 
     /// <param name="clearedText">What an emptied scratchpad is announced as: "Cleared" on the
     /// iFly (the default — unchanged since it shipped), "Scratchpad cleared" on the MD-11.</param>
-    public CduScratchpadAnnouncer(string clearedText = "Cleared")
+    /// <param name="stablePolls">How many consecutive polls a changed scratchpad must read the same
+    /// before it is announced. 1 (the default — the iFly's behaviour since it shipped) announces the
+    /// first differing poll; the MD-11 uses 2, so a one-poll redraw flicker (a blank frame between two
+    /// identical ones) is never spoken — the job its old 300 ms debounce did.</param>
+    public CduScratchpadAnnouncer(string clearedText = "Cleared", int stablePolls = 1)
     {
         _clearedText = clearedText;
+        _stablePolls = Math.Max(1, stablePolls);
     }
 
     /// <summary>Announcements are held until this UTC time (typing/CLR bursts).</summary>
@@ -35,9 +43,19 @@ internal sealed class CduScratchpadAnnouncer
             _last = scratchpad;
             return null;
         }
-        if (scratchpad == _last) return null;
-        if (nowUtc < SuppressUntil) return null; // keep _last stale — re-checked next poll
+        if (scratchpad == _last || nowUtc < SuppressUntil)
+        {
+            // Unchanged, or held (keep _last stale — re-checked next poll): no candidate survives.
+            _candidate = null;
+            _candidatePolls = 0;
+            return null;
+        }
+        if (scratchpad == _candidate) _candidatePolls++;
+        else { _candidate = scratchpad; _candidatePolls = 1; }
+        if (_candidatePolls < _stablePolls) return null;
         _last = scratchpad;
+        _candidate = null;
+        _candidatePolls = 0;
         return scratchpad.Length > 0 ? scratchpad : _clearedText;
     }
 
@@ -46,5 +64,7 @@ internal sealed class CduScratchpadAnnouncer
     {
         _first = true;
         _last = "";
+        _candidate = null;
+        _candidatePolls = 0;
     }
 }

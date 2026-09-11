@@ -1,3 +1,4 @@
+using MSFSBlindAssist.Forms;
 using MSFSBlindAssist.SimConnect.MD11;
 
 namespace MSFSBlindAssist.Aircraft.MD11;
@@ -17,6 +18,16 @@ public static class Md11McduScratchpad
 {
     /// <summary>What the read-back says when the scratchpad empties (the iFly says "Cleared").</summary>
     public const string ClearedText = "Scratchpad cleared";
+
+    /// <summary>
+    /// The MCDU window's scratchpad read-back, built in ONE place so the window and its tests run the
+    /// same configuration: <see cref="ClearedText"/> for an emptied pad, and TWO stable polls — a
+    /// change is spoken only once it has read the same on two polls in a row, so a one-poll redraw
+    /// flicker (a blank frame between two identical ones) is never read, the job the old 300 ms
+    /// debounce did. The iFly CDU window keeps the announcer's default of one. <c>internal</c>
+    /// because <see cref="CduScratchpadAnnouncer"/> is.
+    /// </summary>
+    internal static CduScratchpadAnnouncer CreateReadBack() => new(ClearedText, stablePolls: 2);
 
     /// <summary>The clear stopped with text still there, or with no page it could read.</summary>
     public const string CouldNotClearText = "Could not clear the scratchpad";

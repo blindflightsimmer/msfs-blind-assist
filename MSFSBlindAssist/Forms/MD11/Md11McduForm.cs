@@ -82,13 +82,15 @@ public class Md11McduForm : Form
     private readonly DateTime?[] _blankSince = new DateTime?[3];
 
     /// <summary>
-    /// The scratchpad read-back, shared with the iFly CDU (<see cref="CduScratchpadAnnouncer"/>):
+    /// The scratchpad read-back, shared with the iFly CDU (<see cref="CduScratchpadAnnouncer"/>) and
+    /// built by <see cref="Md11McduScratchpad.CreateReadBack"/>, the construction its tests use:
     /// fed on every poll tick that shows a page, silent on its first sample after a re-seed,
-    /// held while a typing or CLR burst is being written so only the settled text is read, and
-    /// "Scratchpad cleared" for an emptied pad. It replaced a 300 ms debounce timer that repeated
-    /// the Delete clear's own "Scratchpad cleared" and let a half-typed entry through.
+    /// held while a typing or CLR burst is being written so only the settled text is read, spoken
+    /// only once a change has read the same on two polls in a row (so a one-poll redraw flicker
+    /// never is), and "Scratchpad cleared" for an emptied pad. It replaced a 300 ms debounce timer
+    /// that repeated the Delete clear's own "Scratchpad cleared" and let a half-typed entry through.
     /// </summary>
-    private readonly CduScratchpadAnnouncer _scratchpad = new(Md11McduScratchpad.ClearedText);
+    private readonly CduScratchpadAnnouncer _scratchpad = Md11McduScratchpad.CreateReadBack();
 
     /// <summary>True while <see cref="ClearScratchpadAsync"/> runs; a second Delete in that time is ignored.</summary>
     private bool _clearing;
@@ -192,7 +194,7 @@ public class Md11McduForm : Form
                                      y + (i / perRow) * (btnHeight + btnSpacing)),
                 Size = new Size(btnWidth, btnHeight),
             };
-            btn.Click += (s, e) => PressKey(key);
+            btn.Click += (s, e) => { if (PressKey(key) && key == "CLR") HoldScratchpadReadBack(1); };
             buttons.Add(btn);
         }
 
