@@ -1135,6 +1135,15 @@ def _case_composite_block(outer_var, body, node_id, found):
     if len(nested) != 1 or nested[0].group(1) != node_id:
         return None
     n = nested[0]
+    # The body was collapsed in one pass (_collapse_inline_ifs), which reads an if/else by its
+    # resting word only when both its words are plain. An else-if chain or an if word holding an
+    # interpolation leaves an %{if} inside the nested case, and a case on a third var a second
+    # case head; each carries an %{end} of its own, and the nested case was cut at it. Split
+    # there, the rest of the rotation lands on the pull, or a third var's words on the rotation --
+    # a wrong block, emitted without a word. A nested case the collapse could not clean cannot be
+    # trusted, so it gets no block and reaches the refusal (_composite_block).
+    if "%{if}" in n.group(0) or len(CASE_HEAD_RE.findall(n.group(0))) != 1:
+        return None
     outer = _case_labels(body[:n.start()] + _NESTED_CASE_MARK + body[n.end():], found)
     delegates = [k for k, v in outer.items() if v == _NESTED_CASE_MARK]
     inner = _case_labels(n.group(0), found)

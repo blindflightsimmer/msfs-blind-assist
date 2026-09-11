@@ -1014,6 +1014,32 @@ class CompositeHardeningTests(unittest.TestCase):
                           "delegate": "2", "inner_var": "MD11_T_KB",
                           "inner_words": {"0": "A", "1": "B", "2": "Qoff", "3": "D"}}, block)
 
+    def test_a_rotation_position_the_collapse_cannot_clean_stops_the_generator(self):
+        # The Task 4.6b review's fixtures W2, W5, W3 and W7. One collapse pass reads an if/else by
+        # its resting word only when both its words are plain; each of these keeps an %{end} of its
+        # own inside the rotation, the nested case was cut at it, and the case rule emitted a
+        # plausible wrong block without a word.
+        inline = "%((L:MD11_T_Q))%{if}Qon%{else}Qoff%{end}"        # W's rotation position 2
+        chain = "%((L:MD11_T_Q))%{if}Qon%{else}%((L:MD11_T_R))%{if}Ron%{else}Qoff%{end}%{end}"
+        for name, tooltip in (
+                # The rotation's D landed on the pull.
+                ("W2, an else-if chain", self.W.replace(inline, chain)),
+                # D on the pull, and the rotation lost its position 2.
+                ("W5, an if word holding an interpolation",
+                 self.W.replace(inline, "%((L:MD11_T_Q))%{if}Q %((L:MD11_T_Q))%!d!%{else}Qoff%{end}")),
+                # D on the pull, and the third var's Qoff and Qon became the rotation's words.
+                ("W3, a case on a third var",
+                 self.W.replace(inline, "%((L:MD11_T_Q))%{case}%{:0}Qoff%{:1}Qon%{end}")),
+                # The rotation's B renamed the pull's Pulled, and the rotation kept only Qoff.
+                ("W7, an else-if chain in rotation position 0",
+                 "Test Handle (%((L:MD11_T_SW))%{case}%{:0}Normal%{:1}Pulled%{:2}%((L:MD11_T_KB))%{case}"
+                 "%{:0}" + chain + "%{:1}B%{end}%{end})")):
+            with self.subTest(fixture=name):
+                with self.assertRaises(ValueError) as cm:
+                    self._parse(tooltip, "MD11_T_KB")
+                self.assertIn("MD11_T_KB", str(cm.exception))
+                self.assertIn("MD11_T_SW", str(cm.exception))
+
     def test_an_apu_style_centre_word_keeps_the_composite(self):
         # The review's fixture C: TFDi's Engine 1 handle with the rotation's centre worded the way
         # the APU handle words its own. Cut early, the delegate was lost and the handle fell back to
@@ -1077,6 +1103,16 @@ class CompositeHardeningTests(unittest.TestCase):
     def test_a_composite_gets_no_value_map_from_its_label(self):
         # The review's fixture L: an inline word in the LABEL filled the composite's empty value_map.
         tooltip = ("Engine %((L:MD11_T_OPT))%{if}One%{else}Two%{end} Fire Handle "
+                   "(%((L:MD11_T_SW))%{case}%{:0}Normal%{:1}Pulled%{:2}%((L:MD11_T_KB))%{case}"
+                   "%{:0}A%{:1}B%{:2}C%{end}%{end})")
+        _, _, value_map, block = self._parse(tooltip, "MD11_T_KB")
+        self.assertEqual("MD11_T_SW", block["outer_var"])
+        self.assertEqual({}, value_map)
+
+    def test_a_composite_gets_no_value_map_from_an_inline_case_in_its_label(self):
+        # The same through _inline_case: without its own guard, an inline %{case} in the LABEL
+        # fills the composite's empty value_map with the label's words, One and Two.
+        tooltip = ("Engine %((L:MD11_T_OPT))%{case}%{:0}One%{:1}Two%{end} Fire Handle "
                    "(%((L:MD11_T_SW))%{case}%{:0}Normal%{:1}Pulled%{:2}%((L:MD11_T_KB))%{case}"
                    "%{:0}A%{:1}B%{:2}C%{end}%{end})")
         _, _, value_map, block = self._parse(tooltip, "MD11_T_KB")
