@@ -562,6 +562,31 @@ def _second_clickspots(controls):
     return drop
 
 
+def _second_lamps(controls):
+    """Node ids that are a SECOND lamp node on an L:var another lamp node keeps.
+
+    VIS_VAR duplicates: the '_LT001' / '_LT_F' twins, and the MD11_CPT_* / MD11_FO_* / MD11_OBS_*
+    audio-panel nodes that light an MD11_PED_* var. Two lamps on one var would be two continuous
+    batch entries with one Name, which shifts every later batch slot (the VarNameCollision
+    invariant), so one survives -- decided by rule, never by file-traversal order: the node NAMED
+    AFTER THE VAR (the aircraft's own name for that light), then _second_clickspots' rule. The
+    var-named node is the one the old first-seen rule kept in all 37 of the shipped map's pairs
+    (measured 2026-09-11); shortest-first alone would have renamed 34 of those lamps.
+    """
+    groups = defaultdict(list)
+    for c in controls:
+        if c["kind"] == "annun":
+            groups[c["state_var"]].append(c["node_id"])
+
+    drop = set()
+    for var, nids in groups.items():
+        if len(nids) < 2:
+            continue
+        keep = min(nids, key=lambda n: (n != var, not n.startswith("MD11_"), len(n), n))
+        drop.update(n for n in nids if n != keep)
+    return drop
+
+
 def finalize_controls(controls):
     """Labels, duplicates, areas and option flags — pure, so it is testable on fixtures.
 
@@ -569,20 +594,12 @@ def finalize_controls(controls):
     then areas, then labels, and guard labels LAST (from the covered control's final label).
     """
     # 1. Collapse duplicates: a second clickspot of one control (same kind, same events — see
-    #    _second_clickspots), and a second lamp node on the same L:var (VIS_VAR duplicates: the
-    #    Captain/F-O audio panel families, the '_LT001' / '_LT_F' nodes). Two lamps on one var
-    #    would also be two continuous batch entries with one Name, which shifts every later
-    #    batch slot (the VarNameCollision invariant).
-    kept, seen_lamp_var = [], set()
+    #    _second_clickspots), and a second lamp node on the same L:var (see _second_lamps). Both
+    #    survivors are chosen by rule, never by the order the package's files were read in.
     second_clickspots = _second_clickspots(controls)
-    for c in controls:
-        if c["kind"] == "annun":
-            if c["state_var"] in seen_lamp_var:
-                continue
-            seen_lamp_var.add(c["state_var"])
-        elif c["node_id"] in second_clickspots:
-            continue
-        kept.append(c)
+    second_lamps = _second_lamps(controls)
+    kept = [c for c in controls
+            if c["node_id"] not in (second_lamps if c["kind"] == "annun" else second_clickspots)]
 
     for c in kept:
         nid = c["node_id"]
@@ -1287,7 +1304,11 @@ def collect(pkg_dir):
     seen = set()
     stats = Counter()
 
-    for root, _dirs, files in os.walk(base):
+    for root, dirs, files in os.walk(base):
+        # Folders in name order as well as files: os.walk lists them in whatever order the file
+        # system returns, and where two files define one node the first one read is the one kept
+        # (`seen` below). Sorting the list in place is what steers the rest of the walk.
+        dirs.sort()
         # Templates/ holds the definitions, not the instances -- skip.
         if os.path.basename(root) == "Templates":
             continue

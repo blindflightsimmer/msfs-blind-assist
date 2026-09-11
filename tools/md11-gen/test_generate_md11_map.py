@@ -727,5 +727,72 @@ class UseTemplateSpellingTests(unittest.TestCase):
                          [c["node_id"] for c in controls])
 
 
+_REAL_WALK = os.walk
+
+
+def _walk_in_order(reverse):
+    """os.walk with every folder and file list sorted ascending or descending -- two orders a file
+    system is free to hand back. Sorting `dirs` in place steers the rest of the real walk."""
+    def walk(top, *args, **kwargs):
+        for root, dirs, files in _REAL_WALK(top, *args, **kwargs):
+            dirs.sort(reverse=reverse)
+            files.sort(reverse=reverse)
+            yield root, dirs, files
+    return walk
+
+
+class DeterministicOutputTests(unittest.TestCase):
+    """D4: the map depends on the package, never on the order the file system lists it in."""
+
+    def test_the_surviving_lamp_does_not_depend_on_the_order_nodes_were_collected_in(self):
+        twin = ctl("MD11_OVHD_ELEC_X_OFF_LT001", kind="annun", state_var="MD11_OVHD_ELEC_X_OFF_LT")
+        own = ctl("MD11_OVHD_ELEC_X_OFF_LT", kind="annun")
+        for order in ([twin, own], [own, twin]):
+            with self.subTest(first=order[0]["node_id"]):
+                kept = g.finalize_controls([dict(c) for c in order])
+                self.assertEqual(["MD11_OVHD_ELEC_X_OFF_LT"], [c["node_id"] for c in kept])
+
+    def test_the_lamp_named_after_its_var_beats_a_shorter_twin(self):
+        # The audio panels' MD11_CPT_* nodes are SHORTER than the MD11_PED_* var they light, so
+        # _second_clickspots' rule alone (shortest wins) would rename 34 of the shipped map's 37
+        # deduplicated lamps; the var-named node is the one the map has always kept.
+        own = ctl("MD11_PED_CPT_AUDIO_PNL_VHF1_MIC_LT", kind="annun")
+        twin = ctl("MD11_CPT_AUDIO_PNL_VHF1_MIC_LT", kind="annun",
+                   state_var="MD11_PED_CPT_AUDIO_PNL_VHF1_MIC_LT")
+        kept = g.finalize_controls([twin, own])
+        self.assertEqual(["MD11_PED_CPT_AUDIO_PNL_VHF1_MIC_LT"], [c["node_id"] for c in kept])
+
+    def test_the_map_is_byte_identical_whatever_order_the_file_system_lists_folders_in(self):
+        # Two folders, each holding one copy of a duplicated lamp and of a duplicated button node.
+        # The lamp's survivor is _second_lamps' to choose; the button's copy is the first one read,
+        # which is Alpha's only when folders are read in name order.
+        files = {
+            "Alpha/Panel.xml": use_template("TFDi_Design_MD11_Annunciator",
+                                            NODE_ID="MD11_OVHD_ELEC_X_OFF_LT001",
+                                            VIS_VAR="MD11_OVHD_ELEC_X_OFF_LT")
+                               + use_template("TFDi_Design_MD11_Button_Template", TOOLTIPID="Y Alpha",
+                                              NODE_ID="MD11_OVHD_ELEC_Y_BT",
+                                              LEFT_BUTTON_DOWN="1", LEFT_BUTTON_UP="2"),
+            "Beta/Panel.xml": use_template("TFDi_Design_MD11_Annunciator", NODE_ID="MD11_OVHD_ELEC_X_OFF_LT")
+                              + use_template("TFDi_Design_MD11_Button_Template", TOOLTIPID="Y Beta",
+                                             NODE_ID="MD11_OVHD_ELEC_Y_BT",
+                                             LEFT_BUTTON_DOWN="1", LEFT_BUTTON_UP="2"),
+        }
+        outputs = []
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg, wasm = write_package(tmp, files)
+            for reverse in (False, True):
+                out = os.path.join(tmp, f"map-{int(reverse)}.json")
+                with mock.patch.object(os, "walk", _walk_in_order(reverse)):
+                    data, _ = run_main(pkg, wasm, out)
+                with open(out, "rb") as fh:
+                    outputs.append(fh.read())
+        self.assertEqual(outputs[0], outputs[1])
+        by = {c["node_id"]: c for c in data["controls"]}
+        self.assertEqual("Y Alpha", by["MD11_OVHD_ELEC_Y_BT"]["label"])
+        self.assertIn("MD11_OVHD_ELEC_X_OFF_LT", by)
+        self.assertNotIn("MD11_OVHD_ELEC_X_OFF_LT001", by)
+
+
 if __name__ == "__main__":
     unittest.main()
