@@ -134,8 +134,9 @@ public partial class TFDiMD11Definition
     /// posted. The tail runs through <see cref="OnUiThread"/> inside its own catch, because it runs
     /// outside this method's try and an announcement must never be the thing that takes the message
     /// pump down. <paramref name="guardGeneration"/> drops the tail when <see cref="_announceGeneration"/>
-    /// has moved since the call (an aircraft switch, a reconnect, a flight load); the verdicts on the
-    /// pilot's own entries never had that guard and pass false. Each site passes its own two log
+    /// has moved since the call (an aircraft switch, a reconnect, a flight load): the ground-spoiler,
+    /// COM, minimums and squawk verdicts pass false, while Ctrl+B and the STD read-backs keep the
+    /// guard they always had. Each site passes its own two log
     /// texts and keeps its own Ctrl+M check inside its tail.
     ///
     /// The gear key's read-out passes a zero delay, which waits for nothing: Task.Delay(0) is
@@ -365,7 +366,7 @@ public partial class TFDiMD11Definition
     public override void ResetAnnouncementBaselines()
     {
         base.ResetAnnouncementBaselines();
-        _takeoffCallouts.Reset();               // drops the arm, keeps the speeds: the batch has just re-fed them
+        _takeoffCallouts.Reset();               // drops the arm, the last sample and the fired flags; keeps the speeds, which the batch has just re-fed
         _vSpeeds.DropPending();                 // a sentence still pending here dies with its tail below; it must not ride into a later one
         _announceGeneration++;                  // drops any dark transition, settle or read-back still waiting
     }
@@ -404,7 +405,7 @@ public partial class TFDiMD11Definition
         _altimeter.Reset();
         _vSpeeds.Reset();
         _n1Cue.Reset();                         // drops the arm only — a gate arm must not fire on the cruise N1 a load delivers; the samples are re-fired or still true
-        _takeoffCallouts.Reset();               // drops the arm and the last sample, keeps the speeds — a parked arm called V1/Rotate/V2 on the cruise IAS a load delivers ahead of SIM_ON_GROUND
+        _takeoffCallouts.Reset();               // same: drops the arm, the last sample and the fired flags, keeps the speeds — a parked arm called V1/Rotate/V2 on the cruise IAS a load delivers ahead of SIM_ON_GROUND
         _spdbrkHandle = double.NaN;
         _lastSpoilerSpoken = string.Empty;
         _announceGeneration++;                  // nothing scheduled before the drop may speak after it

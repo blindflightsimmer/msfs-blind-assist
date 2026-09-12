@@ -99,8 +99,11 @@ public partial class SimConnectManager
     private readonly FreshReadWaiters _freshReads = new(FreshRequestIdBase);
     private readonly ConcurrentDictionary<int, string> _freshRequestIdToVarKey = new();
 
-    // SimConnect is not thread-safe, and every other call this app makes on the main connection
-    // runs on the UI thread. The manager is built there (MainForm's constructor, through
+    // SimConnect is not thread-safe. This gate covers the one off-thread path that issues a data
+    // REQUEST and touches the maps below; the client-data WRITES a pool thread already makes (the
+    // MD-11's CEVENT pump, the A380's seat-motion Task.Run, both through ExecuteCalculatorCode)
+    // are a separate, older exception it does not cover. The manager is built on the UI thread
+    // (MainForm's constructor, through
     // InitializeManagers), so this initializer captures the UI thread's WinForms context and id at
     // construction — as MobiFlightWasmModule captures its own for its heartbeat — and the core
     // RequestVariable below moves an off-thread call onto it. Only a WinForms context: it runs

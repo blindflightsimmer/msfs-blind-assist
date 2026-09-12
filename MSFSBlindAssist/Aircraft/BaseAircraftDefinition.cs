@@ -822,8 +822,10 @@ public abstract class BaseAircraftDefinition : IAircraftDefinition
                     }
                     if (!view.Verified)
                     {
-                        // "Could not confirm", never "could not switch": Switch and Unknown both WRITE the
-                        // view before verifying, so only the read-back failed and the camera may have moved.
+                        // "Could not confirm", never "could not switch": Switch and Unknown both ATTEMPT the
+                        // write before verifying — and InstrumentViewSwitcher swallows a write that THROWS
+                        // and polls anyway — so either the write or the read-back failed, and the camera may
+                        // or may not have moved. "Could not confirm" is the honest claim in both cases.
                         announcer.Announce("Could not confirm the cockpit view switch; reading what is on screen.");
                     }
                 }

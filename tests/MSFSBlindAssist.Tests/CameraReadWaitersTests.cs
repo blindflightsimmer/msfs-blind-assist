@@ -148,6 +148,15 @@ public class CameraReadWaitersTests
         var named = Enum.GetValues<SimConnectManager.DATA_REQUESTS>().Select(v => (int)v).Where(id => id != first);
         Assert.DoesNotContain(named, id => id >= first && id <= last);
 
+        // DATA_DEFINITIONS is a request-id namespace TOO, not only a definition one: RequestSingleValue
+        // issues a DEF_* as the request id, and the FBW A320's speeds table issues (DATA_REQUESTS)defId.
+        // Its own members read DEF_CAMERA_VIEW = 341 (this range's base, excluded below) and
+        // DEF_AI_TRAFFIC = 500 — so 342 is the natural next pick for a new definition, and it would
+        // route a SingleValue answer into the (CameraViewData) cast: an InvalidCastException swallowed
+        // by ProcessWindowMessage, and a hotkey readout that silently never answers.
+        var definitions = Enum.GetValues<SimConnectManager.DATA_DEFINITIONS>().Select(v => (int)v).Where(id => id != first);
+        Assert.DoesNotContain(definitions, id => id >= first && id <= last);
+
         int[] handNumbered = { 324, 325, 326, 327, 328, 330, 331, 332, 333, 334, 335, 336, 337, 370, 371, 372, 505, 506, 507, 508 };
         Assert.DoesNotContain(handNumbered, id => id >= first && id <= last);
     }

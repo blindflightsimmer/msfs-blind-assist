@@ -47,8 +47,12 @@ public class FbwEfbForm : Form
     private const string StateTypeElements = "fbw_efb_elements";
     private const string StateTypeConnected = "fbw_efb_connected";
     private const char OptionSeparator = (char)0x1f;
-    // The browser shell's own marker for a control the EFB has greyed out (buildEl / patchEl). The
-    // native list fallback uses it too, so both renderings say the same thing.
+    // The browser shell's own marker for a control the EFB has greyed out (buildEl / patchEl),
+    // which the native list fallback uses too. NOT the same rendering on both sides, though: the
+    // shell appends it to BUTTONS and LINKS only (:974, :982, :1039) and leaves a checkbox, select
+    // or field to the native disabled attribute a reader already announces, while list mode
+    // appends it to every control — a WinForms control deliberately kept in the tab order
+    // (Enabled stays true) carries no such attribute for a reader to find.
     private const string DimmedSuffix = ", dimmed";
 
     private readonly IMcduBridge _bridgeServer;

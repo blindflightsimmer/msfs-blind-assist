@@ -544,6 +544,11 @@ public partial class SimConnectManager
         DEF_SQUAWK_CODE = 329,
         // 330-337 hardcoded V-speed definitions, 338/339 time-of-day (see DATA_REQUESTS).
         DEF_GSX_COUATL_STARTED = 340,
+        // 341 and KEEP 342-348 FREE. This enum is a request-id namespace as well as a definition
+        // one (RequestSingleValue issues a DEF_* as its request id), and 341-348 is the camera
+        // read's rotating request-id range: the dispatcher matches it BY RANGE and casts the answer
+        // to CameraViewData, so a definition landing at 342 would have its SingleValue answer
+        // mis-cast. Pinned by CameraReadWaitersTests.
         DEF_CAMERA_VIEW = 341,
         DEF_AI_TRAFFIC = 500,
         // Individual variable definitions start from 1000

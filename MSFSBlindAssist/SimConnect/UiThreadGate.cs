@@ -6,8 +6,12 @@ namespace MSFSBlindAssist.SimConnect;
 /// "Am I on the UI thread? If not, hand this to it." — the decision behind
 /// <c>SimConnectManager.RequestVariable</c>'s UI-thread post.
 ///
-/// SimConnect is not thread-safe, and every other call this app makes on the main connection
-/// runs on the UI thread (the window-message dispatch, the forms, the WinForms timers). The
+/// SimConnect is not thread-safe. This gate covers the ONE off-thread path that issues a data
+/// REQUEST and touches the manager's maps; client-data WRITES from a pool thread are a separate,
+/// older exception it does not cover (the MD-11's CEVENT pump and the A380's seat-motion
+/// <c>Task.Run</c> both reach <c>SetClientData</c> that way, through
+/// <c>ExecuteCalculatorCode</c>). Everything else — the window-message dispatch, the forms, the
+/// WinForms timers — is already on the UI thread. The
 /// MD-11's walks and read-backs reach <c>ReadFreshAsync</c> from thread-pool continuations
 /// (<c>ConfigureAwait(false)</c> chains), and that path issues <c>RequestDataOnSimObject</c> and
 /// reads the manager's maps. The gate is built where the manager is — on the UI thread, as

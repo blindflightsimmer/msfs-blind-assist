@@ -519,15 +519,6 @@ public partial class TFDiMD11Definition
     }
 
     /// <summary>
-    /// Runs a walk off the UI thread and reports only genuine failure.
-    ///
-    /// Success is deliberately SILENT: the screen reader already announced the combo selection,
-    /// and re-announcing the landed value would double-speak every set — the global _uiSetEcho
-    /// rule. But a walk that does NOT reach its target must say so, because on this aircraft the
-    /// pilot has no gauge to check: a silently-failed selection would look identical to a
-    /// successful one.
-    /// </summary>
-    /// <summary>
     /// Sets the Dial-A-Flap thumbwheel, then speaks ONLY a shortfall.
     ///
     /// The set is one write of the wheel's own backing var (<see cref="Md11FlapSystem.SetDialRawAsync"/>
@@ -539,19 +530,20 @@ public partial class TFDiMD11Definition
     /// awaits below resume on the thread pool, where ScreenReaderAnnouncer is unreliable.
     /// </summary>
     private int _dialSetGen;
-    private CancellationTokenSource? _dialWalkCts;
+    private CancellationTokenSource? _dialSetCts;
 
     private async Task SetDialAndAnnounce(double targetRaw, SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
         // Arrowing through the combo fires a SET for every intermediate entry — so a move from 10°
-        // to 25° queues fifteen walks that all fight over one wheel (the "no movement / inhibited"
-        // chaos in the logs). Collapse to the LAST selection: cancel any walk already running, then
-        // debounce briefly so rapid arrowing settles before we drive the wheel at all.
+        // to 25° queues fifteen sets that all fight over one wheel (the "no movement / inhibited"
+        // chaos in the logs, from when this path was a CEVENT walk). Collapse to the LAST
+        // selection: cancel any set already running, then debounce briefly so rapid arrowing
+        // settles before we drive the wheel at all.
         var gen = ++_dialSetGen;
         int want = (int)Math.Round(_flaps.DegreesFor(targetRaw));
-        _dialWalkCts?.Cancel();
+        _dialSetCts?.Cancel();
         var cts = new CancellationTokenSource();
-        _dialWalkCts = cts;
+        _dialSetCts = cts;
         try { await Task.Delay(350, cts.Token).ConfigureAwait(false); }
         catch (TaskCanceledException) { return; }     // a newer selection superseded this one
         if (gen != _dialSetGen) return;
@@ -573,12 +565,12 @@ public partial class TFDiMD11Definition
             Log.Error("MD11", $"Dial-A-Flap set threw: {ex.Message}");
         }
 
-        if (gen != _dialSetGen) return;                // superseded during the walk — let the newer one speak
+        if (gen != _dialSetGen) return;                // superseded during the write — let the newer one speak
         await Task.Delay(200).ConfigureAwait(false);   // let the final value settle and stream in
         // Re-check AFTER the settle delay, not only before it: the wait above is 200 ms in
         // which a newer selection can supersede this one — or Dispose can bump the generation — and
         // past this point the value read is `sim`'s cache, which after a switch belongs to the NEXT
-        // aircraft. Announcing then speaks a real angle for a wheel this walk never touched.
+        // aircraft. Announcing then speaks a real angle for a wheel this set never touched.
         if (gen != _dialSetGen) return;
         // The wheel streams on its own SIM_FRAME subscription, so its fresh read IS the cache
         // (FreshReadPolicy.CacheIsFresh), handed back at once: the force-read this used to issue
@@ -674,23 +666,33 @@ public partial class TFDiMD11Definition
     }
 
     /// <summary>
-    /// Cancels every walk in flight — the detented walks in <see cref="_walkCts"/> and the
-    /// Dial-A-Flap walk — so none finishes against the NEXT aircraft's cleared registrations and
-    /// speaks "did not move" for a control that was never asked to move there. Called from
+    /// Cancels everything in flight — the detented walks in <see cref="_walkCts"/> and the
+    /// Dial-A-Flap set (one direct write, never a walk) — so none finishes against the NEXT
+    /// aircraft's cleared registrations and speaks "did not move", or a shortfall, for a control
+    /// that was never asked to move there. Called from
     /// <c>Dispose</c> only. A cancelled walk leaves through SafeWalk's ct checks (silent),
     /// DebouncedWalk's finally removes its own entry and skips the combo re-sync, and the
-    /// generation bump makes a Dial-A-Flap walk already past its cancellable await return before
+    /// generation bump makes a Dial-A-Flap set already past its cancellable await return before
     /// its announce. The <see cref="_walkCts"/> snapshot can carry a source its walk disposed a
     /// moment ago — the helper tolerates that.
     /// </summary>
     private void CancelWalks()
     {
         _dialSetGen++;
-        var sources = _walkCts.Values.Cast<CancellationTokenSource?>().Append(_dialWalkCts);
+        var sources = _walkCts.Values.Cast<CancellationTokenSource?>().Append(_dialSetCts);
         var n = Md11WalkCancellation.CancelAll(sources);
         if (n > 0) Log.Info("MD11", $"Definition disposed with {n} walk(s) in flight — cancelled.");
     }
 
+    /// <summary>
+    /// Runs a walk off the UI thread and reports only genuine failure.
+    ///
+    /// Success is deliberately SILENT: the screen reader already announced the combo selection,
+    /// and re-announcing the landed value would double-speak every set — the global _uiSetEcho
+    /// rule. But a walk that does NOT reach its target must say so, because on this aircraft the
+    /// pilot has no gauge to check: a silently-failed selection would look identical to a
+    /// successful one.
+    /// </summary>
     private async Task SafeWalk(Func<Task<bool>> walk, Md11Control control, double target,
         SimConnectManager sim, ScreenReaderAnnouncer announcer, CancellationToken ct = default)
     {

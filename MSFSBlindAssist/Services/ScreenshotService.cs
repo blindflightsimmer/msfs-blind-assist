@@ -175,7 +175,9 @@ public class ScreenshotService
         try
         {
             // 24-bit: GDI leaves a 32-bit bitmap's alpha byte undefined, and a PNG with no alpha
-            // channel cannot come out transparent.
+            // channel cannot come out transparent. The 32-bit frame this replaced was probed on
+            // 2026-09-09 and came back fully opaque on three live windows — so no transparent frame
+            // was ever SEEN; "undefined" means only that nothing guarantees the next one.
             using var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
             using (var graphics = Graphics.FromImage(bitmap))
             {
