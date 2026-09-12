@@ -364,12 +364,18 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     /// 0.82 while the window is still in IAS would hand the autopilot a 0.82-knot target for the
     /// instant before the unit lands. Both are one-shot inboxes that self-clear to -1, so there is
     /// nothing to reset afterwards.
+    ///
+    /// False means NOTHING was written — no bus, or the transport cannot send
+    /// (<see cref="CanDeliver"/>) — and the caller must SPEAK it and skip whatever it would have
+    /// done next. The check is here rather than at each caller so the unit can never go out
+    /// without its value: these are one-shot inboxes, and a unit written alone would make the FCC
+    /// read the NEXT value in the wrong unit.
     /// </summary>
     public bool SetFcpValue(string valueVar, double value, SimConnectManager sim,
         string? unitVar = null, double? unit = null)
     {
         Attach(sim);
-        if (_bus == null) return false;
+        if (_bus == null || !CanDeliver) return false;
 
         if (unitVar != null && unit != null) _bus.WriteExternal(unitVar, unit.Value);
         _bus.WriteExternal(valueVar, value);

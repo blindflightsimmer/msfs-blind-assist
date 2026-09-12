@@ -155,6 +155,9 @@ public static class Md11Fcp
     public const string AltitudeKnobName = "Altitude";
     public const string VerticalSpeedName = "Vertical speed";
 
+    /// <summary>Ctrl+B writes all three altimeters at once, so its refusal names them together.</summary>
+    public const string AltimetersName = "Altimeters";
+
     public static string PushAction(string knobName) => $"{knobName} push";
     public static string PullAction(string knobName) => $"{knobName} pull";
     public static string WheelAction(string knobName, bool up) => $"{knobName} wheel {(up ? "up" : "down")}";

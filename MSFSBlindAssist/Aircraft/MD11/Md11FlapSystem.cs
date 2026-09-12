@@ -44,6 +44,9 @@ public sealed class Md11FlapSystem
     /// <summary>The Dial-A-Flap thumbwheel's node id — also its MSFSBA variable key.</summary>
     public const string DialKey = "MD11_DIALAFLAP_WHEEL_RNG";
 
+    /// <summary>The thumbwheel's spoken name, for a set that could not be delivered.</summary>
+    public const string DialName = "Dial-A-Flap";
+
     /// <summary>Set by TFDi while the flaps are in transit; drives the "flaps moving" read-out.</summary>
     public const string FlapsMovingVar = "MD11_FLAPS_MOVING";
 

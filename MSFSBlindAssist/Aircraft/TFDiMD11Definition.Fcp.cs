@@ -47,9 +47,9 @@ public partial class TFDiMD11Definition
                 Md11Fcp.PullAction(Md11Fcp.HeadingKnobName), announcer)),
             // Engaged or not, from the FCP's own dashed heading window (Md11AutoflightState).
             new("&NAV", () => Md11AutoflightState.Engaged(Md11AutoflightState.NavEngaged(Val(sim, Md11Fcp.ReadHeading))),
-                () => PressControl("MD11_CGS_NAV_BT")),
+                () => PressButtonAction("MD11_CGS_NAV_BT", "NAV", announcer)),
             new("&Track / Heading", () => Mode(sim, Md11Fcp.ModeHeadingIsTrack) ? "Track" : "Heading",
-                () => PressControl("MD11_CGS_HDGTRK_BT")),
+                () => PressButtonAction("MD11_CGS_HDGTRK_BT", "Track / Heading", announcer)),
         };
 
         var dialog = new ValueInputForm(
@@ -61,7 +61,10 @@ public partial class TFDiMD11Definition
             input =>
             {
                 if (!int.TryParse(input, out var hdg)) return;
-                SetFcpValue(Md11Fcp.WriteHeading, Md11Fcp.NormaliseHeading(hdg), sim);
+                // A write that never left says so: the FCP windows are unreadable to a blind pilot,
+                // so a typed heading that vanished looks exactly like one the FCC took.
+                if (!SetFcpValue(Md11Fcp.WriteHeading, Md11Fcp.NormaliseHeading(hdg), sim))
+                    announcer.Announce(Md11Fcp.Unavailable(Md11Fcp.HeadingKnobName));
             });
 
         dialog.ShowCancelButton = false;
@@ -92,11 +95,11 @@ public partial class TFDiMD11Definition
                 Md11Fcp.PullAction(Md11Fcp.SpeedKnobName), announcer)),
             // Engaged or not, from the FCP's own dashed speed window (Md11AutoflightState).
             new("&FMS Speed", () => Md11AutoflightState.Engaged(Md11AutoflightState.FmsSpeedEngaged(Val(sim, Md11Fcp.ReadSpeed))),
-                () => PressControl("MD11_CGS_FMSSPD_BT")),
+                () => PressButtonAction("MD11_CGS_FMSSPD_BT", "FMS Speed", announcer)),
             // Last: the typed value picks its own unit by shape, so this is only for the window's
             // display and is seldom touched.
             new("&IAS / Mach", () => Mode(sim, Md11Fcp.ModeSpeedIsMach) ? "Mach" : "IAS",
-                () => PressControl("MD11_CGS_IASMACH_BT")),
+                () => PressButtonAction("MD11_CGS_IASMACH_BT", "IAS / Mach", announcer)),
         };
 
         var dialog = new ValueInputForm(
@@ -120,8 +123,9 @@ public partial class TFDiMD11Definition
                 if (!double.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) return;
 
                 var mach = LooksLikeMach(v);
-                SetFcpValue(Md11Fcp.WriteSpeed, mach ? v : Math.Round(v), sim,
-                    Md11Fcp.WriteSpeedUnit, mach ? 1 : 0);
+                if (!SetFcpValue(Md11Fcp.WriteSpeed, mach ? v : Math.Round(v), sim,
+                        Md11Fcp.WriteSpeedUnit, mach ? 1 : 0))
+                    announcer.Announce(Md11Fcp.Unavailable(Md11Fcp.SpeedKnobName));
             });
 
         dialog.ShowCancelButton = false;
@@ -150,7 +154,7 @@ public partial class TFDiMD11Definition
             // lives only on the FMA, which is not exported — no state to show. No Feet/Metres
             // here — the typed value is always feet and the unit is written with it (below); the
             // window's own unit is the "Altitude Unit Select" row of the Flight Control Panel.
-            new("&PROF", () => "", () => PressControl("MD11_CGS_PROF_BT")),
+            new("&PROF", () => "", () => PressButtonAction("MD11_CGS_PROF_BT", "PROF", announcer)),
             new("P&ush knob", () => "", () => PressKnobAction(Md11Fcp.AltitudeKnob, "PUSH_DOWN", "PUSH_UP",
                 Md11Fcp.PushAction(Md11Fcp.AltitudeKnobName), announcer)),
             new("Pu&ll knob", () => "", () => PressKnobAction(Md11Fcp.AltitudeKnob, "PULL_DOWN", "PULL_UP",
@@ -168,7 +172,8 @@ public partial class TFDiMD11Definition
                 if (!int.TryParse(input, out var alt)) return;
                 // The typed number is feet, so the unit is written alongside it — otherwise a
                 // window left in metres would read the value as metres and climb to the wrong level.
-                SetFcpValue(Md11Fcp.WriteAltitude, alt, sim, Md11Fcp.WriteAltitudeUnit, 0);
+                if (!SetFcpValue(Md11Fcp.WriteAltitude, alt, sim, Md11Fcp.WriteAltitudeUnit, 0))
+                    announcer.Announce(Md11Fcp.Unavailable(Md11Fcp.AltitudeKnobName));
             });
 
         dialog.ShowCancelButton = false;
@@ -197,7 +202,7 @@ public partial class TFDiMD11Definition
         var toggles = new List<ToggleButtonDef>
         {
             new("&VS / FPA", () => CurrentIsFpa() ? "FPA" : "V/S",
-                () => PressControl("MD11_CGS_VS_FPA_BT")),
+                () => PressButtonAction("MD11_CGS_VS_FPA_BT", "VS / FPA", announcer)),
             // The MD-11 has no engage-V/S button — turning the V/S / FPA wheel is what engages the
             // pitch mode. Exposed here so the pilot can engage and fine-tune it by hand; submitting
             // a typed value engages it too (see SetVerticalSpeedEngaged). One click per press.
@@ -309,7 +314,15 @@ public partial class TFDiMD11Definition
             written.Add((side, read, value));
         }
         int entry = ++_altimeterEntrySeq;   // UI thread: the dialog's callbacks and the tail below
-        if (allWritten) _ = VerifyAltimetersAsync(sim, announcer, written, entry);
+        if (!allWritten)
+        {
+            // Nothing reached the aircraft, so there is nothing to read back — and the read-back is
+            // the ONLY thing that would have spoken here. It was already skipped; without this the
+            // pilot typed a QNH during an outage and heard nothing at all.
+            announcer.Announce(Md11Fcp.Unavailable(Md11Fcp.AltimetersName));
+            return;
+        }
+        _ = VerifyAltimetersAsync(sim, announcer, written, entry);
     }
 
     /// <summary>
@@ -493,6 +506,18 @@ public partial class TFDiMD11Definition
     private void FireWheelAction(string node, string eventName, string name, ScreenReaderAnnouncer announcer)
     {
         if (!FireControlEvent(node, eventName)) announcer.Announce(Md11Fcp.Unavailable(name));
+    }
+
+    /// <summary>
+    /// A plain BUTTON press from a dialog toggle (NAV, PROF, FMS Speed, the two mode switches),
+    /// refused aloud when it cannot be delivered — the Ctrl+P window's <c>Press</c> one layer in.
+    /// These six discarded <see cref="PressControl"/>'s bool, so a mode button pressed during an
+    /// outage did nothing and said nothing, while the dialog's own caption still read the old mode.
+    /// <paramref name="label"/> is the toggle's caption, mnemonic stripped.
+    /// </summary>
+    private void PressButtonAction(string node, string label, ScreenReaderAnnouncer announcer)
+    {
+        if (!PressControl(node)) announcer.Announce(Md11Fcp.Unavailable(label.Replace("&", "")));
     }
 
     private static bool Connected(SimConnectManager sim, ScreenReaderAnnouncer announcer)

@@ -55,12 +55,15 @@ public static class Md11Squawk
         return $"{(w >> 12) & 0xF}{(w >> 8) & 0xF}{(w >> 4) & 0xF}{w & 0xF}";
     }
 
+    /// <summary>The control's spoken name — the confirmations and its undeliverable refusal share it.</summary>
+    public const string Name = "Squawk";
+
     /// <summary>What the confirmation says once the aircraft has been read back.</summary>
     public static string Confirmation(string requested, string? readBack)
     {
-        if (readBack == null) return $"Squawk {requested} entered, the transponder did not report back.";
-        if (readBack == requested) return $"Squawk {requested}.";
-        return $"Squawk entry did not take, the transponder reads {readBack}.";
+        if (readBack == null) return $"{Name} {requested} entered, the transponder did not report back.";
+        if (readBack == requested) return $"{Name} {requested}.";
+        return $"{Name} entry did not take, the transponder reads {readBack}.";
     }
 }
 

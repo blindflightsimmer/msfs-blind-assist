@@ -140,9 +140,19 @@ public partial class SimConnectManager
         }
     }   
 
+    /// <summary>
+    /// True when <see cref="SendEvent"/> would actually send. The STOCK-event twin of
+    /// <see cref="CanExecuteCalculatorCode"/>, and a DIFFERENT condition: a stock event needs no
+    /// MobiFlight module, so a caller must ask the one that matches its own transport. Same
+    /// reason for existing — <see cref="SendEvent"/> returns having done nothing during an outage
+    /// and tells nobody, so a caller that must refuse aloud (the MD-11's COM tuning and squawk)
+    /// asks here rather than spelling the condition a second time.
+    /// </summary>
+    public bool CanSendEvent => IsConnected && simConnect != null;
+
     public void SendEvent(string eventName, uint data = 0)
     {
-        if (!IsConnected || simConnect == null) return;
+        if (!CanSendEvent) return;
 
         Log.Debug("SimConnect", $"Sending event: {eventName} with data: {data}");
 
@@ -201,12 +211,15 @@ public partial class SimConnectManager
         {
             uint eventId = nextEventId++;
             eventIds[eventName] = eventId;
-            simConnect.MapClientEventToSimEvent((EVENTS)eventId, eventName);
+            // Non-null by CanSendEvent at the top of this method (here and at the transmit below);
+            // the compiler cannot see through a property, and spelling that condition a second time
+            // is exactly what the property exists to prevent.
+            simConnect!.MapClientEventToSimEvent((EVENTS)eventId, eventName);
             Log.Debug("SimConnect", $"Registered new event: {eventName} with ID: {eventId}");
         }
         
         // Send the event with the data parameter
-        simConnect.TransmitClientEvent(SIMCONNECT_OBJECT_ID_USER,
+        simConnect!.TransmitClientEvent(SIMCONNECT_OBJECT_ID_USER,
             (EVENTS)eventIds[eventName], data, GROUP_PRIORITY.HIGHEST,
             SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY);
     }

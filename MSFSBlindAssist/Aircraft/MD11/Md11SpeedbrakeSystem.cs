@@ -27,6 +27,9 @@ public static class Md11SpeedbrakeSystem
     public const string ArmKey = "MD11_SPDBRK_ARM";
     public const string ArmVar = "MD11_SPDBRK_HANDLE";
 
+    /// <summary>The row's spoken name — its read-back sentences and its undeliverable refusal share it.</summary>
+    public const string ArmName = "Ground spoilers";
+
     public const double NotArmed = 0, Armed = 1, Extended = 2;
 
     /// <summary>How close to a detent the travel value must sit to be named; a sweeping lever in between is silent.</summary>
@@ -115,7 +118,7 @@ public static class Md11SpeedbrakeSystem
         if (delivered is not double h) return null;
         int want = (int)Math.Round(target);
         if ((int)Math.Round(h) == want) return null;
-        return want == 1 ? "Ground spoilers did not arm." : "Ground spoilers did not disarm.";
+        return want == 1 ? $"{ArmName} did not arm." : $"{ArmName} did not disarm.";
     }
 
     /// <summary>

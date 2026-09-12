@@ -122,6 +122,26 @@ public class Md11FlightControlPanelTests
     }
 
     /// <summary>
+    /// Every OTHER MD-11 write path that can now refuse names itself from its own owner rather
+    /// than a literal at the call site, so the refusal and that path's own read-back sentences can
+    /// never drift apart. These are the names the sweep of 2026-09-12 gave a voice.
+    /// </summary>
+    [Fact]
+    public void EveryRefusableWritePath_NamesItselfFromItsOwnOwner()
+    {
+        Assert.Equal("Altimeters unavailable", Md11Fcp.Unavailable(Md11Fcp.AltimetersName));
+        Assert.Equal("Ground spoilers unavailable", Md11Fcp.Unavailable(Md11SpeedbrakeSystem.ArmName));
+        Assert.Equal("Squawk unavailable", Md11Fcp.Unavailable(Md11Squawk.Name));
+        Assert.Equal("Dial-A-Flap unavailable", Md11Fcp.Unavailable(Md11FlapSystem.DialName));
+
+        // Each name is the one that path's own sentences already used, so the pilot hears one name
+        // for one control whether it refused, failed to move, or reported back.
+        Assert.StartsWith(Md11SpeedbrakeSystem.ArmName, Md11SpeedbrakeSystem.ArmReadBack(1, 0));
+        Assert.StartsWith(Md11Squawk.Name, Md11Squawk.Confirmation("1200", null));
+        Assert.Contains(Md11FlapSystem.DialName, Md11FlapSystem.DialSetShortfall(20, 17));
+    }
+
+    /// <summary>
     /// The FCP windows' MODE vars. Each selected value is meaningless without its mode — "250"
     /// is a speed or a Mach number depending on IAS_MACH — so the window speaks both, and these
     /// are the aircraft's own vars rather than anything inferred.

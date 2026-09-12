@@ -98,6 +98,13 @@ public partial class TFDiMD11Definition
         if (_bus == null || !_byNodeId.TryGetValue(Md11SpeedbrakeSystem.LeverKey, out var lever)) return;
         var click = lever.Event("LEFT_BUTTON_DOWN");
         if (click is not > 0) return;
+        if (!CanDeliver)
+        {
+            // Before the click, so no read-back is scheduled for it: VerifyGroundSpoilersAsync
+            // speaks only a DELIVERED mismatch, so an outage left the arm selection silent.
+            announcer.Announce(Md11Fcp.Unavailable(Md11SpeedbrakeSystem.ArmName));
+            return;
+        }
         int backlogMs = _bus.BacklogMs;   // sampled before the click joins the queue
         _bus.Fire(click.Value);
         _ = VerifyGroundSpoilersAsync(target, backlogMs, simConnect, announcer);
@@ -183,6 +190,14 @@ public partial class TFDiMD11Definition
         int idx = Md11Radios.RadioIndex(varKey);
         string standbyKey = $"COM_STANDBY_FREQUENCY:{idx}";
         double targetKhz = hz / 1000.0;
+        // The STOCK-event predicate, not the calc-path one: tuning goes out as a SimConnect event
+        // and needs no MobiFlight module. VerifyComAsync speaks only a DELIVERED mismatch, so
+        // without this an outage swallowed the typed frequency and said nothing.
+        if (!simConnect.CanSendEvent)
+        {
+            announcer.Announce(Md11Fcp.Unavailable($"COM {idx} standby"));
+            return;
+        }
         simConnect.SendEvent(Md11Radios.StandbySetEvent(idx), hz);
         _ = VerifyComAsync(standbyKey, targetKhz, $"COM {idx} standby did not change", simConnect, announcer);
     }
@@ -195,6 +210,11 @@ public partial class TFDiMD11Definition
         int idx = Md11Radios.RadioIndex(varKey);
         string activeKey = $"COM_ACTIVE_FREQUENCY:{idx}";
         double? expected = _com.Last($"COM_STANDBY_FREQUENCY:{idx}");   // the standby we saw last is what should become active
+        if (!simConnect.CanSendEvent)
+        {
+            announcer.Announce(Md11Fcp.Unavailable($"COM {idx} transfer"));
+            return;
+        }
         simConnect.SendEvent(Md11Radios.SwapEvent(idx));
         if (expected is double e && Md11Radios.InAirband(e))
             _ = VerifyComAsync(activeKey, e, $"COM {idx} transfer did not take", simConnect, announcer);
@@ -241,6 +261,16 @@ public partial class TFDiMD11Definition
             return;
         }
         if (_bus == null) return;
+        if (!CanDeliver)
+        {
+            // Refuse BEFORE the write, so no read-back is scheduled for a value that never left.
+            // This path was not silent — it was WORSE: VerifyMinimumsAsync always speaks, and with
+            // nothing delivered Md11Minimums.Confirmation says "<side> baro minimums set to N feet,
+            // the display did not report back", which claims the set happened. Nothing had been
+            // sent at all.
+            announcer.Announce(Md11Fcp.Unavailable(side.Name));
+            return;
+        }
         _bus.WriteExternal(side.WriteVar, feet);
         _ = VerifyMinimumsAsync(side, feet, simConnect, announcer);
     }
@@ -288,6 +318,16 @@ public partial class TFDiMD11Definition
             return;
         }
         if (_bus == null) return;
+        if (!CanDeliver)
+        {
+            // The digits ride the CEVENT bus (the panel's own keypad), so this is the calc-path
+            // predicate. Refuse before BeginEntry: nothing is pressed and no read-back is armed.
+            // Like the minimums, this was not silent but WRONG — the entry's own confirmation says
+            // "Squawk 1200 entered, the transponder did not report back", which tells the pilot the
+            // code went in when not one digit was written.
+            announcer.Announce(Md11Fcp.Unavailable(Md11Squawk.Name));
+            return;
+        }
         _squawk.BeginEntry();   // UI thread: deliveries during the entry are tracked, not spoken
         var previous = _squawkEntries;
         _squawkEntries = RunSquawkEntryAfterAsync(previous, code, simConnect, announcer);
@@ -428,6 +468,20 @@ public partial class TFDiMD11Definition
             return true;
         }
 
+        // LAST of the refusals, so a control-specific reason (read-only export, composite) still
+        // wins: those are true whatever the connection, and more use to the pilot. Everything below
+        // — the press, the guarded press, the hold-to-test, the walk and its direct-set fallback —
+        // writes through the CEVENT bus, which during an outage accepts the id and discards it. The
+        // walk DID report this, but as "did not move. It may be guarded, unpowered, or inhibited",
+        // which names three causes that are all wrong, after spending a second and a half walking;
+        // a plain press or a held test button reported nothing at all.
+        if (!CanDeliver)
+        {
+            Log.Debug("MD11", $"{control.NodeId}: refused set to {value} — the transport cannot send.");
+            announcer.Announce(Md11Fcp.Unavailable(control.DisplayLabel));
+            return true;
+        }
+
         switch (control.Kind)
         {
             // Momentary: press AND release. A press-only pulse leaves the button held for the
@@ -556,6 +610,15 @@ public partial class TFDiMD11Definition
 
         var bus = _bus;                                // read once: Dispose may null it
         if (bus == null) return;
+        if (!CanDeliver)
+        {
+            // Refuse before the write: SetDialRawAsync always reports success (it is one
+            // WriteExternal), so the only signal left was the read-back below — and during an
+            // outage that delivers nothing and returns SILENTLY, so the wheel never moved and the
+            // pilot heard nothing at all while the combo showed their pick.
+            OnUiThread(() => announcer.Announce(Md11Fcp.Unavailable(Md11FlapSystem.DialName)));
+            return;
+        }
         try
         {
             await _flaps.SetDialRawAsync(targetRaw, sim, bus).ConfigureAwait(false);
