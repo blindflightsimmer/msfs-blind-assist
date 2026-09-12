@@ -132,6 +132,33 @@ public static class Md11Fcp
     public const string AltitudeKnob = "MD11_CGS_ALT_KB";
     public const string VerticalSpeedKnob = "MD11_CGS_VS_KB";   // wheel only — no push/pull
 
+    /// <summary>
+    /// The ONE sentence for an FCP action that could not be DELIVERED — a knob push or pull, a
+    /// wheel step, a button, an STD row: "<paramref name="name"/> unavailable".
+    ///
+    /// One owner, because this sentence is the pilot's only evidence that nothing happened, and the
+    /// same refusal now reaches four surfaces: the Ctrl+P window, the Ctrl+H/S/A/V dialogs, the
+    /// FCU push/pull hotkeys and the panel's altimeter STD rows. It keeps the wording those
+    /// surfaces already used, and it is the same shape as the MCDU's own refusal
+    /// (<see cref="Md11McduKeys.UndeliverableRefusal"/>, "Not sent. The MCDU 7 key is
+    /// unavailable.") — a second phrasing for one class of failure would leave a blind pilot
+    /// learning two.
+    /// </summary>
+    public static string Unavailable(string name) => $"{name} unavailable";
+
+    // The knobs' SPOKEN names, and how an action on one is named. One owner for the same reason
+    // Unavailable is: the Ctrl+P window labels its rows from these, and the window, the dialogs and
+    // the hotkeys all refuse in these words, so a pilot hears one name for one knob wherever they
+    // reach it.
+    public const string SpeedKnobName = "Speed";
+    public const string HeadingKnobName = "Heading";
+    public const string AltitudeKnobName = "Altitude";
+    public const string VerticalSpeedName = "Vertical speed";
+
+    public static string PushAction(string knobName) => $"{knobName} push";
+    public static string PullAction(string knobName) => $"{knobName} pull";
+    public static string WheelAction(string knobName, bool up) => $"{knobName} wheel {(up ? "up" : "down")}";
+
     // ---------------------------------------------------------------------------------
     // Altimeter (baro)
     //

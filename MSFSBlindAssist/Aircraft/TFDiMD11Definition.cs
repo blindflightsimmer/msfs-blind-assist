@@ -299,17 +299,23 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     /// pull are distinct physical actions with their own PUSH_/PULL_ event pairs, alongside the
     /// WHEEL_ pair that turns them. <see cref="PressControl"/> can only reach the left-click pair,
     /// so a push or a pull has to name its events.
+    ///
+    /// False means the press did NOT happen — no bus, an unmapped node, no such events, or the
+    /// transport cannot send (<see cref="CanDeliver"/>) — and every caller must SPEAK it, in the
+    /// one sentence <see cref="Md11Fcp.Unavailable"/> owns. On an aircraft whose FCP window a blind
+    /// pilot cannot read, a dropped press is indistinguishable from an accepted one.
     /// </summary>
     public bool PressControlEvents(string nodeId, string downEvent, string upEvent)
     {
-        if (_bus == null) return false;
+        var bus = _bus;                                                   // read once: Dispose may null it
+        if (bus == null || !CanDeliver) return false;                     // Attach hasn't run, or nothing would land
         if (!_byNodeId.TryGetValue(nodeId, out var control)) return false;
 
         var down = control.Event(downEvent);
         var up = control.Event(upEvent);
         if (down == null && up == null) return false;
 
-        _bus.FirePressRelease(down, up);
+        bus.FirePressRelease(down, up);
         return true;
     }
 
@@ -319,18 +325,21 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     ///
     /// The V/S / FPA wheel is the case in point: on the MD-11 there is no "engage V/S" button —
     /// rotating that wheel is what engages the pitch mode — so the pilot needs to fire its wheel
-    /// events directly. Returns false if the control or event is unknown, which callers must SPEAK:
-    /// on an aircraft with no readable FCP window a dropped step looks identical to a taken one.
+    /// events directly. Returns false if the control or event is unknown, or if the transport
+    /// cannot send (<see cref="CanDeliver"/>), which callers must SPEAK through
+    /// <see cref="Md11Fcp.Unavailable"/>: on an aircraft with no readable FCP window a dropped step
+    /// looks identical to a taken one — and this wheel is what ENGAGES the pitch mode.
     /// </summary>
     public bool FireControlEvent(string nodeId, string eventName)
     {
-        if (_bus == null) return false;
+        var bus = _bus;                                                   // read once: Dispose may null it
+        if (bus == null || !CanDeliver) return false;                     // Attach hasn't run, or nothing would land
         if (!_byNodeId.TryGetValue(nodeId, out var control)) return false;
 
         var id = control.Event(eventName);
         if (id == null) return false;
 
-        _bus.Fire(id.Value);
+        bus.Fire(id.Value);
         return true;
     }
 
@@ -388,14 +397,26 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     /// then holds, is exactly what the in-sim test must confirm; the manual wheel controls (FCP
     /// window + V/S dialog) are the reliable fallback if the auto-engage falls short.
     /// </summary>
-    public void SetVerticalSpeedEngaged(double value, double unit, SimConnectManager sim)
+    public void SetVerticalSpeedEngaged(double value, double unit, SimConnectManager sim,
+        Accessibility.ScreenReaderAnnouncer announcer)
     {
         Attach(sim);
         if (_bus == null) return;
 
         _bus.WriteExternal(Md11Fcp.WriteVerticalSpeedUnit, unit);
         var backlogMs = _bus.BacklogMs;                             // sampled BEFORE the wheel click joins the queue
-        FireControlEvent(Md11Fcp.VerticalSpeedKnob, "WHEEL_UP");   // engage V/S / FPA pitch mode
+        if (!FireControlEvent(Md11Fcp.VerticalSpeedKnob, "WHEEL_UP"))   // engage V/S / FPA pitch mode
+        {
+            // The wheel is the ONLY way to engage the pitch mode here, so a nudge that cannot be
+            // delivered would leave the typed value sitting in a window the FCC is not flying —
+            // and the value write below rides the same dead transport anyway. Say so and send
+            // nothing further: this path spoke NOTHING at all before, so a pilot who typed a
+            // vertical speed during an outage got silence and an unflown mode. (The unit write
+            // above has already gone out; during an outage it did nothing either, and it is an
+            // idle-sentinel inbox, so it leaves no state behind.)
+            announcer.Announce(Md11Fcp.Unavailable(Md11Fcp.VerticalSpeedName));
+            return;
+        }
         _ = SetAfterEngage(value, backlogMs);
 
         async Task SetAfterEngage(double v, int backlog)

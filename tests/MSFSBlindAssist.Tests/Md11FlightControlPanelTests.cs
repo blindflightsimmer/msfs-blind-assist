@@ -93,6 +93,35 @@ public class Md11FlightControlPanelTests
     }
 
     /// <summary>
+    /// An action that could not be DELIVERED is refused in ONE sentence, whichever surface the
+    /// pilot reached it from — the Ctrl+P window, the Ctrl+H/S/A/V dialog toggles, the FCU
+    /// push/pull hotkeys and the panel's altimeter STD rows all compose it through
+    /// <see cref="Md11Fcp.Unavailable"/> over the knob names on <see cref="Md11Fcp"/>. The words
+    /// are the pilot's only evidence that nothing happened, so two phrasings for one class of
+    /// failure would leave them learning both; these pin the sentences.
+    /// </summary>
+    [Fact]
+    public void AnUndeliverableAction_IsRefusedInOneSentence()
+    {
+        Assert.Equal("Heading push unavailable", Md11Fcp.Unavailable(Md11Fcp.PushAction(Md11Fcp.HeadingKnobName)));
+        Assert.Equal("Heading pull unavailable", Md11Fcp.Unavailable(Md11Fcp.PullAction(Md11Fcp.HeadingKnobName)));
+        Assert.Equal("Speed push unavailable", Md11Fcp.Unavailable(Md11Fcp.PushAction(Md11Fcp.SpeedKnobName)));
+        Assert.Equal("Altitude pull unavailable", Md11Fcp.Unavailable(Md11Fcp.PullAction(Md11Fcp.AltitudeKnobName)));
+        Assert.Equal("Vertical speed wheel up unavailable",
+            Md11Fcp.Unavailable(Md11Fcp.WheelAction(Md11Fcp.VerticalSpeedName, up: true)));
+        Assert.Equal("Vertical speed wheel down unavailable",
+            Md11Fcp.Unavailable(Md11Fcp.WheelAction(Md11Fcp.VerticalSpeedName, up: false)));
+        // The typed Ctrl+V value refuses on the knob's own name: the wheel nudge is what engages
+        // the mode, so a value that cannot engage is not "set".
+        Assert.Equal("Vertical speed unavailable", Md11Fcp.Unavailable(Md11Fcp.VerticalSpeedName));
+
+        // The same family as the MCDU's refusal for a key it cannot deliver, so a pilot who has
+        // heard one recognises the other.
+        Assert.EndsWith("unavailable", Md11Fcp.Unavailable("Anything"));
+        Assert.EndsWith("unavailable.", Md11McduKeys.UndeliverableRefusal("7"));
+    }
+
+    /// <summary>
     /// The FCP windows' MODE vars. Each selected value is meaningless without its mode — "250"
     /// is a speed or a Mach number depending on IAS_MACH — so the window speaks both, and these
     /// are the aircraft's own vars rather than anything inferred.

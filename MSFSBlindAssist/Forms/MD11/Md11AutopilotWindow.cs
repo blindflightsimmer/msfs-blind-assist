@@ -175,13 +175,13 @@ public class Md11AutopilotWindow : Form
         // pitch mode. So the wheel is the way to ACTIVATE and adjust V/S (or FPA) — one detent per
         // click. (Typing a value via Ctrl+V also engages it; see SetVerticalSpeedEngaged.)
         y = AddSection("Vertical speed wheel (engages V/S / FPA)", y);
-        y = AddWheelRow(y, "Vertical speed", VsKnob);
+        y = AddWheelRow(y, Md11Fcp.VerticalSpeedName, VsKnob);
 
         // ---- Knob push/pull ----
         y = AddSection("Knobs — push and pull", y);
-        y = AddPushPullRow(y, "Speed", SpdKnob);
-        y = AddPushPullRow(y, "Heading", HdgKnob);
-        y = AddPushPullRow(y, "Altitude", AltKnob);
+        y = AddPushPullRow(y, Md11Fcp.SpeedKnobName, SpdKnob);
+        y = AddPushPullRow(y, Md11Fcp.HeadingKnobName, HdgKnob);
+        y = AddPushPullRow(y, Md11Fcp.AltitudeKnobName, AltKnob);
 
         // ---- Autothrust disconnect ----
         y = AddSection("Autothrust", y);
@@ -330,14 +330,14 @@ public class Md11AutopilotWindow : Form
             Text = $"Push", Location = new Point(170, y), Size = new Size(100, 30),
             AccessibleName = $"{name} knob push",
         };
-        push.Click += (s, e) => PressEvents(node, "PUSH_DOWN", "PUSH_UP", $"{name} push");
+        push.Click += (s, e) => PressEvents(node, "PUSH_DOWN", "PUSH_UP", Md11Fcp.PushAction(name));
 
         var pull = new Button
         {
             Text = $"Pull", Location = new Point(278, y), Size = new Size(100, 30),
             AccessibleName = $"{name} knob pull",
         };
-        pull.Click += (s, e) => PressEvents(node, "PULL_DOWN", "PULL_UP", $"{name} pull");
+        pull.Click += (s, e) => PressEvents(node, "PULL_DOWN", "PULL_UP", Md11Fcp.PullAction(name));
 
         Controls.Add(push);
         Controls.Add(pull);
@@ -358,14 +358,14 @@ public class Md11AutopilotWindow : Form
             Text = Md11FcpButtons.WheelUp, Location = new Point(170, y), Size = new Size(100, 30),
             AccessibleName = $"{name} wheel up",
         };
-        up.Click += (s, e) => FireEvent(node, "WHEEL_UP", $"{name} wheel up");
+        up.Click += (s, e) => FireEvent(node, "WHEEL_UP", Md11Fcp.WheelAction(name, up: true));
 
         var down = new Button
         {
             Text = Md11FcpButtons.WheelDown, Location = new Point(278, y), Size = new Size(100, 30),
             AccessibleName = $"{name} wheel down",
         };
-        down.Click += (s, e) => FireEvent(node, "WHEEL_DOWN", $"{name} wheel down");
+        down.Click += (s, e) => FireEvent(node, "WHEEL_DOWN", Md11Fcp.WheelAction(name, up: false));
 
         Controls.Add(up);
         Controls.Add(down);
@@ -383,17 +383,17 @@ public class Md11AutopilotWindow : Form
     /// </summary>
     private void Press(string node, string name)
     {
-        if (!_def.PressControl(node)) _announcer.Announce($"{name} unavailable");
+        if (!_def.PressControl(node)) _announcer.Announce(Md11Fcp.Unavailable(name));
     }
 
     private void PressEvents(string node, string down, string up, string name)
     {
-        if (!_def.PressControlEvents(node, down, up)) _announcer.Announce($"{name} unavailable");
+        if (!_def.PressControlEvents(node, down, up)) _announcer.Announce(Md11Fcp.Unavailable(name));
     }
 
     private void FireEvent(string node, string eventName, string name)
     {
-        if (!_def.FireControlEvent(node, eventName)) _announcer.Announce($"{name} unavailable");
+        if (!_def.FireControlEvent(node, eventName)) _announcer.Announce(Md11Fcp.Unavailable(name));
     }
 
     // ---------------------------------------------------------------------------------

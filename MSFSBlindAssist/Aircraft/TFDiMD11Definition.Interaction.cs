@@ -1442,29 +1442,38 @@ public partial class TFDiMD11Definition
                 return true;
 
             // Push and pull are real, distinct actions on the FCP's speed/heading/altitude knobs
-            // (the map's knob_pp kind carries its own PUSH_/PULL_ event pairs).
+            // (the map's knob_pp kind carries its own PUSH_/PULL_ event pairs). Each goes through
+            // PressKnobAction, so a press that cannot be delivered SPEAKS — these six spoke
+            // nothing at all, which on an aircraft whose FCP window a blind pilot cannot read made
+            // a dropped push identical to an accepted one.
             case HotkeyAction.FCUHeadingPush:
-                PressControlEvents("MD11_CGS_HDG_KB", "PUSH_DOWN", "PUSH_UP");
+                PressKnobAction(Md11Fcp.HeadingKnob, "PUSH_DOWN", "PUSH_UP",
+                    Md11Fcp.PushAction(Md11Fcp.HeadingKnobName), announcer);
                 return true;
 
             case HotkeyAction.FCUHeadingPull:
-                PressControlEvents("MD11_CGS_HDG_KB", "PULL_DOWN", "PULL_UP");
+                PressKnobAction(Md11Fcp.HeadingKnob, "PULL_DOWN", "PULL_UP",
+                    Md11Fcp.PullAction(Md11Fcp.HeadingKnobName), announcer);
                 return true;
 
             case HotkeyAction.FCUSpeedPush:
-                PressControlEvents("MD11_CGS_SPD_KB", "PUSH_DOWN", "PUSH_UP");
+                PressKnobAction(Md11Fcp.SpeedKnob, "PUSH_DOWN", "PUSH_UP",
+                    Md11Fcp.PushAction(Md11Fcp.SpeedKnobName), announcer);
                 return true;
 
             case HotkeyAction.FCUSpeedPull:
-                PressControlEvents("MD11_CGS_SPD_KB", "PULL_DOWN", "PULL_UP");
+                PressKnobAction(Md11Fcp.SpeedKnob, "PULL_DOWN", "PULL_UP",
+                    Md11Fcp.PullAction(Md11Fcp.SpeedKnobName), announcer);
                 return true;
 
             case HotkeyAction.FCUAltitudePush:
-                PressControlEvents("MD11_CGS_ALT_KB", "PUSH_DOWN", "PUSH_UP");
+                PressKnobAction(Md11Fcp.AltitudeKnob, "PUSH_DOWN", "PUSH_UP",
+                    Md11Fcp.PushAction(Md11Fcp.AltitudeKnobName), announcer);
                 return true;
 
             case HotkeyAction.FCUAltitudePull:
-                PressControlEvents("MD11_CGS_ALT_KB", "PULL_DOWN", "PULL_UP");
+                PressKnobAction(Md11Fcp.AltitudeKnob, "PULL_DOWN", "PULL_UP",
+                    Md11Fcp.PullAction(Md11Fcp.AltitudeKnobName), announcer);
                 return true;
 
             // Ctrl+P — the Flight Control Panel (this aircraft's MCP). Tracked so an aircraft

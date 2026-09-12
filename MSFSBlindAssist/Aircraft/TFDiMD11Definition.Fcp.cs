@@ -41,8 +41,10 @@ public partial class TFDiMD11Definition
             // their own events — so they belong wherever the pilot is working this window, not
             // only in the full panel, and first in the tab order (see the class summary). One-shot
             // actions carry no state. Same for speed and altitude.
-            new("P&ush knob", () => "", () => PressControlEvents(Md11Fcp.HeadingKnob, "PUSH_DOWN", "PUSH_UP")),
-            new("Pu&ll knob", () => "", () => PressControlEvents(Md11Fcp.HeadingKnob, "PULL_DOWN", "PULL_UP")),
+            new("P&ush knob", () => "", () => PressKnobAction(Md11Fcp.HeadingKnob, "PUSH_DOWN", "PUSH_UP",
+                Md11Fcp.PushAction(Md11Fcp.HeadingKnobName), announcer)),
+            new("Pu&ll knob", () => "", () => PressKnobAction(Md11Fcp.HeadingKnob, "PULL_DOWN", "PULL_UP",
+                Md11Fcp.PullAction(Md11Fcp.HeadingKnobName), announcer)),
             // Engaged or not, from the FCP's own dashed heading window (Md11AutoflightState).
             new("&NAV", () => Md11AutoflightState.Engaged(Md11AutoflightState.NavEngaged(Val(sim, Md11Fcp.ReadHeading))),
                 () => PressControl("MD11_CGS_NAV_BT")),
@@ -84,8 +86,10 @@ public partial class TFDiMD11Definition
 
         var toggles = new List<ToggleButtonDef>
         {
-            new("P&ush knob", () => "", () => PressControlEvents(Md11Fcp.SpeedKnob, "PUSH_DOWN", "PUSH_UP")),
-            new("Pu&ll knob", () => "", () => PressControlEvents(Md11Fcp.SpeedKnob, "PULL_DOWN", "PULL_UP")),
+            new("P&ush knob", () => "", () => PressKnobAction(Md11Fcp.SpeedKnob, "PUSH_DOWN", "PUSH_UP",
+                Md11Fcp.PushAction(Md11Fcp.SpeedKnobName), announcer)),
+            new("Pu&ll knob", () => "", () => PressKnobAction(Md11Fcp.SpeedKnob, "PULL_DOWN", "PULL_UP",
+                Md11Fcp.PullAction(Md11Fcp.SpeedKnobName), announcer)),
             // Engaged or not, from the FCP's own dashed speed window (Md11AutoflightState).
             new("&FMS Speed", () => Md11AutoflightState.Engaged(Md11AutoflightState.FmsSpeedEngaged(Val(sim, Md11Fcp.ReadSpeed))),
                 () => PressControl("MD11_CGS_FMSSPD_BT")),
@@ -147,8 +151,10 @@ public partial class TFDiMD11Definition
             // here — the typed value is always feet and the unit is written with it (below); the
             // window's own unit is the "Altitude Unit Select" row of the Flight Control Panel.
             new("&PROF", () => "", () => PressControl("MD11_CGS_PROF_BT")),
-            new("P&ush knob", () => "", () => PressControlEvents(Md11Fcp.AltitudeKnob, "PUSH_DOWN", "PUSH_UP")),
-            new("Pu&ll knob", () => "", () => PressControlEvents(Md11Fcp.AltitudeKnob, "PULL_DOWN", "PULL_UP")),
+            new("P&ush knob", () => "", () => PressKnobAction(Md11Fcp.AltitudeKnob, "PUSH_DOWN", "PUSH_UP",
+                Md11Fcp.PushAction(Md11Fcp.AltitudeKnobName), announcer)),
+            new("Pu&ll knob", () => "", () => PressKnobAction(Md11Fcp.AltitudeKnob, "PULL_DOWN", "PULL_UP",
+                Md11Fcp.PullAction(Md11Fcp.AltitudeKnobName), announcer)),
         };
 
         var dialog = new ValueInputForm(
@@ -195,8 +201,10 @@ public partial class TFDiMD11Definition
             // The MD-11 has no engage-V/S button — turning the V/S / FPA wheel is what engages the
             // pitch mode. Exposed here so the pilot can engage and fine-tune it by hand; submitting
             // a typed value engages it too (see SetVerticalSpeedEngaged). One click per press.
-            new("Wheel &up", () => "", () => FireControlEvent(Md11Fcp.VerticalSpeedKnob, "WHEEL_UP")),
-            new("Wheel &down", () => "", () => FireControlEvent(Md11Fcp.VerticalSpeedKnob, "WHEEL_DOWN")),
+            new("Wheel &up", () => "", () => FireWheelAction(Md11Fcp.VerticalSpeedKnob, "WHEEL_UP",
+                Md11Fcp.WheelAction(Md11Fcp.VerticalSpeedName, up: true), announcer)),
+            new("Wheel &down", () => "", () => FireWheelAction(Md11Fcp.VerticalSpeedKnob, "WHEEL_DOWN",
+                Md11Fcp.WheelAction(Md11Fcp.VerticalSpeedName, up: false), announcer)),
         };
 
         var dialog = new ValueInputForm(
@@ -224,7 +232,7 @@ public partial class TFDiMD11Definition
                 // Engage the pitch mode (nudge the wheel) AND set the value — a plain value-set
                 // leaves it in a window the FCC is not flying. See SetVerticalSpeedEngaged. The
                 // enum's number IS the VR_U inbox value (0 = V/S, 1 = FPA).
-                SetVerticalSpeedEngaged(fpa ? v : Math.Round(v), (double)unit, sim);
+                SetVerticalSpeedEngaged(fpa ? v : Math.Round(v), (double)unit, sim, announcer);
             });
 
         dialog.ShowCancelButton = false;
@@ -372,7 +380,7 @@ public partial class TFDiMD11Definition
         if (!PressControlEvents(std.Knob, "LEFT_BUTTON_DOWN", "LEFT_BUTTON_UP"))
         {
             var label = GetVariables().TryGetValue(std.Key, out var row) ? row.DisplayName : std.Key;
-            announcer.Announce($"{label} unavailable");
+            announcer.Announce(Md11Fcp.Unavailable(label));
             return;
         }
         if (!std.ReadsBack) return;
@@ -459,6 +467,33 @@ public partial class TFDiMD11Definition
 
     private static bool Mode(SimConnectManager sim, string varKey)
         => (sim.GetCachedVariableValue(varKey) ?? 0) > 0.5;
+
+    /// <summary>
+    /// A knob push or pull from a HOTKEY or a dialog toggle, refused ALOUD when it cannot be
+    /// delivered — the Ctrl+P window's <c>PressEvents</c> one layer in, so all three surfaces say
+    /// the same sentence (<see cref="Md11Fcp.Unavailable"/>).
+    ///
+    /// Silent on success: the screen reader has already read the button or the hotkey's own
+    /// feedback, and this aircraft's FCP window cannot be read, so only a press that did NOT
+    /// happen is news. <see cref="Connected"/> gates a dialog at OPEN time and only on
+    /// <c>IsConnected</c> — a drop after it opened, or a session with no MobiFlight WASM module at
+    /// all, reaches these toggles with a transport that silently discards every press.
+    /// </summary>
+    private void PressKnobAction(string node, string downEvent, string upEvent, string name,
+        ScreenReaderAnnouncer announcer)
+    {
+        if (!PressControlEvents(node, downEvent, upEvent)) announcer.Announce(Md11Fcp.Unavailable(name));
+    }
+
+    /// <summary>
+    /// One V/S / FPA wheel step, refused aloud when it cannot be delivered. The wheel is what
+    /// ENGAGES the pitch mode on this aircraft, so a dropped step is a pilot believing they are
+    /// flying a mode they are not.
+    /// </summary>
+    private void FireWheelAction(string node, string eventName, string name, ScreenReaderAnnouncer announcer)
+    {
+        if (!FireControlEvent(node, eventName)) announcer.Announce(Md11Fcp.Unavailable(name));
+    }
 
     private static bool Connected(SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
