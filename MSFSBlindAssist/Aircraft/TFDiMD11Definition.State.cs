@@ -381,7 +381,8 @@ public partial class TFDiMD11Definition
     /// the 1 Hz SIM_ON_GROUND, so an arm kept from a parked aircraft fired at the loaded cruise
     /// ("V1, Rotate, V2" at FL350), and the Connected branch never runs for a load. The flap
     /// pair is left alone
-    /// on purpose: it dedups on its last spoken text, so an unchanged lever is silent and a
+    /// on purpose: it dedups on its last RECORDED text — which may be a baseline recorded
+    /// silently rather than anything spoken — so an unchanged lever is silent and a
     /// changed one speaks once, truthfully. An aircraft switch constructs a new definition,
     /// which needs none of this.
     ///

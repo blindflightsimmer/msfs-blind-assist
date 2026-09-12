@@ -57,7 +57,7 @@ public partial class TFDiMD11Definition
             input => int.TryParse(input, out var v) && v >= 0 && v <= 359
                 ? (true, "")
                 : (false, "Enter a heading between 0 and 359"),
-            toggles,
+            Suppressing(toggles),
             input =>
             {
                 if (!int.TryParse(input, out var hdg)) return;
@@ -117,7 +117,7 @@ public partial class TFDiMD11Definition
                         ? (true, "")
                         : (false, $"Enter a speed between {Md11Fcp.MinSpeedKnots} and {Md11Fcp.MaxSpeedKnots} knots, or a Mach such as 0.82");
             },
-            toggles,
+            Suppressing(toggles),
             input =>
             {
                 if (!double.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) return;
@@ -166,7 +166,7 @@ public partial class TFDiMD11Definition
             input => int.TryParse(input, out var v) && v >= Md11Fcp.MinAltitudeFt && v <= Md11Fcp.MaxAltitudeFt
                 ? (true, "")
                 : (false, $"Enter an altitude between {Md11Fcp.MinAltitudeFt} and {Md11Fcp.MaxAltitudeFt} feet"),
-            toggles,
+            Suppressing(toggles),
             input =>
             {
                 if (!int.TryParse(input, out var alt)) return;
@@ -226,7 +226,7 @@ public partial class TFDiMD11Definition
                     ? (false, $"Enter a vertical speed within {Md11Fcp.MaxVerticalSpeedFpm} feet per minute")
                     : (false, $"Enter a vertical speed of at least {Md11Fcp.MinVerticalSpeedFpm} feet per minute, or an FPA between -{Md11Fcp.MaxFpaDegrees} and {Md11Fcp.MaxFpaDegrees} degrees");
             },
-            toggles,
+            Suppressing(toggles),
             input =>
             {
                 if (!double.TryParse(input, NumberStyles.Float | NumberStyles.AllowLeadingSign,
@@ -283,7 +283,7 @@ public partial class TFDiMD11Definition
                         ? (true, "")
                         : (false, $"Enter inHg between {Md11Fcp.MinInHg:0.00} and {Md11Fcp.MaxInHg:0.00}, or hPa such as 1013");
             },
-            toggles,
+            Suppressing(toggles),
             input =>
             {
                 if (!double.TryParse(input, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) return;
@@ -488,15 +488,37 @@ public partial class TFDiMD11Definition
     ///
     /// Silent on success: the screen reader has already read the button or the hotkey's own
     /// feedback, and this aircraft's FCP window cannot be read, so only a press that did NOT
-    /// happen is news. <see cref="Connected"/> gates a dialog at OPEN time and only on
-    /// <c>IsConnected</c> — a drop after it opened, or a session with no MobiFlight WASM module at
-    /// all, reaches these toggles with a transport that silently discards every press.
+    /// happen is news. <see cref="Connected"/> does not cover it: that gates a dialog at OPEN time
+    /// and only on <c>IsConnected</c>, so a drop AFTER it opened still reaches these toggles. The
+    /// no-module configuration reaches them too, and is caught only once the calc-path probe has
+    /// concluded unverified (<see cref="SimConnectManager.CalcWriteCanLand"/>) — never while it is
+    /// still pending, so nothing is refused that would have worked.
     /// </summary>
     private void PressKnobAction(string node, string downEvent, string upEvent, string name,
         ScreenReaderAnnouncer announcer)
     {
-        if (!PressControlEvents(node, downEvent, upEvent)) announcer.Announce(Md11Fcp.Unavailable(name));
+        RefuseToggleIf(!PressControlEvents(node, downEvent, upEvent), name, announcer);
     }
+
+    /// <summary>
+    /// Whether the LAST toggle press this dialog made was refused. <see cref="ValueInputForm"/>
+    /// asks it 1.2 s after the press and skips its own state announce when it is true: that
+    /// announce is an interrupting <c>AnnounceImmediate</c> and was truncating the refusal these
+    /// helpers had queued. Set on every toggle press, so a refusal can never suppress the next
+    /// press's announce. UI thread only — every toggle press and the form's announce run there.
+    /// </summary>
+    private bool _lastToggleRefused;
+
+    /// <summary>Records whether this toggle press was refused, and speaks the one refusal if it was.</summary>
+    private void RefuseToggleIf(bool refused, string name, ScreenReaderAnnouncer announcer)
+    {
+        _lastToggleRefused = refused;
+        if (refused) announcer.Announce(Md11Fcp.Unavailable(name));
+    }
+
+    /// <summary>Attaches the refusal suppressor to every toggle in a dialog — see <see cref="_lastToggleRefused"/>.</summary>
+    private List<ToggleButtonDef> Suppressing(List<ToggleButtonDef> toggles) =>
+        toggles.Select(t => t with { SuppressStateAnnounce = () => _lastToggleRefused }).ToList();
 
     /// <summary>
     /// One V/S / FPA wheel step, refused aloud when it cannot be delivered. The wheel is what
@@ -505,7 +527,7 @@ public partial class TFDiMD11Definition
     /// </summary>
     private void FireWheelAction(string node, string eventName, string name, ScreenReaderAnnouncer announcer)
     {
-        if (!FireControlEvent(node, eventName)) announcer.Announce(Md11Fcp.Unavailable(name));
+        RefuseToggleIf(!FireControlEvent(node, eventName), name, announcer);
     }
 
     /// <summary>
@@ -517,7 +539,7 @@ public partial class TFDiMD11Definition
     /// </summary>
     private void PressButtonAction(string node, string label, ScreenReaderAnnouncer announcer)
     {
-        if (!PressControl(node)) announcer.Announce(Md11Fcp.Unavailable(label.Replace("&", "")));
+        RefuseToggleIf(!PressControl(node), label.Replace("&", ""), announcer);
     }
 
     private static bool Connected(SimConnectManager sim, ScreenReaderAnnouncer announcer)

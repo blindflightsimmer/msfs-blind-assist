@@ -271,8 +271,16 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     /// returns having done nothing. The pump takes the id off its queue either way, so a keystroke
     /// pressed then is CONSUMED and lost: without this the MCDU window announced nothing, cleared
     /// the pilot's typed line, and left them to retype text they could not see had never gone in.
+    ///
+    /// It asks <see cref="SimConnectManager.CalcWriteCanLand"/>, not the bare
+    /// <c>CanExecuteCalculatorCode</c>: the latter is TRUE in a session with no MobiFlight WASM
+    /// module (the object exists whether or not the module is installed), which is precisely the
+    /// configuration where every CEVENT write is discarded. The bridge probe is the only
+    /// end-to-end evidence, and this aircraft registers <c>MSFSBA_BRIDGE_PROBE</c> — so a concluded
+    /// unverified probe here really does mean the writes are going nowhere, while the probe's
+    /// pending window stays permissive so nothing is refused that would have worked.
     /// </summary>
-    private bool CanDeliver => _bus != null && _sim?.CanExecuteCalculatorCode == true;
+    private bool CanDeliver => _bus != null && _sim?.CalcWriteCanLand == true;
 
     /// <summary>
     /// True when <see cref="PressControl"/> would press <paramref name="nodeId"/> right now: the
@@ -618,10 +626,14 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
                     || c.NodeId == Md11SpeedbrakeSystem.LeverKey;
                 // The Dial-A-Flap thumbwheel's declared state_var is the INDICATOR needle
                 // (MD11_DIALAFLAP_IND_RNG), which the cockpit XML animates with ANIM_LAG=1000 — it
-                // trails the real value by ~1 s, so the closed-loop walk read it a step behind, saw
-                // "no movement", and bailed. Read the knob's OWN live L:var (the NodeId,
-                // MD11_DIALAFLAP_WHEEL_RNG — the OVERRIDE_ANIM_CODE source) instead: it updates the
-                // instant the CEVENT lands. Same 0–100 → 10–25° scale, so DegreesFor is unchanged.
+                // trails the real value by ~1 s, so the closed-loop CEVENT walk this path used to
+                // use read it a step behind, saw "no movement", and bailed. Read the knob's OWN live
+                // L:var (the NodeId, MD11_DIALAFLAP_WHEEL_RNG — the OVERRIDE_ANIM_CODE source)
+                // instead: it follows the wheel's real value rather than the needle's animation.
+                // The wheel is no longer walked at all — SetDialRawAsync writes this same var once,
+                // directly — but the read var stays the right one: it is what the set's read-back
+                // polls until the written value arrives, and what the display row and the spoken
+                // read-out show. Same 0–100 → 10–25° scale, so DegreesFor is unchanged.
                 string readVar = c.NodeId == Md11FlapSystem.DialKey ? c.NodeId
                     : c.NodeId == Md11SpeedbrakeSystem.LeverKey ? Md11SpeedbrakeSystem.TravelVar
                     : c.StateVar;

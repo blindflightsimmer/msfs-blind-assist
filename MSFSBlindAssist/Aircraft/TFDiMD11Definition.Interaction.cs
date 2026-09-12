@@ -17,6 +17,12 @@ public partial class TFDiMD11Definition
     // connecting mid-flight narrates the entire cockpit at you.
     private double _flapRng = double.NaN;
     private double _dialRaw = double.NaN;
+
+    /// <summary>
+    /// The last flap read-out text RECORDED — not necessarily spoken. Md11FlapSystem.ReadoutDecision
+    /// records the first COMPLETE text silently, as the baseline, and only later changes are both
+    /// spoken and recorded; the dedup compares against whatever was recorded last either way.
+    /// </summary>
     private string _lastFlapSpoken = string.Empty;
 
     // Speedbrake: the lever's travel (detents) and its pull (armed), see Md11SpeedbrakeSystem.
@@ -136,6 +142,19 @@ public partial class TFDiMD11Definition
             if (failure == null) return null;
             return () => announcer.Announce(failure);
         }, "Ground spoiler read-back failed", "Ground spoiler read-back (UI-thread tail) failed");
+    }
+
+    /// <summary>
+    /// Speaks the ONE refusal for a control that cannot be reached, logs why, and answers
+    /// SetControl's "handled". Judged by each branch where that branch decides — per press for the
+    /// one-shot kinds, after the debounce for the walked ones — never once per combo row arrowed
+    /// over.
+    /// </summary>
+    private bool RefuseUndeliverable(Md11Control control, double value, ScreenReaderAnnouncer announcer)
+    {
+        Log.Debug("MD11", $"{control.NodeId}: refused set to {value} — the transport cannot send.");
+        announcer.Announce(Md11Fcp.Unavailable(control.DisplayLabel));
+        return true;
     }
 
     /// <summary>
@@ -468,20 +487,14 @@ public partial class TFDiMD11Definition
             return true;
         }
 
-        // LAST of the refusals, so a control-specific reason (read-only export, composite) still
-        // wins: those are true whatever the connection, and more use to the pilot. Everything below
-        // — the press, the guarded press, the hold-to-test, the walk and its direct-set fallback —
-        // writes through the CEVENT bus, which during an outage accepts the id and discards it. The
-        // walk DID report this, but as "did not move. It may be guarded, unpowered, or inhibited",
-        // which names three causes that are all wrong, after spending a second and a half walking;
-        // a plain press or a held test button reported nothing at all.
-        if (!CanDeliver)
-        {
-            Log.Debug("MD11", $"{control.NodeId}: refused set to {value} — the transport cannot send.");
-            announcer.Announce(Md11Fcp.Unavailable(control.DisplayLabel));
-            return true;
-        }
-
+        // The undeliverable refusal is NOT judged here. A detented combo commits a SET per row the
+        // pilot arrows over, so judged at this point it spoke "<label> unavailable" once for every
+        // row passed — the defect that moved the speedbrake's refusal behind the debounce. Each
+        // branch below judges it where that branch decides: the one-shot kinds per press, and the
+        // walked kinds once their debounce has settled, on the selection that settled
+        // (DebouncedWalk; the Dial-A-Flap does the same behind its own). It stays LAST among the
+        // refusals either way, so a control-specific reason (read-only export, composite) still
+        // wins — those are true whatever the connection, and more use to the pilot.
         switch (control.Kind)
         {
             // Momentary: press AND release. A press-only pulse leaves the button held for the
@@ -494,6 +507,8 @@ public partial class TFDiMD11Definition
             // exactly as before — never worse than today.
             case Md11Kinds.Button:
             {
+                // One-shot: judged per press, which is exactly once per pilot action.
+                if (!CanDeliver) return RefuseUndeliverable(control, value, announcer);
                 bool guarded = !string.IsNullOrEmpty(control.GuardId);
                 long pressedAt = Environment.TickCount64;
                 _gate.NotePress(control.NodeId, pressedAt);
@@ -526,6 +541,7 @@ public partial class TFDiMD11Definition
             // pressing it lifts or lowers the cover. Exposed as an operable control so the pilot has
             // a manual open/close — the fallback for when the auto-open above cannot read the state.
             case Md11Kinds.Guard:
+                if (!CanDeliver) return RefuseUndeliverable(control, value, announcer);
                 _bus.Press(control);
                 _ = GuardRefreshAsync(control, simConnect);
                 return true;
@@ -586,6 +602,17 @@ public partial class TFDiMD11Definition
     private int _dialSetGen;
     private CancellationTokenSource? _dialSetCts;
 
+    /// <summary>
+    /// How long the Dial-A-Flap read-back waits for the written value to reach the wheel's own
+    /// L:var, and how often it looks. The var streams SIM_FRAME + CHANGED, so its "fresh read" is
+    /// the cache (<see cref="FreshReadPolicy.CacheIsFresh"/>) and there is no delivery to await —
+    /// polling it IS awaiting delivery. The path is calc → WASM → L:var → SIM_FRAME, two to three
+    /// sim frames, so a landed set answers on the first poll or two; the ceiling only bounds a set
+    /// that never arrives, and the exact compare needs it so a slow frame cannot invent a miss.
+    /// </summary>
+    private const int DialSettleTimeoutMs = 900;
+    private const int DialPollMs = 50;
+
     private async Task SetDialAndAnnounce(double targetRaw, SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
         // Arrowing through the combo fires a SET for every intermediate entry — so a move from 10°
@@ -629,22 +656,37 @@ public partial class TFDiMD11Definition
         }
 
         if (gen != _dialSetGen) return;                // superseded during the write — let the newer one speak
-        await Task.Delay(200).ConfigureAwait(false);   // let the final value settle and stream in
-        // Re-check AFTER the settle delay, not only before it: the wait above is 200 ms in
-        // which a newer selection can supersede this one — or Dispose can bump the generation — and
-        // past this point the value read is `sim`'s cache, which after a switch belongs to the NEXT
-        // aircraft. Announcing then speaks a real angle for a wheel this set never touched.
-        if (gen != _dialSetGen) return;
-        // The wheel streams on its own SIM_FRAME subscription, so its fresh read IS the cache
-        // (FreshReadPolicy.CacheIsFresh), handed back at once: the force-read this used to issue
-        // was a documented no-op for such a var, and the 120 ms after it dead time.
-        var raw = await sim.ReadFreshAsync(Md11FlapSystem.DialKey, Md11SelectorWalker.FreshReadTimeoutMs).ConfigureAwait(false);
+
+        // WAIT FOR THE WRITTEN VALUE TO ARRIVE, don't sleep a fixed time and read whatever is there.
+        // This var streams on its own SIM_FRAME + CHANGED subscription, so FreshReadPolicy.CacheIsFresh
+        // makes ReadFreshAsync hand the CACHE back at once — there is no PERIOD.ONCE to await for it
+        // (one would replace the subscription, and a stationary value delivers nothing). The cache IS
+        // this var's delivery channel, so "await delivery" means polling it until the wheel reaches
+        // the pick. With a fixed 200 ms settle the compare below could read the PRE-write value on a
+        // slow frame (calc → WASM → L:var → SIM_FRAME is two to three frames) and invent a
+        // "could not reach" for a set that landed a moment later — a false failure the exact compare
+        // must never produce. A set that lands exits on the first poll; only a genuine miss waits out
+        // the deadline before speaking.
+        int wantedRaw = 0;
+        double? raw = null;
+        for (var waited = 0; waited <= DialSettleTimeoutMs; waited += DialPollMs)
+        {
+            await Task.Delay(DialPollMs).ConfigureAwait(false);
+            // Re-checked on every pass, not only before the wait: a newer selection can supersede
+            // this one — or Dispose can bump the generation — and past this point the value read is
+            // `sim`'s cache, which after an aircraft switch belongs to the NEXT aircraft.
+            if (gen != _dialSetGen) return;
+            raw = await sim.ReadFreshAsync(Md11FlapSystem.DialKey, Md11SelectorWalker.FreshReadTimeoutMs).ConfigureAwait(false);
+            if (raw == null) continue;
+            wantedRaw = _flaps.NearestSelectableDegrees(raw.Value);
+            if (wantedRaw == want) break;              // landed — nothing to say
+        }
         if (raw == null || gen != _dialSetGen) return;
 
-        // A landed set is silent — the screen reader already read the pick. A wheel that stopped
-        // more than a degree off it says so, in the display row's own rounding, on the UI thread:
-        // this tail runs on the thread pool after the awaits above.
-        var shortfall = Md11FlapSystem.DialSetShortfall(want, _flaps.NearestSelectableDegrees(raw.Value));
+        // A landed set is silent — the screen reader already read the pick. A wheel that settled on
+        // any OTHER whole degree says so, in the display row's own rounding, on the UI thread: this
+        // tail runs on the thread pool after the awaits above.
+        var shortfall = Md11FlapSystem.DialSetShortfall(want, wantedRaw);
         if (shortfall != null) OnUiThread(() => announcer.Announce(shortfall));
     }
 
@@ -699,6 +741,15 @@ public partial class TFDiMD11Definition
             // answers the pilot's own pick, like SafeWalk's "did not move", so no Ctrl+M row mutes
             // it. It comes after EnsureGuardOpenAsync only nominally: the one caller, the speedbrake
             // lever, has no guard, so that returned at once.
+            // Judged HERE for the same reason, and before the control-specific refusal: one pick,
+            // one refusal. In SetControl this fired per row arrowed over.
+            if (!CanDeliver)
+            {
+                Log.Debug("MD11", $"{control.NodeId}: refused set to {target} — the transport cannot send.");
+                OnUiThread(() => announcer.Announce(Md11Fcp.Unavailable(control.DisplayLabel)));
+                return;
+            }
+
             if (refuse?.Invoke(target) is string why)
             {
                 OnUiThread(() => announcer.Announce(why));

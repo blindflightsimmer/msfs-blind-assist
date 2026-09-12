@@ -95,6 +95,26 @@ public partial class SimConnectManager
     /// </summary>
     public bool CanExecuteCalculatorCode => IsConnected && mobiFlightWasm != null;
 
+    /// <summary>
+    /// True when a calc write can be expected to LAND in the aircraft — what a caller that must
+    /// refuse aloud should ask, rather than <see cref="CanExecuteCalculatorCode"/>.
+    ///
+    /// The difference is the no-module configuration. `mobiFlightWasm` is constructed
+    /// unconditionally in <c>Connect()</c> and its initialize is purely local client-data setup, so
+    /// <see cref="CanExecuteCalculatorCode"/> is TRUE with no WASM module installed (the same trap
+    /// <see cref="IsMobiFlightConnected"/> carries, and why <see cref="SetLVar"/>'s routing gates on
+    /// <see cref="CalcPathVerified"/>). The only end-to-end evidence is the bridge probe, so this
+    /// refuses exactly when the probe has CONCLUDED and did not verify.
+    ///
+    /// While the probe is still PENDING this stays permissive, deliberately: refusing a write that
+    /// would have succeeded is worse than the gap it closes, and the probe concludes within seconds
+    /// of an aircraft load. Note this is NOT what <see cref="ExecuteCalculatorCode"/> guards itself
+    /// with, and must not become it — the FBW defs' per-prefix catch-alls write through the
+    /// calculator UNCONDITIONALLY by design (CLAUDE.md), and gating them on the probe is what kept
+    /// the A380/A32NX overhead panels alive through the ten-week probe outage.
+    /// </summary>
+    public bool CalcWriteCanLand => CanExecuteCalculatorCode && !(CalcPathProbeConcluded && !CalcPathVerified);
+
     public void ExecuteCalculatorCode(string rpnCode, bool quiet = false)
     {
         if (!CanExecuteCalculatorCode) return;
