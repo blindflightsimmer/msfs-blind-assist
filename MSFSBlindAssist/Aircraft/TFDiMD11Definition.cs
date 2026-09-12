@@ -263,7 +263,7 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
 
     /// <summary>
     /// True when a press would actually REACH the aircraft: a bus is attached AND the transport
-    /// under it can send right now (<see cref="SimConnectManager.CanExecuteCalculatorCode"/>).
+    /// under it can send right now (<see cref="SimConnectManager.CalcWriteCanLand"/>).
     ///
     /// The second half is not belt-and-braces. <see cref="_bus"/> is created in
     /// <see cref="Attach"/> and nulled only in <see cref="Dispose"/> — a SimConnect drop leaves it
