@@ -107,8 +107,14 @@ public partial class SimConnectManager
     /// refuses exactly when the probe has CONCLUDED and did not verify.
     ///
     /// While the probe is still PENDING this stays permissive, deliberately: refusing a write that
-    /// would have succeeded is worse than the gap it closes, and the probe concludes within seconds
-    /// of an aircraft load. Note this is NOT what <see cref="ExecuteCalculatorCode"/> guards itself
+    /// would have succeeded is worse than the gap it closes. That window is NOT short — the probe
+    /// runs 40 attempts at 1.5 s, so the no-module case (the only one this predicate adds) concludes
+    /// about a MINUTE after detection, and writes made in that minute are still discarded silently.
+    /// That is the accepted trade, not an oversight: the alternative refuses writes that would have
+    /// landed. The verdict is per CONNECTION, so MainForm re-arms it on every aircraft switch
+    /// (<c>ArmBridgeProbe</c>) — without that, a profile registering no probe target concludes
+    /// unverified and its verdict refuses every write on the aircraft switched to next.
+    /// Note this is NOT what <see cref="ExecuteCalculatorCode"/> guards itself
     /// with, and must not become it — the FBW defs' per-prefix catch-alls write through the
     /// calculator UNCONDITIONALLY by design (CLAUDE.md), and gating them on the probe is what kept
     /// the A380/A32NX overhead panels alive through the ten-week probe outage.

@@ -314,14 +314,13 @@ public partial class TFDiMD11Definition
             written.Add((side, read, value));
         }
         int entry = ++_altimeterEntrySeq;   // UI thread: the dialog's callbacks and the tail below
-        if (!allWritten)
-        {
-            // Nothing reached the aircraft, so there is nothing to read back — and the read-back is
-            // the ONLY thing that would have spoken here. It was already skipped; without this the
-            // pilot typed a QNH during an outage and heard nothing at all.
-            announcer.Announce(Md11Fcp.Unavailable(Md11Fcp.AltimetersName));
-            return;
-        }
+        // Through RefuseToggleIf like the other fourteen, so Ctrl+B's "Standard, all three" records
+        // the outcome too: reached from that toggle, its refusal was otherwise judged by a STALE
+        // flag — cut off by the dialog's own 1.2 s label announce, or (after some earlier refusal)
+        // suppressing the label of a Standard set that WORKED. Nothing reached the aircraft, so
+        // there is nothing to read back, and the read-back is the only thing that would have spoken.
+        RefuseToggleIf(!allWritten, Md11Fcp.AltimetersName, announcer);
+        if (!allWritten) return;
         _ = VerifyAltimetersAsync(sim, announcer, written, entry);
     }
 

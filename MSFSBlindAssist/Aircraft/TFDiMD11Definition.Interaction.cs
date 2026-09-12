@@ -594,7 +594,7 @@ public partial class TFDiMD11Definition
     /// The set is one write of the wheel's own backing var (<see cref="Md11FlapSystem.SetDialRawAsync"/>
     /// — never a CEVENT walk), so a landed set is SILENT: the screen reader already read the combo's
     /// pick, and re-announcing the landed angle double-speaks every set — the rule
-    /// <see cref="DebouncedWalk"/> follows. A wheel that settles more than a degree off the pick
+    /// <see cref="DebouncedWalk"/> follows. A wheel that settles on any OTHER whole degree
     /// says so ("Dial-A-Flap 17 degrees, could not reach 20", <see cref="Md11FlapSystem.DialSetShortfall"/>),
     /// because the pilot has no gauge to check, and says it through <see cref="OnUiThread"/>: the
     /// awaits below resume on the thread pool, where ScreenReaderAnnouncer is unreliable.

@@ -19,6 +19,29 @@ namespace MSFSBlindAssist;
 
 public partial class MainForm
 {
+    /// <summary>
+    /// Re-arms the calc-path bridge probe: this timer's own attempt state AND the manager's latched
+    /// verdict, which is per CONNECTION and therefore outlives an aircraft.
+    ///
+    /// ONE owner, called from both places a fresh verdict is owed — this timer (reconnect, first
+    /// detection) and <see cref="SwitchAircraft"/> (a mid-session profile change from the Aircraft
+    /// menu, which never disconnects). Split across the two, they drifted: only the timer path
+    /// existed, so a session that began on a profile registering no probe target — the PMDG 737/777,
+    /// HS787, iFly or Fenix — concluded UNVERIFIED and silently, and that verdict then stood for an
+    /// MD-11 selected afterwards. Every MD-11 write was refused "unavailable" for the rest of the
+    /// connection with a perfectly healthy calc path, and no warning was ever spoken because the
+    /// conclusion had been reached on the previous profile. It also closes the older, quieter half
+    /// of the same bug: a PMDG → FBW switch left a stale conclusion that dropped SetLVar to the
+    /// unreliable data-def write and dotted events to the legacy transport, with nothing said.
+    /// </summary>
+    private void ArmBridgeProbe()
+    {
+        _bridgeProbeAttempts = 0;
+        _bridgeProbeAwaitingRead = false;
+        _bridgeProbeRebound = false;
+        simConnectManager?.ResetCalcPathProbe();
+    }
+
     private void BridgeProbeTimer_Tick(object? sender, EventArgs e)
     {
         try
@@ -27,8 +50,12 @@ public partial class MainForm
             // sim is still in the menu burns its attempts against an empty world
             // (calc writes no-op without an aircraft) and falsely logs "gave up" —
             // observed live 2026-06-12 (all 40 attempts spent before the A320 loaded).
-            // Treating not-fully-connected like disconnected also re-arms the probe
-            // on every aircraft detection / swap.
+            // Treating not-fully-connected like disconnected re-arms the probe on a reconnect and
+            // on the first detection of a session. It does NOT cover a mid-session profile switch
+            // from the Aircraft menu — IsFullyConnected only drops in Disconnect(), and a switch
+            // never disconnects — so SwitchAircraft calls ArmBridgeProbe itself. It must: the
+            // verdict is per CONNECTION, and a profile that does not register the probe concludes
+            // UNVERIFIED (silently), which would otherwise stand for the aircraft switched to.
             if (simConnectManager == null || !simConnectManager.IsConnected || !simConnectManager.IsFullyConnected)
             {
                 _bridgeProbeWasDisconnected = true;
@@ -36,12 +63,8 @@ public partial class MainForm
             }
             if (_bridgeProbeWasDisconnected)
             {
-                // Fresh connection/aircraft: re-arm the probe (CalcPathVerified resets on teardown).
                 _bridgeProbeWasDisconnected = false;
-                _bridgeProbeAttempts = 0;
-                _bridgeProbeAwaitingRead = false;
-                _bridgeProbeRebound = false;
-                simConnectManager.ResetCalcPathProbe();
+                ArmBridgeProbe();   // fresh connection/aircraft (CalcPathVerified resets on teardown)
             }
             if (simConnectManager.CalcPathVerified || simConnectManager.CalcPathProbeConcluded) return;
             // Only an aircraft whose definition registers the probe target can ever verify —
@@ -724,6 +747,17 @@ public partial class MainForm
 
         // Update SimConnectManager
         simConnectManager.CurrentAircraft = currentAircraft;
+
+        // Re-arm the calc-path probe for the aircraft now loaded. The verdict is per CONNECTION and
+        // a switch never disconnects, so without this the PREVIOUS profile's conclusion stands: a
+        // session begun on any aircraft that registers no probe target (PMDG, HS787, iFly, Fenix)
+        // concludes unverified and silently, and an MD-11 picked afterwards then refused every
+        // write as "unavailable" with the module installed and the path healthy. Placed with the
+        // re-registration below, beside the CurrentAircraft assignment the probe's own
+        // "does this aircraft register MSFSBA_BRIDGE_PROBE?" test reads — so the next tick judges
+        // the NEW aircraft. Cheap and unconditional: an aircraft that cannot verify simply
+        // concludes again on the next tick, exactly as it did on the first.
+        ArmBridgeProbe();
 
         // Reset monitor to clear cache and disable announcements during transition
         // This prevents flooding TTS with hundreds of "initial" values when switching aircraft
