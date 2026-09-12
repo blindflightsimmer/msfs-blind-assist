@@ -27,8 +27,8 @@ namespace MSFSBlindAssist.Aircraft;
 ///   "threshold" could re-fire inside the arm band).
 /// - Clearing V1 or VR (FMC route wipe) disarms immediately and silently.
 /// - <see cref="Reset"/> disarms and forgets the last sample but KEEPS the
-///   speeds. The definitions call it on a SimConnect reconnect, and the MD-11
-///   on every context reset as well — a flight load included, whose per-frame
+///   speeds. Both definitions call it on a SimConnect reconnect, and on every
+///   context reset as well — a flight load included, whose per-frame
 ///   airspeed lands before the 1 Hz SIM_ON_GROUND, so an arm kept from a
 ///   parked aircraft called all three at the loaded cruise. The "a landing
 ///   can never fire" guarantee above holds for a fresh or reset machine, and an

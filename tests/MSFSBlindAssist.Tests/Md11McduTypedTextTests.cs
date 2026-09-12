@@ -125,6 +125,11 @@ public class Md11McduTypedTextTests
     /// <summary>
     /// CanPress answers under PressControl's own conditions: with no bus attached (Attach has not
     /// run — the test suite never attaches) nothing can be pressed, a real MCDU key included.
+    /// Both now also require the transport to be able to SEND
+    /// (<c>SimConnectManager.CanExecuteCalculatorCode</c>, false during a SimConnect outage, when
+    /// the bus's write returns having done nothing while the pump consumes the id) — unreachable
+    /// here for the same reason there is no bus, and the equality below is what keeps the two
+    /// answers in step whichever condition fails.
     /// </summary>
     [Fact]
     public void An_unattached_definition_can_press_nothing()

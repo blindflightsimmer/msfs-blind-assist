@@ -306,8 +306,10 @@ public class Md11McduForm : Form
         // first open onto a blank unit showed an empty list for as long. The clocks are ticked
         // first so a blank that has already settled is believed at once; one that has not gets
         // the waiting row, and Poll takes over from there (its HoldLastPage now holds the waiting
-        // row). Still nothing is SPOKEN: every branch is silent, and a unit caught mid-erase shows
-        // the waiting row, never a spurious "blank".
+        // row). On a RE-SHOW nothing can be settled yet — ShowForm clears all three clocks before
+        // calling this, because a clock stopped while the window was hidden cannot say how long a
+        // unit has been blank. Still nothing is SPOKEN: every branch is silent, and a unit caught
+        // mid-erase shows the waiting row, never a spurious "blank".
         var manager = _sim.Md11McduDataManager;
         if (manager != null) TickBlankClocks(manager);
         var presence = Md11McduPresence.Classify(current);
@@ -917,6 +919,16 @@ public class Md11McduForm : Form
         // hear, and would log a "poll started" for a poll that never stopped.
         if (!Visible)
         {
+            // Every unit's blank clock restarts with the poll, BEFORE the re-sync reads them.
+            // TickBlankClocks stamps a start only where it finds none (??=), so a re-show used to
+            // inherit the start from before the hide — and a unit that was mid-erase at the last
+            // pre-hide tick and is mid-erase again NOW then read as a SETTLED blank: the re-sync
+            // put "… MCDU is blank - nothing on this screen." under the cursor, ShowForm focused
+            // the list, and the screen reader read that false sentence aloud on activation, with
+            // the real page overwriting it 0.2-0.4 s later. The clock measures how long a WATCHED
+            // unit has stayed blank, and while the window was hidden nothing was watching.
+            Array.Clear(_blankSince);
+
             // Catch up on whatever changed while the window was hidden WITHOUT speaking it, and
             // only then start following the feed. The poll was stopped on hide
             // (OnVisibleChanged), so the page the pilot missed is read from the list under their

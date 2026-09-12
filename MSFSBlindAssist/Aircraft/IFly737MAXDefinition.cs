@@ -1694,6 +1694,9 @@ public partial class IFly737MAXDefinition : BaseAircraftDefinition
     private readonly TakeoffVSpeedCallouts _takeoffCallouts = new();
     private bool _calloutOnGround = true; // last SIM_ON_GROUND sample (ramp default)
 
+    /// <summary>The roll callouts' machine, for the tests that pin what a context reset does to it.</summary>
+    internal TakeoffVSpeedCallouts TakeoffCallouts => _takeoffCallouts;
+
     /// <summary>
     /// A SimConnect reconnect disarms the roll-callout machine: an arm from before the drop must
     /// not survive into a later landing rollout (found in the MD-11's review, 2026-09-07). The
@@ -1705,6 +1708,22 @@ public partial class IFly737MAXDefinition : BaseAircraftDefinition
     public override void ResetAnnouncementBaselines()
     {
         base.ResetAnnouncementBaselines();
+        _takeoffCallouts.Reset();
+    }
+
+    /// <summary>
+    /// The CONTEXT reset — every SimConnect drop AND a flight load on a live connection — disarms
+    /// it too, and this is the half a load reaches: <see cref="ResetAnnouncementBaselines"/> runs
+    /// only on the Connected branch, which a flight load never takes. IFLY_IAS is per-frame while
+    /// SIM_ON_GROUND rides the 1 Hz batch, so a cruise flight loaded from a parked iFly whose FMC
+    /// already held V-speeds delivered a 280 kt sample while the ground flag still read true, and
+    /// the arm from the ramp called "V1, Rotate, V2" at altitude. The speeds are kept, for the
+    /// same reason as above. Same fix, same reason and the same shared machine as the MD-11's
+    /// (TFDiMD11Definition.OnSimContextReset); nothing else of this definition's state is touched.
+    /// </summary>
+    public override void OnSimContextReset()
+    {
+        base.OnSimContextReset();
         _takeoffCallouts.Reset();
     }
 

@@ -329,16 +329,24 @@ public class Md11FlapSystemTests
     // A Dial-A-Flap set: silent when it lands, a shortfall is spoken
     // ---------------------------------------------------------------------------------
 
+    /// <summary>Only an EXACT landing is silent: the one direct write round-trips, so nothing else is a landing.</summary>
     [Theory]
     [InlineData(20, 20)]
-    [InlineData(20, 19)]
-    [InlineData(20, 21)]
-    public void DialSetShortfall_IsSilentWithinADegree(int want, int got)
+    [InlineData(10, 10)]
+    [InlineData(25, 25)]
+    public void DialSetShortfall_IsSilentOnlyWhenTheWheelLandedOnThePick(int want, int got)
     {
         Assert.Null(Md11FlapSystem.DialSetShortfall(want, got));
     }
 
+    /// <summary>
+    /// A ONE-degree miss speaks. It used to be inside the walk-era ±1° tolerance, so the combo
+    /// showed 25 while the wheel and the display row sat on 24 with nothing said — the
+    /// silently-failed selection a shortfall sentence exists to make audible.
+    /// </summary>
     [Theory]
+    [InlineData(20, 19, "Dial-A-Flap 19 degrees, could not reach 20")]
+    [InlineData(20, 21, "Dial-A-Flap 21 degrees, could not reach 20")]
     [InlineData(20, 17, "Dial-A-Flap 17 degrees, could not reach 20")]
     [InlineData(10, 25, "Dial-A-Flap 25 degrees, could not reach 10")]
     [InlineData(25, 23, "Dial-A-Flap 23 degrees, could not reach 25")]

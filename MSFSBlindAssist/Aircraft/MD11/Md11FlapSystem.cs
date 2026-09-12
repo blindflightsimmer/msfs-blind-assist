@@ -205,15 +205,25 @@ public sealed class Md11FlapSystem
         => Math.Round(DialSpec.ToRaw(NearestSelectableDegrees(raw)), 4);
 
     /// <summary>
-    /// What a Dial-A-Flap set says when the wheel settles AWAY from the pick: null within a degree
-    /// (a landed set is silent — the screen reader already read the combo's pick, the rule every
-    /// set on this aircraft follows), else "Dial-A-Flap 17 degrees, could not reach 20", so a wheel
-    /// that stopped short is never mistaken for one that took the pick. Both are whole degrees; the
-    /// caller rounds the achieved angle with <see cref="NearestSelectableDegrees"/>, the display
-    /// row's rule, so the sentence and the row can never name different angles.
+    /// What a Dial-A-Flap set says when the wheel settles AWAY from the pick: null when it landed
+    /// EXACTLY (a landed set is silent — the screen reader already read the combo's pick, the rule
+    /// every set on this aircraft follows), else "Dial-A-Flap 17 degrees, could not reach 20", so a
+    /// wheel that stopped short is never mistaken for one that took the pick. Both are whole
+    /// degrees; the caller rounds the achieved angle with <see cref="NearestSelectableDegrees"/>,
+    /// the display row's rule, so the sentence and the row can never name different angles.
+    ///
+    /// EXACT, not "within a degree". The set is ONE direct write of the wheel's own backing var
+    /// (<see cref="SetDialRawAsync"/>) and it round-trips: the combo writes
+    /// <c>Math.Round(ToRaw(deg), 4)</c>, <see cref="DegreesFor"/> returns that whole degree to
+    /// within 3×10⁻⁵, and <see cref="NearestSelectableDegrees"/> would need a 0.5° (3.33 raw-unit)
+    /// excursion to round elsewhere — so a set that landed gives <c>gotDeg == wantDeg</c>. The ±1°
+    /// band was the CEVENT walk's tolerance, and left behind it silenced a real 1° miss: the combo
+    /// would show 25 while the wheel sat on 24 and the display row read 24, which is exactly the
+    /// "a silently-failed selection looks identical to a successful one" case this sentence exists
+    /// to prevent.
     /// </summary>
     public static string? DialSetShortfall(int wantDeg, int gotDeg)
-        => Math.Abs(gotDeg - wantDeg) <= 1
+        => gotDeg == wantDeg
             ? null
             : $"Dial-A-Flap {gotDeg.ToString(CultureInfo.InvariantCulture)} degrees, could not reach {wantDeg.ToString(CultureInfo.InvariantCulture)}";
 

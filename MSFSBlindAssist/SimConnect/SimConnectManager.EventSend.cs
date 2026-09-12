@@ -84,13 +84,26 @@ public partial class SimConnectManager
     /// seat-motor/slider-ramp ticks -- to skip the per-command debug log line. Default false
     /// preserves existing logging for every other caller.
     /// </param>
+    /// <summary>
+    /// True when <see cref="ExecuteCalculatorCode"/> would actually send — connected, with the
+    /// MobiFlight module object present. This IS the condition that method guards itself with
+    /// (not a copy of it), so a caller that must know in advance whether a write will land cannot
+    /// drift from it. During a SimConnect outage the call returns having done nothing and says so
+    /// to nobody, which for a queued transport like the MD-11's CEVENT bus means the id is
+    /// consumed and the keystroke is lost; the MCDU window asks here first and refuses the press
+    /// aloud instead.
+    /// </summary>
+    public bool CanExecuteCalculatorCode => IsConnected && mobiFlightWasm != null;
+
     public void ExecuteCalculatorCode(string rpnCode, bool quiet = false)
     {
-        if (!IsConnected || mobiFlightWasm == null) return;
+        if (!CanExecuteCalculatorCode) return;
 
         try
         {
-            mobiFlightWasm.SendMFCommand($"MF.SimVars.Set.{rpnCode}", quiet);
+            // Non-null by CanExecuteCalculatorCode above; the compiler cannot see through a
+            // property, and spelling the condition twice is exactly what that property prevents.
+            mobiFlightWasm!.SendMFCommand($"MF.SimVars.Set.{rpnCode}", quiet);
         }
         catch (Exception ex)
         {

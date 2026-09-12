@@ -252,24 +252,39 @@ public partial class TFDiMD11Definition : BaseAircraftDefinition, IDisposable
     /// </summary>
     public bool PressControl(string nodeId)
     {
-        if (_bus == null) return false;                                   // Attach hasn't run — no sim yet
+        var bus = _bus;                                                   // read once: Dispose may null it
+        if (bus == null || !CanDeliver) return false;                     // Attach hasn't run, or nothing would land
         var control = PressableControl(nodeId);
         if (control == null) return false;
 
-        _bus.Press(control);
+        bus.Press(control);
         return true;
     }
 
     /// <summary>
-    /// True when <see cref="PressControl"/> would press <paramref name="nodeId"/> right now: a bus
-    /// is attached, the node is mapped, and it has a LEFT_BUTTON_DOWN. The same conditions, not a
-    /// copy of them — both go through <see cref="PressableControl"/>.
+    /// True when a press would actually REACH the aircraft: a bus is attached AND the transport
+    /// under it can send right now (<see cref="SimConnectManager.CanExecuteCalculatorCode"/>).
+    ///
+    /// The second half is not belt-and-braces. <see cref="_bus"/> is created in
+    /// <see cref="Attach"/> and nulled only in <see cref="Dispose"/> — a SimConnect drop leaves it
+    /// attached — while the bus writes through <c>ExecuteCalculatorCode</c>, which during an outage
+    /// returns having done nothing. The pump takes the id off its queue either way, so a keystroke
+    /// pressed then is CONSUMED and lost: without this the MCDU window announced nothing, cleared
+    /// the pilot's typed line, and left them to retype text they could not see had never gone in.
+    /// </summary>
+    private bool CanDeliver => _bus != null && _sim?.CanExecuteCalculatorCode == true;
+
+    /// <summary>
+    /// True when <see cref="PressControl"/> would press <paramref name="nodeId"/> right now: the
+    /// press can be delivered (<see cref="CanDeliver"/>), the node is mapped, and it has a
+    /// LEFT_BUTTON_DOWN. The same conditions, not a copy of them — both go through
+    /// <see cref="CanDeliver"/> and <see cref="PressableControl"/>.
     ///
     /// For a caller that presses SEVERAL keys which must all land or none: the MCDU window checks
     /// a whole typed entry before its first key, because a key that fails part-way leaves the
     /// scratchpad holding text the pilot did not type.
     /// </summary>
-    public bool CanPress(string nodeId) => _bus != null && PressableControl(nodeId) != null;
+    public bool CanPress(string nodeId) => CanDeliver && PressableControl(nodeId) != null;
 
     /// <summary>The mapped control a left-click press reaches, or null (unmapped, or no LEFT_BUTTON_DOWN).</summary>
     private Md11Control? PressableControl(string nodeId) =>
