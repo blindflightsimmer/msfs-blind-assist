@@ -714,6 +714,78 @@ class UseTemplateSpellingTests(unittest.TestCase):
                          [c["node_id"] for c in controls])
 
 
+class XmlCommentTests(unittest.TestCase):
+    """A commented-out <UseTemplate> defines nothing: read_xml strips comments before the parse.
+
+    The installed package holds 444 blocks inside comments. 388 have a live twin, but in 236 of
+    those the commented copy sorts EARLIER in the walk and was the copy `seen` kept -- so a TFDi
+    update that edited one of those LIVE blocks would have been read from the stale comment and
+    diff_maps would have printed nothing."""
+
+    def test_a_commented_out_block_is_not_collected_and_the_live_one_is(self):
+        xml = ("<!-- " + use_template("TFDi_Design_MD11_Button_Template", TOOLTIPID="Old",
+                                      NODE_ID="MD11_OVHD_X_BT", LEFT_BUTTON_DOWN="1") + " -->"
+               + use_template("TFDi_Design_MD11_Button_Template", TOOLTIPID="New",
+                              NODE_ID="MD11_OVHD_X_BT", LEFT_BUTTON_DOWN="2"))
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg, _ = write_package(tmp, {"FlightDeck/Overhead.xml": xml})
+            controls, _ = g.collect(pkg)
+        self.assertEqual(["MD11_OVHD_X_BT"], [c["node_id"] for c in controls])
+        self.assertEqual("New", controls[0]["label"])
+        self.assertEqual({"LEFT_BUTTON_DOWN": 2}, controls[0]["events"])
+
+    def test_a_use_template_inside_a_comment_inside_a_block_is_not_a_nesting(self):
+        # D6 refuses a <UseTemplate> nested in another block's body; one inside a COMMENT there is
+        # not a nesting, and stripping first settles that by construction rather than by a check.
+        xml = ('<UseTemplate Name="TFDi_Design_MD11_Button_Template">'
+               "<TOOLTIPID>Test</TOOLTIPID><NODE_ID>MD11_OVHD_X_BT</NODE_ID>"
+               "<!-- " + use_template("TFDi_Design_MD11_Button_Template", NODE_ID="MD11_OVHD_Y_BT")
+               + " --><LEFT_BUTTON_DOWN>1</LEFT_BUTTON_DOWN></UseTemplate>")
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg, _ = write_package(tmp, {"FlightDeck/Overhead.xml": xml})
+            controls, _ = g.collect(pkg)
+        self.assertEqual(["MD11_OVHD_X_BT"], [c["node_id"] for c in controls])
+        self.assertEqual({"LEFT_BUTTON_DOWN": 1}, controls[0]["events"])
+
+
+class CuratedLampTests(unittest.TestCase):
+    """CURATED_LAMPS: the eight gear lights TFDi's package defines ONLY inside a comment."""
+
+    def test_a_curated_lamp_is_added_only_when_the_wasm_carries_its_var(self):
+        node = "MD11_MIP_NOSE_GREEN_LT"
+        stats = g.Counter()
+        added = g.add_curated_lamps([], {node}, stats)
+
+        self.assertEqual([node], [c["node_id"] for c in added])
+        self.assertEqual("annun", added[0]["kind"])
+        self.assertEqual(node, added[0]["state_var"])
+        self.assertEqual("Main Instrument Panel", added[0]["area"])
+        self.assertIn("commented out", added[0]["source"])
+        self.assertEqual(1, stats["curated_lamp"])
+
+        # No var in the wasm's control table, no row: a fixture package gets none, and a future
+        # TFDi build that drops the variable drops the row with it (diff_maps then reports a
+        # REMOVED node, which is the STOP rule working).
+        empty = g.Counter()
+        self.assertEqual([], g.add_curated_lamps([], set(), empty))
+        self.assertEqual(len(g.CURATED_LAMPS), empty["curated_lamp_absent_from_wasm"])
+
+    def test_a_live_block_wins_over_the_curated_entry(self):
+        node = "MD11_MIP_NOSE_GREEN_LT"
+        live = ctl(node, kind="annun", source="FlightDeck/Overhead.xml")
+        stats = g.Counter()
+
+        self.assertEqual([live], g.add_curated_lamps([live], {node}, stats))
+        self.assertEqual(1, stats["curated_lamp_is_live"])
+        self.assertEqual(0, stats["curated_lamp"])
+
+    def test_every_curated_lamp_has_a_curated_name(self):
+        # apply_state names an annunciator from STANDALONE_LAMPS; one missing there would fall
+        # through to the humanized node id ("Main Instrument Panel Nose GREEN light").
+        for node in g.CURATED_LAMPS:
+            self.assertIn(node, g.STANDALONE_LAMPS)
+
+
 _REAL_WALK = os.walk
 
 

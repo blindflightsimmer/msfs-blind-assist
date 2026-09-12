@@ -499,6 +499,66 @@ for _side, _seat in (("LSIDE", "Captain"), ("RSIDE", "First Officer")):
         STANDALONE_LAMPS[f"MD11_{_side}_INP_{_tok}_LT"] = (f"{_seat} IRS Source {_tail} light", "On", "Off")
 
 
+# Lamps whose ONLY <UseTemplate> block in TFDi's package is COMMENTED OUT: node id -> the source
+# recorded for it. read_xml strips comments, so a commented-out block now defines nothing -- and
+# these eight would have left the map with it. They are added back EXPLICITLY, by decision rather
+# than by parser accident:
+#   * all eight blocks sit inside one comment in FlightDeck/Lighting.xml and have no live
+#     definition of any template anywhere in the package;
+#   * all eight VARIABLES are live elsewhere in the package and in the wasm's Aircraft::vars
+#     control table, which is what add_curated_lamps gates on;
+#   * they already carry curated names in STANDALONE_LAMPS ("Nose Gear GREEN light", ...) and
+#     Md11PanelLayout places them as the Landing Gear panel's Status Display rows. Gear position
+#     is exactly the status a blind pilot wants, and they ship in the map today.
+# UNVERIFIED: whether the aircraft actually DRIVES them. Nobody has yet watched a gear-down MD-11
+# read "Nose Gear GREEN light: On" (the in-sim list in docs/md11.md carries the check). If it does
+# not, these eight rows read "Off" forever and should be dropped here and from Md11PanelLayout
+# together -- not left half-removed, which is how a listed key with no map entry becomes a
+# `missing` row in Md11PanelLayout.Place.
+CURATED_LAMPS = {
+    f"MD11_MIP_{_g}_{_c}_LT": "FlightDeck/Lighting.xml (commented out)"
+    for _g in ("NOSE", "LEFT", "CTR", "RIGHT") for _c in ("GREEN", "RED")
+}
+
+
+def add_curated_lamps(controls, all_vars, stats):
+    """Add each CURATED_LAMPS entry the wasm carries a variable for. Pure; call before finalize_controls.
+
+    Gated on the wasm's own control table, so this rule can only ever add a lamp the aircraft
+    really has: a fixture package gets none, and a future TFDi build that drops one of the
+    variables drops the row with it (which diff_maps then reports as a REMOVED node -- the STOP
+    rule, working). A LIVE <UseTemplate> for one of these wins outright: it is already collected,
+    and this skips it.
+    """
+    have = {c["node_id"] for c in controls}
+    for node_id, source in sorted(CURATED_LAMPS.items()):
+        if node_id in have:
+            stats["curated_lamp_is_live"] += 1
+            continue
+        if node_id not in all_vars:
+            stats["curated_lamp_absent_from_wasm"] += 1
+            continue
+        # Shaped exactly as collect() shapes an annunciator, so everything downstream --
+        # finalize_controls, apply_state (which gives it its STANDALONE_LAMPS name and its state
+        # block), the panel layout -- treats it identically to a parsed one.
+        controls.append({
+            "node_id": node_id,
+            "kind": "annun",
+            "template": "TFDi_Design_MD11_Annunciator",
+            "area": area_of(node_id),
+            "label": humanize(node_id),
+            "label_source": "derived",
+            "state_var": node_id,
+            "value_map": {},
+            "num_states": None,
+            "events": {},
+            "guard_id": None,
+            "source": source,
+        })
+        stats["curated_lamp"] += 1
+    return controls
+
+
 def breaker_label(node_id, label):
     """'MD11_BKR_BWU_C24' + 'Tank 1 Transfer Pump Power Breaker' -> 'C24 Tank 1 Transfer Pump Power'.
 
@@ -912,8 +972,12 @@ EVENT_FIELDS = (
 )
 
 
+# An XML comment, non-greedy so each one ends at its own '-->'.
+COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+
+
 def read_xml(path):
-    """Read a behavior XML leniently.
+    """Read a behavior XML leniently, with its comments removed.
 
     These files are exporter-generated and contain raw '&', stray degree signs and
     other tokens a strict XML parser rejects, so parse with a regex rather than
@@ -923,6 +987,21 @@ def read_xml(path):
     tooltips (the bank-angle limiter's '5°'). Decoding those as UTF-8 yields U+FFFD
     and the degree silently turns into a replacement char the screen reader spells
     out, so fall back to cp1252 rather than lossily replacing.
+
+    COMMENTS ARE STRIPPED HERE, which is what makes the flat parse read only LIVE
+    blocks. The package carries 444 <UseTemplate> blocks inside comments, and
+    USETEMPLATE_RE matches inside one: 388 had a live twin, but in 236 of those the
+    commented copy sorts EARLIER in the walk (FlightDeck/Lighting.xml before
+    Overhead.xml / RObserverAudio.xml / MiscOptions.xml) and so was the copy `seen`
+    kept, the live block being counted as a duplicate. The map read correctly today
+    only because the two copies were identical -- but a TFDi update that edits one of
+    those live blocks and leaves the old copy commented out would have been read from
+    the comment, and diff_maps would have printed NOTHING: the STOP rule blind for
+    17% of the map, which is the whole safeguard for every future regeneration.
+    Stripping here also settles the D6 nesting check by construction -- a
+    <UseTemplate inside a comment inside a block's body is gone before collect() can
+    mistake it for a real nesting. Eight lamps reached the map ONLY through a comment
+    and are curated back explicitly instead (see CURATED_LAMPS).
     """
     with open(path, "rb") as fh:
         raw = fh.read()
@@ -930,10 +1009,10 @@ def read_xml(path):
         raw = raw[3:]
     for enc in ("utf-8", "cp1252", "latin-1"):
         try:
-            return raw.decode(enc)
+            return COMMENT_RE.sub("", raw.decode(enc))
         except UnicodeDecodeError:
             continue
-    return raw.decode("utf-8", errors="replace")
+    return COMMENT_RE.sub("", raw.decode("utf-8", errors="replace"))
 
 
 def speakable(text):
@@ -1802,13 +1881,15 @@ def main():
     pkg, wasm = resolve_paths(args.pkg, args.wasm)
 
     controls, stats = collect(pkg)
+    # The wasm is read BEFORE the curated lamps, which are gated on its control table.
+    all_vars, export_vars = wasm_vars(wasm)
+    controls = add_curated_lamps(controls, all_vars, stats)
     controls = finalize_controls(controls)
     controls = apply_state(controls)
     # by_kind (below) and the printed summary both come from the FINALIZED list via
     # kind_counts(), never from `stats` (collect()'s pre-finalize per-kind tally) --
     # see kind_counts()'s docstring for why patching stats on the side double-counts.
     by_kind = kind_counts(controls)
-    all_vars, export_vars = wasm_vars(wasm)
 
     _exit_if_incomplete(args.out, pkg, wasm, controls, all_vars)
 
@@ -1854,6 +1935,7 @@ def main():
     print(f"  export vars     : {len(export_vars)}")
     print(f"  state-only vars : {len(orphan_vars)}")
     print(f"  empty case lbls : {len(empty_case_labels)}")
+    print(f"  curated lamps   : {stats['curated_lamp']}")   # lamps TFDi defines only inside a comment
     print("  by kind         :")
     for k, v in sorted(by_kind.items()):
         print(f"    {k:10s} {v}")
