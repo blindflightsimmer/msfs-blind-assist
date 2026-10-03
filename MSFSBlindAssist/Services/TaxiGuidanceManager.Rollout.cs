@@ -3748,8 +3748,16 @@ public partial class TaxiGuidanceManager
             // same machinery as a landing-exit route that ends on pavement).
             if (IsClearOfAllRunwayCorridors(lat, lon))
             {
-                AnnounceInstruction("Runway vacated.");
-                // _route is null; pilot loads the next route via Taxi Assist.
+                // Stop the tone BEFORE the state change. Taxiing with a null route returns from
+                // UpdatePosition before anything touches the tone, so a tone left sounding here
+                // never gets another heading-error update: it holds its last pan for as long as
+                // the pilot keeps taxiing — reported from CYYZ as "stuck in the right ear", 68
+                // seconds of it in the log. The no-connection-node branch above has always
+                // stopped the tone for exactly this reason; the corridor filter must not lose it.
+                _steeringTone.Stop();
+                // Say what state the pilot is now in. _route is null, so a status query answers
+                // "No route loaded." — which is true but reads as a fault unless they were told.
+                AnnounceInstruction("Runway vacated. No route set — use the taxi planner for a route to your stand.");
                 SetState(TaxiGuidanceState.Taxiing);
             }
             else
