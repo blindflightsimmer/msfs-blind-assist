@@ -336,6 +336,19 @@ public class TaxiBriefingPlannerTests
     }
 
     [Fact]
+    public void A_same_named_turnoff_far_down_the_runway_does_not_steal_the_exit_s_route()
+    {
+        // The two Qs are 1,312 ft apart: separate turnoffs, not one arc. The first Q vacates on its own (left) side,
+        // so it is a candidate, and as the high-speed exit within 1,500 ft it is preferred to C.
+        var leg = TaxiBriefingPlanner.PlanTaxiIn(Request(B738, airline: "DAL"), AirportWithDistantOppositeSideNamesake());
+
+        Assert.Null(leg.Unavailable);
+        Assert.Equal("Q", leg.Exit!.Exit.TaxiwayName);
+        Assert.Equal("Left", leg.Exit.Exit.ExitSide);
+        Assert.DoesNotContain(leg.HoldShorts, h => TaxiBriefingPlanner.SameRunway(h.Runway, "09"));
+    }
+
+    [Fact]
     public void An_exit_whose_route_leaves_the_runway_on_another_taxiway_says_which()
     {
         // The exit is named R1, but the node its route begins at is reached from the runway by K: the block names the
