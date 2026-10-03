@@ -577,6 +577,8 @@ public partial class TaxiGuidanceManager : IDisposable
     // AnnounceImmediate that cut the turn-around cue off ("Taxiway A1 is behind you. Turn
     // left to come around." → "Left." → "Left now." in one frame; VirtualPilot 2026-09-25).
     private bool _initialTurnPending = false;
+    // The side (+1 right, -1 left) the opening turn cue named; 0 when there is no cue.
+    private int _initialTurnSign;
     private const double INITIAL_TURN_DONE_DEG = 45.0;
     // After a route-reach warning OR an unmapped-start warning (either "start warning"),
     // briefly hold the INFORMATIONAL taxiway-crossing, taxiway-change, curve and
@@ -2845,6 +2847,15 @@ public partial class TaxiGuidanceManager : IDisposable
         }
         if (_initialTurnPending && Math.Abs(headingError) < INITIAL_TURN_DONE_DEG)
             _initialTurnPending = false;
+        // The tone keeps to the side the opening cue SAID while the pilot is still coming round. Near a
+        // reversal the shortest way round is a coin toss between frames, so the tone could pan hard the
+        // other way from "Turn right to come around" and the pilot, following the tone, ran off the stand
+        // apron (VirtualPilot, LOWW Parking 61B: 14 m off the pavement). Past 90° the same turn is simply
+        // expressed the other way round; once within 90° the route's own error rules again.
+        if (_initialTurnPending && _initialTurnSign != 0 && Math.Abs(headingError) >= 90.0
+            && Math.Sign(headingError) != _initialTurnSign)
+            // Capped below 180: the tone folds any error past ±180 back to the short way round.
+            headingError = _initialTurnSign * Math.Min(360.0 - Math.Abs(headingError), 179.0);
 
         // Post-high-speed-exit: ExitBearingTrue acts as a minimum pan floor so the
         // tone stays active during the initial flat section of a shallow RET where
@@ -3344,6 +3355,7 @@ public partial class TaxiGuidanceManager : IDisposable
             break;
         }
         LastRouteInitialTurnCue = Navigation.RouteStartTurnCue.Compose(initialErr, firstNamed);
+        _initialTurnSign = LastRouteInitialTurnCue != null ? Math.Sign(initialErr) : 0;
     }
 
     /// <inheritdoc cref="ComputeSteeringHeadingError(double, double, double)"/>

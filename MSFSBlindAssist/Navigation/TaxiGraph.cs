@@ -435,8 +435,11 @@ public partial class TaxiGraph
                 // ... and then, separately, a row sitting far OUTBOARD of the pavement ends is slid
                 // back onto the nearer one: the runway shape envelopes the start rows, so a bogus
                 // row extends the runway by up to 800 m and claims taxiway nodes with it (§4).
-                (lat, lon) = PullOutboardStartRowOntoPavement(
-                    lat, lon, rwy.StartLat, rwy.StartLon, rwy.EndLat, rwy.EndLon, s.RunwayName);
+                // Not where taxi pavement runs out along the runway's own axis to the row: that is a starter
+                // extension (EGKK 26L, 406 m behind its runway_end), a real departure point the lineup must keep.
+                if (!StarterExtensionReachesRow(paths, rwy, lat, lon))
+                    (lat, lon) = PullOutboardStartRowOntoPavement(
+                        lat, lon, rwy.StartLat, rwy.StartLon, rwy.EndLat, rwy.EndLon, s.RunwayName);
                 if (Math.Abs(lat - s.Latitude) < 1e-9 && Math.Abs(lon - s.Longitude) < 1e-9)
                 {
                     snapped.Add(s);
@@ -4785,6 +4788,42 @@ public partial class TaxiGraph
     /// had. A name-swapped row sits AT the other end, i.e. INSIDE the pavement, so it is not
     /// outboard and this method never touches it.</para>
     /// </summary>
+    /// <summary>
+    /// True when the row sits outboard of its runway's pavement and taxi pavement runs out ALONG that
+    /// runway's own axis (inside half-width + 5 m, each segment within 20° of the axis) to within 60 m
+    /// of it — a starter extension, whose start row is a real departure point
+    /// (<see cref="PullOutboardStartRowOntoPavement"/> must leave it alone; EGKK 26L, 406 m behind its
+    /// runway_end, measured by VirtualPilot: its lineups left the pavement once the row was pulled).
+    /// A taxiway merely CROSSING the extended centreline (LIMC 17L's AB, the case the pull exists for)
+    /// is never axis-aligned, so it never counts. Parking lead-ins (type P) never count.
+    /// </summary>
+    internal static bool StarterExtensionReachesRow(IReadOnlyList<TaxiPath> paths, Runway rwy, double rowLat, double rowLon)
+    {
+        double totalLen = FastDistanceMeters(rwy.StartLat, rwy.StartLon, rwy.EndLat, rwy.EndLon);
+        if (totalLen < 1.0 || paths == null) return false;
+        var (_, rowAlong, _, _) = ProjectOntoCenterline(rowLat, rowLon, rwy.StartLat, rwy.StartLon, rwy.EndLat, rwy.EndLon);
+        bool behind = rowAlong < 0.0;
+        double rowOut = behind ? -rowAlong : rowAlong - totalLen;
+        if (rowOut <= 0.0) return false;
+        double corridor = (rwy.Width > 0 ? rwy.Width : 150.0) * 0.3048 / 2.0 + 5.0;
+        double tan20 = Math.Tan(20.0 * Math.PI / 180.0);
+        double reached = 0.0;
+        foreach (var p in paths)
+        {
+            if (string.Equals(p.Type, "P", StringComparison.OrdinalIgnoreCase)) continue;
+            var (perpA, alongA, _, _) = ProjectOntoCenterline(p.StartLat, p.StartLon, rwy.StartLat, rwy.StartLon, rwy.EndLat, rwy.EndLon);
+            var (perpB, alongB, _, _) = ProjectOntoCenterline(p.EndLat, p.EndLon, rwy.StartLat, rwy.StartLon, rwy.EndLat, rwy.EndLon);
+            if (perpA > corridor || perpB > corridor) continue;
+            double outA = behind ? -alongA : alongA - totalLen;
+            double outB = behind ? -alongB : alongB - totalLen;
+            if (outA < -10.0 && outB < -10.0) continue;
+            double dAlong = Math.Abs(alongB - alongA);
+            if (dAlong < 5.0 || Math.Abs(perpB - perpA) > tan20 * dAlong) continue;
+            reached = Math.Max(reached, Math.Max(outA, outB));
+        }
+        return reached >= rowOut - 60.0;
+    }
+
     public static (double Lat, double Lon) PullOutboardStartRowOntoPavement(
         double startLat, double startLon,
         double thrLat, double thrLon, double farLat, double farLon,
@@ -5868,11 +5907,9 @@ public partial class TaxiGraph
         // no rapid-exit callout, the spoken turn cue restored). Same rule the local build measured as
         // KDTW 22L Y3 / LPFR 28 F (first edge 1-23°, real turn 59-90°).
         //
-        // The yardstick is the exit's VACATE point (ApronNodeId, where the handoff routes), as a chord
-        // from the junction — never the all-branch corridor walk, which can wander onto a crossing
-        // taxiway (KMIA 08R M7, a genuine 22° RET whose junction M6 crosses at 90°: the walk read 90°
-        // and would have demoted it). Only a FORWARD chord between HIGH_SPEED_MAX_DEG and 110° demotes;
-        // a chord behind the junction is a turn-back, which is not this rule's question.
+        // The yardstick is the route the handoff steers (junction → ApronNodeId), never the all-branch
+        // corridor walk, which can wander onto a crossing taxiway (KMIA 08R M7, a genuine 22° RET whose
+        // junction M6 crosses at 90°: the walk read 90° and would have demoted it).
         //
         // Two outcomes, in this order:
         //   (1) the exit's OWN taxiway clears the runway as a rapid exit (ExitBranch, name-filtered, measured,
@@ -5890,26 +5927,42 @@ public partial class TaxiGraph
             double dE = (b.Longitude - a.Longitude) * MPD * Math.Cos(latR);
             return Math.Abs(NormalizeAngle(Math.Atan2(dE, dN) * 180.0 / Math.PI - rwyHeadingTrue));
         }
+        // Sharpest turn, off the landing heading, along the route the handoff steers: junction →
+        // ApronNodeId by shortest path, legs of 5 m or more. NaN when there is no route.
+        double RouteMaxOffAxisDeg(int fromNodeId, int toNodeId)
+        {
+            var route = new TaxiRouter(this).FindShortestPath(fromNodeId, toNodeId);
+            if (route == null || route.Segments.Count == 0) return double.NaN;
+            double max = 0.0;
+            foreach (var seg in route.Segments)
+                if (seg.DistanceMeters >= 5.0)
+                    max = Math.Max(max, Math.Abs(NormalizeAngle(seg.BearingDegrees - rwyHeadingTrue)));
+            return max;
+        }
         void CorroborateHighSpeed(LandingExit e, int junctionNodeId)
         {
             if (e.ExitType != "High-speed" || e.NodeId != junctionNodeId) return;
             if (e.ApronNodeId <= 0 || e.ApronNodeId == junctionNodeId) return;
-            double chordDeg = ChordOffAxisDeg(junctionNodeId, e.ApronNodeId);
-            if (double.IsNaN(chordDeg) || chordDeg <= HIGH_SPEED_MAX_DEG || chordDeg > 110.0) return;
 
-            if (!string.IsNullOrEmpty(e.TaxiwayName))
+            // (1) The route leaves the exit's own taxiway while that taxiway is itself a rapid exit:
+            //     route along it instead.
+            double chordDeg = ChordOffAxisDeg(junctionNodeId, e.ApronNodeId);
+            if (!double.IsNaN(chordDeg) && chordDeg > HIGH_SPEED_MAX_DEG && !string.IsNullOrEmpty(e.TaxiwayName))
             {
                 var own = ExitBranch.Analyze(this, axis, junctionNodeId, null, e.TaxiwayName);
                 int ownClear = own.CorridorNodeId > 0 ? own.CorridorNodeId : own.ClearNodeId;
                 if (own.IsMeasured && own.TurnToClearDeg <= HIGH_SPEED_MAX_DEG && ownClear > 0
                     && ChordOffAxisDeg(junctionNodeId, ownClear) is double ownChord
                     && !double.IsNaN(ownChord) && ownChord <= HIGH_SPEED_MAX_DEG)
-                {
                     e.ApronNodeId = ownClear;
-                    return;
-                }
             }
-            e.ExitAngleDegrees = chordDeg;
+
+            // (2) The route the handoff will steer turns further than a rapid exit can before it is
+            //     clear (KPIT 32 R1: a 70° turn onto Q within 100 m; KDFW 17C "M6" via EL): the exit is
+            //     the Normal turn of that route. Never above 110° (a turn-back is not this rule's call).
+            double routeDeg = RouteMaxOffAxisDeg(junctionNodeId, e.ApronNodeId);
+            if (double.IsNaN(routeDeg) || routeDeg <= HIGH_SPEED_MAX_DEG || routeDeg > 110.0) return;
+            e.ExitAngleDegrees = routeDeg;
             e.ExitType = "Normal";
         }
 

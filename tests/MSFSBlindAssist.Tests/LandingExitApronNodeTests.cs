@@ -107,10 +107,13 @@ public class LandingExitApronNodeTests
 
         var f = Assert.Single(g.GetLandingExits(Runway0927()), e => e.TaxiwayName == "F");
 
-        // The ~23° first stub classifies F as High-speed — which is what gated the
-        // early handoff (TryEarlyExitHandoff fires only for High-speed exits) that
-        // routed the LPFR aircraft to the on-runway extension node.
-        Assert.Equal("High-speed", f.ExitType);
+        // The ~23° first stub alone would classify F as High-speed — which is what gated the
+        // early handoff (TryEarlyExitHandoff fires only for High-speed exits) that routed the
+        // LPFR aircraft to the on-runway extension node. But F's own route bends on to 40°
+        // and then 59° off the runway before it is clear, so it is listed as the Normal turn
+        // its route makes (GetLandingExits' CorroborateHighSpeed — the real LPFR 28 F turns
+        // 87°): no early handoff, no rapid-exit callout, the spoken turn cue kept.
+        Assert.Equal("Normal", f.ExitType);
 
         // The selected exit node is the junction on the runway centreline — routing to
         // it (or to its immediate neighbour) would strand the aircraft on the pavement.
