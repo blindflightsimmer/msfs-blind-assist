@@ -769,11 +769,12 @@ public partial class TaxiGuidanceManager
             if (taxiwaySequence != null)
                 route.TaxiwaySequence = taxiwaySequence;
 
-            // Apply user-requested hold-short points at taxiway transitions
-            if (userHoldShortIndices != null && userHoldShortIndices.Count > 0 && taxiwaySequence != null)
-            {
-                ApplyUserHoldShorts(route, taxiwaySequence, userHoldShortIndices);
-            }
+            // The pilot's own hold-short picks (end-of-taxiway, runway and taxiway flavours) are
+            // applied BELOW, after the two passes that can REPLACE the route object: the named
+            // holding-point pin and the forward-facing runway-entry re-route. Both build a fresh
+            // TaxiRoute, so a pick placed before them was silently dropped while the event it
+            // recorded still reached the summary — the pilot was told about a hold that was not
+            // there (feat/taxi-landing-port review, findings 4 and 5).
 
             // Pin the route THROUGH the painted hold line's own node, not just its runway ENTRY:
             // the corridor to the entry is a free A* choice, and where two stubs merge short of
@@ -795,48 +796,12 @@ public partial class TaxiGuidanceManager
                 }
             }
 
-            // Apply user-requested runway hold-shorts (per-row "Hold short of
-            // runway X" pickers in the form). Runs BEFORE the automatic pass: when
-            // that pass resolves the same runway to a stop a pick already took, the
-            // pilot's label is kept, and another runway held at that stop is added
-            // to it (RouteRunwayCrossings.ComposeSharedLabel). If the route neither
-            // enters nor crosses the picked runway at or after the chosen taxiway,
-            // we collect a warning to announce alongside the route summary so the
-            // pilot knows their explicit pick was a clearance/route mismatch. A pick
-            // that meets its runway but finds no stop YET is retried after the
-            // automatic pass (RetryDeferredRunwayPicks).
             // The picked holding point could not be routed through: say so, or the pilot who asked
             // for P8 is held at another line with nothing to tell them (EDDF 18 via P8: a 5.4 km pin
             // against an 854 m route, rejected in the log only — VirtualPilot 2026-09-18).
             string? runwayHoldShortWarning = holdingPointPinRejected && _holdingPointName.Length > 0
                 ? $"Holding point {_holdingPointName} is not on a usable route to {destinationName}. Holding at the runway entry instead."
                 : null;
-            var deferredRunwayPicks = new List<DeferredRunwayPick>();
-            // Each honoured pick's own recorded event, merged back in by AdoptRoute after the
-            // automatic pass has reset the list (PR #238 deferred finding §7).
-            var userPickEvents = new List<TaxiRouteRunwayEvent>();
-            if (userRunwayHoldShorts != null && userRunwayHoldShorts.Count > 0 && taxiwaySequence != null)
-            {
-                string? pickWarning = ApplyUserRunwayHoldShorts(
-                    route, taxiwaySequence, userRunwayHoldShorts,
-                    aircraftLat, aircraftLon, userPickEvents, deferredRunwayPicks);
-                if (pickWarning != null)
-                    runwayHoldShortWarning = runwayHoldShortWarning == null
-                        ? pickWarning : runwayHoldShortWarning + " " + pickWarning;
-            }
-
-            // Taxiway-flavored picks from the same combos: stop at the first
-            // junction with the named taxiway after the chosen row. Warnings from
-            // both flavors fold into the one note the summary carries.
-            if (userTaxiwayHoldShorts != null && userTaxiwayHoldShorts.Count > 0 && taxiwaySequence != null)
-            {
-                string? taxiwayHoldWarning = ApplyUserTaxiwayHoldShorts(
-                    route, taxiwaySequence, userTaxiwayHoldShorts);
-                if (taxiwayHoldWarning != null)
-                    runwayHoldShortWarning = runwayHoldShortWarning == null
-                        ? taxiwayHoldWarning
-                        : runwayHoldShortWarning + " " + taxiwayHoldWarning;
-            }
 
             // A route that arrives on its runway facing the WRONG WAY (EGLL 09R via NB10's 27L curve)
             // is re-routed to where the same clearance meets the runway facing the takeoff direction,
@@ -873,6 +838,55 @@ public partial class TaxiGuidanceManager
                         ? $"Joining {destinationName} where {via} faces the takeoff direction, {where}."
                         : $"Joining {destinationName} facing the takeoff direction, {where}.";
                 }
+            }
+
+            // The pilot's own picks, applied to the route object that will actually be ADOPTED.
+            // Both passes above (the holding-point pin, the forward-facing re-route) return a fresh
+            // TaxiRoute and the picks mutate segments in place, so they must come after. Main ran
+            // the pin before the picks for this reason; the branch inverted that, and the
+            // forward-facing re-route is new, so both orderings are restored here.
+
+            // Apply user-requested hold-short points at taxiway transitions
+            if (userHoldShortIndices != null && userHoldShortIndices.Count > 0 && taxiwaySequence != null)
+            {
+                ApplyUserHoldShorts(route, taxiwaySequence, userHoldShortIndices);
+            }
+
+            // Apply user-requested runway hold-shorts (per-row "Hold short of
+            // runway X" pickers in the form). Runs BEFORE the automatic pass: when
+            // that pass resolves the same runway to a stop a pick already took, the
+            // pilot's label is kept, and another runway held at that stop is added
+            // to it (RouteRunwayCrossings.ComposeSharedLabel). If the route neither
+            // enters nor crosses the picked runway at or after the chosen taxiway,
+            // we collect a warning to announce alongside the route summary so the
+            // pilot knows their explicit pick was a clearance/route mismatch. A pick
+            // that meets its runway but finds no stop YET is retried after the
+            // automatic pass (RetryDeferredRunwayPicks).
+            var deferredRunwayPicks = new List<DeferredRunwayPick>();
+            // Each honoured pick's own recorded event, merged back in by AdoptRoute after the
+            // automatic pass has reset the list (PR #238 deferred finding §7).
+            var userPickEvents = new List<TaxiRouteRunwayEvent>();
+            if (userRunwayHoldShorts != null && userRunwayHoldShorts.Count > 0 && taxiwaySequence != null)
+            {
+                string? pickWarning = ApplyUserRunwayHoldShorts(
+                    route, taxiwaySequence, userRunwayHoldShorts,
+                    aircraftLat, aircraftLon, userPickEvents, deferredRunwayPicks);
+                if (pickWarning != null)
+                    runwayHoldShortWarning = runwayHoldShortWarning == null
+                        ? pickWarning : runwayHoldShortWarning + " " + pickWarning;
+            }
+
+            // Taxiway-flavored picks from the same combos: stop at the first
+            // junction with the named taxiway after the chosen row. Warnings from
+            // both flavors fold into the one note the summary carries.
+            if (userTaxiwayHoldShorts != null && userTaxiwayHoldShorts.Count > 0 && taxiwaySequence != null)
+            {
+                string? taxiwayHoldWarning = ApplyUserTaxiwayHoldShorts(
+                    route, taxiwaySequence, userTaxiwayHoldShorts);
+                if (taxiwayHoldWarning != null)
+                    runwayHoldShortWarning = runwayHoldShortWarning == null
+                        ? taxiwayHoldWarning
+                        : runwayHoldShortWarning + " " + taxiwayHoldWarning;
             }
 
             // Capture the FULL constrained-route length BEFORE TruncateToHoldShort
