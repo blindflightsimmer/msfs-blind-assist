@@ -2070,6 +2070,7 @@ public partial class TaxiGuidanceManager
         // cooldown. LoadRoute deliberately does the opposite (clears the stamp to MinValue) —
         // it announces its own summary through the queue, not over this callout.
         _lastIncursionWarningTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
+        _incursionCooldownFromRecalc = true;
         _headingErrorInitialized = false;
 
         string firstTaxiway = newRoute.Segments[0].TaxiwayName;

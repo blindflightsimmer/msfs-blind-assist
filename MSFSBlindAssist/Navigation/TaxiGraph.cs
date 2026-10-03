@@ -5856,6 +5856,63 @@ public partial class TaxiGraph
         // The branch-measurement frame (ExitBranch): same projection and half-width rule as this method.
         var axis = RunwayAxis.For(rwy);
 
+        // A "High-speed" verdict must agree with the turn the exit's route actually asks for. The
+        // corridor walk is the SAME walk that yields ApronNodeId, i.e. the route the handoff steers;
+        // where it turns further than a rapid exit can (> HIGH_SPEED_MAX_DEG), the exit is demoted to
+        // the angle of that turn. Run AFTER the branch measurement (RefineForPlanner), which measures
+        // only along the exit's own name and so can read a rapid exit where the route leaves by
+        // another taxiway: KDFW 17C M6 read 20° High-speed while its vacate route turns 90° onto EL,
+        // so the tone eased the pilot onto a "gentle right" and then demanded a right angle — off the
+        // pavement in VirtualPilot (main 19 m, unchecked port 34 m, 0 with this). Only ever DEMOTES,
+        // and only an exit still standing at its own junction: the safe direction (no early handoff,
+        // no rapid-exit callout, the spoken turn cue restored). Same rule the local build measured as
+        // KDTW 22L Y3 / LPFR 28 F (first edge 1-23°, real turn 59-90°).
+        //
+        // The yardstick is the exit's VACATE point (ApronNodeId, where the handoff routes), as a chord
+        // from the junction — never the all-branch corridor walk, which can wander onto a crossing
+        // taxiway (KMIA 08R M7, a genuine 22° RET whose junction M6 crosses at 90°: the walk read 90°
+        // and would have demoted it). Only a FORWARD chord between HIGH_SPEED_MAX_DEG and 110° demotes;
+        // a chord behind the junction is a turn-back, which is not this rule's question.
+        //
+        // Two outcomes, in this order:
+        //   (1) the exit's OWN taxiway clears the runway as a rapid exit (ExitBranch, name-filtered, measured,
+        //       turn to clear <= HIGH_SPEED_MAX_DEG): the route is the one that is wrong, not the label — the
+        //       vacate point moves onto that taxiway (KMIA 08R M7, a 22° RET whose junction M6 crosses at 90°:
+        //       the corridor walk had sent its route up M6's arm);
+        //   (2) otherwise the label is: demoted to the turn the route actually makes (KDFW 17C "M6" at the EL
+        //       junction, or a short spur that never clears the runway).
+        double ChordOffAxisDeg(int fromNodeId, int toNodeId)
+        {
+            if (!Nodes.TryGetValue(fromNodeId, out var a) || !Nodes.TryGetValue(toNodeId, out var b)) return double.NaN;
+            const double MPD = 111132.0;
+            double latR = (a.Latitude + b.Latitude) * 0.5 * Math.PI / 180.0;
+            double dN = (b.Latitude - a.Latitude) * MPD;
+            double dE = (b.Longitude - a.Longitude) * MPD * Math.Cos(latR);
+            return Math.Abs(NormalizeAngle(Math.Atan2(dE, dN) * 180.0 / Math.PI - rwyHeadingTrue));
+        }
+        void CorroborateHighSpeed(LandingExit e, int junctionNodeId)
+        {
+            if (e.ExitType != "High-speed" || e.NodeId != junctionNodeId) return;
+            if (e.ApronNodeId <= 0 || e.ApronNodeId == junctionNodeId) return;
+            double chordDeg = ChordOffAxisDeg(junctionNodeId, e.ApronNodeId);
+            if (double.IsNaN(chordDeg) || chordDeg <= HIGH_SPEED_MAX_DEG || chordDeg > 110.0) return;
+
+            if (!string.IsNullOrEmpty(e.TaxiwayName))
+            {
+                var own = ExitBranch.Analyze(this, axis, junctionNodeId, null, e.TaxiwayName);
+                int ownClear = own.CorridorNodeId > 0 ? own.CorridorNodeId : own.ClearNodeId;
+                if (own.IsMeasured && own.TurnToClearDeg <= HIGH_SPEED_MAX_DEG && ownClear > 0
+                    && ChordOffAxisDeg(junctionNodeId, ownClear) is double ownChord
+                    && !double.IsNaN(ownChord) && ownChord <= HIGH_SPEED_MAX_DEG)
+                {
+                    e.ApronNodeId = ownClear;
+                    return;
+                }
+            }
+            e.ExitAngleDegrees = chordDeg;
+            e.ExitType = "Normal";
+        }
+
         // Where does the pavement ACTUALLY leave the runway? Some sceneries draw a
         // taxiway along the runway centreline, so the node where that name starts is not
         // where the pilot turns. Only asked of a junction with no edge that turns off by
@@ -6385,6 +6442,7 @@ public partial class TaxiGraph
             };
             string producerExitType = candidateExit.ExitType;
             var refinedExit = RefineForPlanner(candidateExit, bestToNodeId, rwy, axis);
+            CorroborateHighSpeed(refinedExit, node.NodeId);
             // A taxiway drawn along the centreline before it turns off (OnAxisDepartureShiftM):
             // the turn point lies that far past this node. Normal exits only, and only while
             // the exit still stands at this node (the refinement can move a turnaround to its
@@ -6639,6 +6697,7 @@ public partial class TaxiGraph
                         ExitSide = ExitSideFor(best2Brg, rwyHeadingTrue)
                     };
                     var refinedFallback = RefineForPlanner(candidateFallback, best2?.ToNodeId, rwy, axis);
+                    CorroborateHighSpeed(refinedFallback, node.NodeId);
                     if (turnPointOffsetM2 > 0.0 && refinedFallback.NodeId == node.NodeId && refinedFallback.ExitType == "Normal")
                         refinedFallback.TurnPointOffsetFeet = turnPointOffsetM2 / 0.3048;
                     // Same list-side resolution as the main loop.

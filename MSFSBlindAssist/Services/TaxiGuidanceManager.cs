@@ -845,6 +845,10 @@ public partial class TaxiGuidanceManager : IDisposable
     // Runway incursion detection (off-route hold-short proximity)
     private int _lastIncursionWarnedNodeId = -1;
     private DateTime _lastIncursionWarningTime = DateTime.MinValue;
+    // True while the incursion cooldown was started by an accepted recalculation ("Route changed …")
+    // rather than by a warning of its own: only then is an off-route warning inside the window queued
+    // instead of dropped (CheckRunwayIncursion).
+    private bool _incursionCooldownFromRecalc;
     private const double INCURSION_WARN_DISTANCE_M = 40.0;
     private const double INCURSION_WARNING_COOLDOWN_SEC = 10.0;
 
@@ -3609,8 +3613,15 @@ public partial class TaxiGuidanceManager : IDisposable
         // it re-arms the id and then speaks "Route changed. Now via Q, A, crossing runways 28R
         // and 10L", which the bare "Crossing runway 28R." would truncate one frame later. Every
         // other reset site (LoadRoute, StopGuidance) clears the timestamp to MinValue as well.
-        if ((MSFSBlindAssist.Utils.SimClock.UtcNow - _lastIncursionWarningTime).TotalSeconds < INCURSION_WARNING_COOLDOWN_SEC)
-            return;
+        //
+        // The cooldown no longer DROPS a real off-route warning, it QUEUES it (below): after an accepted
+        // recalculation the window ran out only after the aircraft had reached the line, so a wrong turn
+        // the recalculation itself did not fix rolled up to a runway in silence (VirtualPilot wrong turns,
+        // LEMD Gate 384 → 18R toward 36L at Z-4: re-routed at 51 m, the line reached unwarned). Queued, the
+        // warning follows "Route changed …" instead of cutting it off. Planned-crossing lines stay silent
+        // inside the window, as before.
+        bool inIncursionCooldown =
+            (MSFSBlindAssist.Utils.SimClock.UtcNow - _lastIncursionWarningTime).TotalSeconds < INCURSION_WARNING_COOLDOWN_SEC;
         // The HS node-IDs on the planned route ("crossing" announcements fire for them; "off
         // route" does not). The WHOLE route, not just what is left of it: a line the aircraft has
         // just crossed drops out of a "remaining" set the moment it is passed, and the aircraft is
@@ -3729,6 +3740,8 @@ public partial class TaxiGuidanceManager : IDisposable
             return;
         string rwy = pick.Value.SpokenName;
         var pickNode = _graph.Nodes[pick.Value.NodeId];
+        if (pick.Value.OnRoute && inIncursionCooldown)
+            return;
         if (pick.Value.OnRoute)
         {
             // Planned crossing — informational, not a warning. Silent for the landed runway's own
@@ -3757,12 +3770,22 @@ public partial class TaxiGuidanceManager : IDisposable
             // Not closing on the line (stopped, or moving across it): nothing to warn about yet.
             return;
         }
+        else if (inIncursionCooldown && !_incursionCooldownFromRecalc)
+        {
+            // Inside the window a previous warning opened: the earlier rule, nothing said.
+            return;
+        }
+        else if (inIncursionCooldown)
+        {
+            QueueSpeech($"Warning: approaching {rwy}, off route.");
+        }
         else
         {
             SpeakNow($"Warning: approaching {rwy}, off route.");
         }
         _lastIncursionWarnedNodeId = pick.Value.NodeId;
         _lastIncursionWarningTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
+        _incursionCooldownFromRecalc = false;
         // Re-arm the once-per-node withheld log for this node: a later pass that withholds it
         // again is a new judgement and deserves its own line.
         _incursionWithheldLoggedNodes.Remove(pick.Value.NodeId);

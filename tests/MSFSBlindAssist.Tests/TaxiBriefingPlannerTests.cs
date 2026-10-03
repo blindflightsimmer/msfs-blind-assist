@@ -353,7 +353,11 @@ public class TaxiBriefingPlannerTests
     {
         // The exit is named R1, but the node its route begins at is reached from the runway by K: the block names the
         // exit the pilot will see signed and says which taxiway the mapped route actually takes off the runway.
-        var leg = TaxiBriefingPlanner.PlanTaxiIn(Request(B738, airline: "DAL"), AirportWithMisnamedExit());
+        // A C172: R1's 10° spur never clears the runway, so its route really turns 90° onto K and R1 is listed as
+        // the Normal exit it is (GetLandingExits' CorroborateHighSpeed) — at 1,500 m that is no longer a turn a
+        // B738 is offered, while a C172 still takes it.
+        var c172 = AircraftSizeClass.Resolve("C172", "Cessna 172", 4);
+        var leg = TaxiBriefingPlanner.PlanTaxiIn(Request(c172, airline: "DAL"), AirportWithMisnamedExit());
 
         Assert.Null(leg.Unavailable);
         Assert.Equal("R1", leg.Exit!.Exit.TaxiwayName);
