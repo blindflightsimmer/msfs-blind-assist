@@ -2505,7 +2505,8 @@ public partial class TaxiGraph
         double lat, double lon, string taxiwayName,
         double maxDistanceM = 800.0,
         int? requiredComponentId = null,
-        bool excludeBridgeOnlyStandStubs = false)
+        bool excludeBridgeOnlyStandStubs = false,
+        Func<TaxiNode, bool>? accept = null)
     {
         if (string.IsNullOrEmpty(taxiwayName)) return null;
 
@@ -2519,6 +2520,7 @@ public partial class TaxiGraph
             if (excludeBridgeOnlyStandStubs && IsBridgeOnlyStandStub(node.NodeId))
                 continue;
             if (!node.TaxiwayNames.Contains(taxiwayName)) continue;
+            if (accept != null && !accept(node)) continue;
             double d = FastDistanceMeters(lat, lon, node.Latitude, node.Longitude);
             if (d < bestDist)
             {

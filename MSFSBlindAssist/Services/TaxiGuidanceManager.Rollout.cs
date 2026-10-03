@@ -2660,6 +2660,22 @@ public partial class TaxiGuidanceManager
     /// the path node nearest the aircraft instead. A name anchor already on the path — the common
     /// case — is returned unchanged.
     /// </summary>
+    /// <summary>
+    /// For a landing-rollout route: a filter admitting only nodes on the side of the landed runway the
+    /// vacate destination is on, or on the runway's own pavement (Navigation.ExitOwnSide). Null (no
+    /// filter) when this is not a landing-rollout route, the landed runway is not in the graph, or the
+    /// destination itself is on the pavement and so names no side. See LoadRoute's start-node anchor.
+    /// </summary>
+    internal Func<TaxiNode, bool>? ExitOwnSideFilter(bool landingRolloutRoute, int destinationNodeId)
+    {
+        if (!landingRolloutRoute || _graph == null || _rolloutRunway == null) return null;
+        if (!_graph.Nodes.TryGetValue(destinationNodeId, out var dest)) return null;
+        var cl = Navigation.RolloutRunwayReCrossing.FindLandingRunwayCenterline(
+            _graph.RunwayCenterlines, _rolloutRunway.RunwayID);
+        if (cl == null) return null;
+        return Navigation.ExitOwnSide.Filter(Navigation.RunwayShape.For(cl), dest.Latitude, dest.Longitude);
+    }
+
     private TaxiNode? ExitPathStartAnchor(TaxiNode? named, IReadOnlyList<int>? pathIds,
                                           double lat, double lon, int? componentId)
     {

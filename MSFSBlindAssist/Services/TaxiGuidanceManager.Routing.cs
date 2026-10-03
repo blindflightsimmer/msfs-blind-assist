@@ -499,9 +499,22 @@ public partial class TaxiGuidanceManager
                 startNode = null;
                 if (!string.IsNullOrEmpty(startTaxiwayName))
                 {
-                    startNode = _graph.FindNearestNodeOnTaxiway(
-                        aircraftLat, aircraftLon, startTaxiwayName!, requiredComponentId: destComponentId,
-                        excludeBridgeOnlyStandStubs: true);
+                    // Keep to the EXIT'S OWN SIDE of the runway just landed on. A taxiway name can run on
+                    // both banks (a crossing taxiway, or a scenery that names a whole side's turnoffs with
+                    // one letter), and the nearest node by that name may be across the runway: the route
+                    // then drives back over the pavement to reach the exit's vacate point. The re-crossing
+                    // guard (HandoffRouteReCrossesLandingRunway) would decline or end that handoff rather
+                    // than repair it, and the planned-backtrack handoff is not gated by it at all. Nodes on
+                    // the pavement itself always qualify; with no qualifying node the unfiltered pick stands.
+                    Func<TaxiNode, bool>? ownSide = ExitOwnSideFilter(landingRolloutRoute, destinationNodeId);
+                    startNode = (ownSide != null
+                            ? _graph.FindNearestNodeOnTaxiway(
+                                aircraftLat, aircraftLon, startTaxiwayName!, requiredComponentId: destComponentId,
+                                excludeBridgeOnlyStandStubs: true, accept: ownSide)
+                            : null)
+                        ?? _graph.FindNearestNodeOnTaxiway(
+                            aircraftLat, aircraftLon, startTaxiwayName!, requiredComponentId: destComponentId,
+                            excludeBridgeOnlyStandStubs: true);
                     startNode = ExitPathStartAnchor(startNode, exitPathNodeIds, aircraftLat, aircraftLon, destComponentId);
                 }
                 // Task 6 Defect A: the primary route-start picker. Excludes bridge-only stand
@@ -604,9 +617,12 @@ public partial class TaxiGuidanceManager
                         continue;
                     candidates.Add(n);
                 }
+                var ownSideRetry = ExitOwnSideFilter(landingRolloutRoute, destinationNodeId);
                 foreach (var cand in candidates)
                 {
                     if (cand.NodeId == startNode.NodeId || cand.NodeId == destinationNodeId) continue;
+                    // Same own-side rule as the anchor above: a retry must not start across the runway either.
+                    if (ownSideRetry != null && !ownSideRetry(cand)) continue;
                     var alt = router.FindShortestPath(cand.NodeId, destinationNodeId);
                     // The route must be a real one the aircraft has not already passed the start of:
                     // a one-leg route beside the aircraft reads as ARRIVED on the runway (KABQ 17 F).
