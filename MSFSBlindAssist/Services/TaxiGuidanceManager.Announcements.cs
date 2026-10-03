@@ -57,7 +57,7 @@ public partial class TaxiGuidanceManager
             // to cost "turn now" too, permanently rather than just late.
             if (distToTargetM < APPROACH_ANNOUNCE_DISTANCE_M && !_approachAnnounced &&
                 !StartWarningChatterGate.ShouldHold(
-                    DateTime.UtcNow, _startChatterSuppressUntil, distToTargetM, arrivalRadius, _lastGroundSpeedKts))
+                    MSFSBlindAssist.Utils.SimClock.UtcNow, _startChatterSuppressUntil, distToTargetM, arrivalRadius, _lastGroundSpeedKts))
             {
                 AnnounceInstruction($"{_route.DestinationName} ahead.");
                 _approachAnnounced = true;
@@ -138,7 +138,7 @@ public partial class TaxiGuidanceManager
         // not to the junction.
         if (distToTargetM < approachDist && !_approachAnnounced &&
             !StartWarningChatterGate.ShouldHold(
-                DateTime.UtcNow, _startChatterSuppressUntil,
+                MSFSBlindAssist.Utils.SimClock.UtcNow, _startChatterSuppressUntil,
                 distToTargetM, WAYPOINT_CAPTURE_RADIUS_M, _lastGroundSpeedKts))
         {
             string distStr = distToTargetM > 15 ? $"In {FormatDistance(distToTargetM)}, " : "";
@@ -219,7 +219,7 @@ public partial class TaxiGuidanceManager
         // there is simply no second, closer point (short of the bend itself) where that
         // dropping-out happens, so there is nothing to subtract.
         if (StartWarningChatterGate.ShouldHold(
-                DateTime.UtcNow, _startChatterSuppressUntil,
+                MSFSBlindAssist.Utils.SimClock.UtcNow, _startChatterSuppressUntil,
                 distToTargetM, clearRadiusMeters: 0, _lastGroundSpeedKts))
             return;
 
@@ -304,7 +304,7 @@ public partial class TaxiGuidanceManager
         // intersection as two graph nodes 5–15m apart, which would otherwise fire
         // "Crossing taxiway Link 53" twice in a row. Suppress repeats of the same
         // NAME within the dedup window even across different junction nodes.
-        DateTime now = DateTime.UtcNow;
+        DateTime now = MSFSBlindAssist.Utils.SimClock.UtcNow;
         var freshNames = new List<string>();
         foreach (var name in otherTaxiways)
         {
@@ -328,7 +328,7 @@ public partial class TaxiGuidanceManager
         // Hold this informational callout during the post-reach-warning grace
         // window so it doesn't stomp the warning at guidance start. Mark the node
         // handled so we don't re-test every frame while inside the window.
-        if (DateTime.UtcNow < _startChatterSuppressUntil)
+        if (MSFSBlindAssist.Utils.SimClock.UtcNow < _startChatterSuppressUntil)
         {
             _crossingAnnounced = true;
             _lastCrossingNodeId = junctionNode.NodeId;

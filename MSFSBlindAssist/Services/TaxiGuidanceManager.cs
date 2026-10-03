@@ -78,6 +78,11 @@ public partial class TaxiGuidanceManager : IDisposable
 {
     private readonly ScreenReaderAnnouncer _announcer;
     private TaxiSteeringTone _steeringTone;
+    /// <summary>Virtual-pilot harness only (tools/VirtualPilot): the tone the pilot is listening to.</summary>
+    internal TaxiSteeringTone SteeringToneForHarness => _steeringTone;
+    /// <summary>Virtual-pilot harness only: the route being flown, and the segment the manager is on.</summary>
+    internal TaxiRoute? RouteForHarness => _route;
+    internal int SegmentIndexForHarness => _currentSegmentIndex;
     private TaxiGraph? _graph;
     // DatabaseGeneration when _graph's instance was installed (never restamped when a rollout
     // re-route hands the same instance back). A database switch leaves a route's graph in place,
@@ -1981,7 +1986,7 @@ public partial class TaxiGuidanceManager : IDisposable
         // taxiway-crossing / taxiway-change / curve / destination-ahead callouts don't stomp
         // it at start.
         _startChatterSuppressUntil = (LastRouteReachWarning != null || LastRouteUnmappedStartWarning != null)
-            ? DateTime.UtcNow.AddSeconds(START_WARNING_CHATTER_GRACE_SEC)
+            ? MSFSBlindAssist.Utils.SimClock.UtcNow.AddSeconds(START_WARNING_CHATTER_GRACE_SEC)
             : DateTime.MinValue;
 
         _announceCrossings = settings.TaxiGuidanceAnnounceCrossings;
@@ -2112,7 +2117,7 @@ public partial class TaxiGuidanceManager : IDisposable
         _positionInitialized = true;
 
         // Yaw-rate tracking for rollout anticipation (wrap-safe, low-passed).
-        var nowYaw = DateTime.UtcNow;
+        var nowYaw = MSFSBlindAssist.Utils.SimClock.UtcNow;
         if (_lastYawSampleTime != DateTime.MinValue)
         {
             double dt = (nowYaw - _lastYawSampleTime).TotalSeconds;
@@ -2468,9 +2473,9 @@ public partial class TaxiGuidanceManager : IDisposable
                 else
                 {
                     if (_missedVacateSince == DateTime.MinValue)
-                        _missedVacateSince = DateTime.UtcNow;
+                        _missedVacateSince = MSFSBlindAssist.Utils.SimClock.UtcNow;
 
-                    if ((DateTime.UtcNow - _missedVacateSince).TotalSeconds
+                    if ((MSFSBlindAssist.Utils.SimClock.UtcNow - _missedVacateSince).TotalSeconds
                         >= MISSED_VACATE_PERSISTENCE_SEC)
                     {
                         RolloutDiag($"Landing-exit MISSED: distToTarget={distToTarget:F0}m " +
@@ -2884,7 +2889,7 @@ public partial class TaxiGuidanceManager : IDisposable
         // Also suspend for a short grace window AFTER completing a turn — the
         // aircraft is still settling onto the new centerline while we've already
         // advanced _currentSegmentIndex. Uses segment-advance timestamp below.
-        if ((DateTime.UtcNow - _lastSegmentAdvanceTime).TotalSeconds < POST_TURN_OFFROUTE_GRACE_SEC)
+        if ((MSFSBlindAssist.Utils.SimClock.UtcNow - _lastSegmentAdvanceTime).TotalSeconds < POST_TURN_OFFROUTE_GRACE_SEC)
             nearTurn = true;
 
         // Route-joined latch (see field). Until the aircraft has reached the route
@@ -2955,9 +2960,9 @@ public partial class TaxiGuidanceManager : IDisposable
         if (offRouteNow && _lastGroundSpeedKts >= OFF_ROUTE_MIN_GS_KTS)
         {
             if (_offRouteSince == DateTime.MinValue)
-                _offRouteSince = DateTime.UtcNow;
+                _offRouteSince = MSFSBlindAssist.Utils.SimClock.UtcNow;
 
-            if ((DateTime.UtcNow - _offRouteSince).TotalSeconds >= OFF_ROUTE_PERSISTENCE_SEC)
+            if ((MSFSBlindAssist.Utils.SimClock.UtcNow - _offRouteSince).TotalSeconds >= OFF_ROUTE_PERSISTENCE_SEC)
             {
                 _offRouteSince = DateTime.MinValue;  // reset so next off-route starts fresh
                 TryRecalculateRoute(lat, lon, headingTrue);
@@ -3194,7 +3199,7 @@ public partial class TaxiGuidanceManager : IDisposable
         if (_route == null) return;
         if (_lastGroundSpeedKts < 5) return;  // not taxiing
 
-        if ((DateTime.UtcNow - _lastSpeedWarningTime).TotalSeconds < SPEED_WARNING_COOLDOWN_SEC)
+        if ((MSFSBlindAssist.Utils.SimClock.UtcNow - _lastSpeedWarningTime).TotalSeconds < SPEED_WARNING_COOLDOWN_SEC)
             return;
 
         // Speed-scaled lookahead — at 20 kt (≈10 m/s), 6 s = 60 m of lead.
@@ -3219,17 +3224,17 @@ public partial class TaxiGuidanceManager : IDisposable
         if (sharpTurnComing && _lastGroundSpeedKts > MAX_TAXI_SPEED_SHARP_TURN_KTS)
         {
             _announcer.AnnounceImmediate("Slow for sharp turn.");
-            _lastSpeedWarningTime = DateTime.UtcNow;
+            _lastSpeedWarningTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
         }
         else if (normalTurnComing && _lastGroundSpeedKts > MAX_TAXI_SPEED_TURN_KTS)
         {
             _announcer.AnnounceImmediate("Slow for turn.");
-            _lastSpeedWarningTime = DateTime.UtcNow;
+            _lastSpeedWarningTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
         }
         else if (!normalTurnComing && !sharpTurnComing && _lastGroundSpeedKts > MAX_TAXI_SPEED_STRAIGHT_KTS)
         {
             _announcer.AnnounceImmediate($"Taxi speed, {(int)_lastGroundSpeedKts} knots.");
-            _lastSpeedWarningTime = DateTime.UtcNow;
+            _lastSpeedWarningTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
         }
     }
 
@@ -3271,7 +3276,7 @@ public partial class TaxiGuidanceManager : IDisposable
         // add for those few seconds. Every other reset site (LoadRoute, StopGuidance) clears
         // the timestamp to MinValue as well, so those stay fully re-armed exactly as before —
         // dropping the conjunct changes behaviour only where a caller deliberately stamps it.
-        if ((DateTime.UtcNow - _lastIncursionWarningTime).TotalSeconds < INCURSION_WARNING_COOLDOWN_SEC)
+        if ((MSFSBlindAssist.Utils.SimClock.UtcNow - _lastIncursionWarningTime).TotalSeconds < INCURSION_WARNING_COOLDOWN_SEC)
             return;
 
         // Build the set of HS node-IDs that lie on the remaining planned route
@@ -3410,7 +3415,7 @@ public partial class TaxiGuidanceManager : IDisposable
         }
 
         _lastIncursionWarnedNodeId = pick.Value.NodeId;
-        _lastIncursionWarningTime = DateTime.UtcNow;
+        _lastIncursionWarningTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
         // Re-arm the once-per-node withheld log for this node: a later pass that withholds it
         // again is a new judgement and deserves its own line.
         _incursionWithheldLoggedNodes.Remove(pick.Value.NodeId);
@@ -4106,7 +4111,7 @@ public partial class TaxiGuidanceManager : IDisposable
     /// </summary>
     private double SlewLimitToneError(double target)
     {
-        var now = DateTime.UtcNow;
+        var now = MSFSBlindAssist.Utils.SimClock.UtcNow;
         if (!_toneErrorInitialized)
         {
             _toneErrorInitialized = true;
@@ -4151,7 +4156,7 @@ public partial class TaxiGuidanceManager : IDisposable
         // discontinuities). The per-line timestamp is now supplied by the shared
         // LogChannel formatter (local time, millisecond precision) instead of a
         // hand-rolled leading field.
-        var now = DateTime.UtcNow;
+        var now = MSFSBlindAssist.Utils.SimClock.UtcNow;
         if ((now - _lastGuidanceLogTime).TotalMilliseconds < GUIDANCE_LOG_INTERVAL_MS) return;
         _lastGuidanceLogTime = now;
         try

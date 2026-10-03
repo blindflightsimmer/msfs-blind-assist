@@ -471,7 +471,7 @@ public partial class TaxiGuidanceManager
             else
                 RolloutDiag($"Back on pavement: lat={lat:F6} lon={lon:F6} gs={groundSpeedKts:F1}kt");
         }
-        if (_offPavementAlert.Update(off, groundSpeedKts, DateTime.UtcNow))
+        if (_offPavementAlert.Update(off, groundSpeedKts, MSFSBlindAssist.Utils.SimClock.UtcNow))
         {
             RolloutDiag("Off-pavement alert spoken");
             _announcer.AnnounceImmediate(Navigation.OffPavementAlert.Phrase);
@@ -635,9 +635,9 @@ public partial class TaxiGuidanceManager
         // DIAGNOSTIC: periodic snapshot (every ~3s) of rollout state.
         // Captures the moment the per-frame loop is or isn't seeing the
         // distance threshold approach.
-        if ((DateTime.UtcNow - _rolloutDiagLastPeriodic).TotalSeconds >= 3.0)
+        if ((MSFSBlindAssist.Utils.SimClock.UtcNow - _rolloutDiagLastPeriodic).TotalSeconds >= 3.0)
         {
-            _rolloutDiagLastPeriodic = DateTime.UtcNow;
+            _rolloutDiagLastPeriodic = MSFSBlindAssist.Utils.SimClock.UtcNow;
             RolloutDiag($"UpdateLandingRollout periodic: " +
                 $"distToExit={distToExitFeet:F0}ft signedAlongPast={signedAlongPastFt:F0}ft " +
                 $"hdgDelta={hdgDeltaAbs:F1}deg gs={groundSpeedKts:F1}kt " +
@@ -763,7 +763,7 @@ public partial class TaxiGuidanceManager
         // is a floor rather than a latch. DateTime.MinValue (no decline this rollout)
         // makes the term trivially true, so the normal path is unchanged.
         bool crossingRetryFloorElapsed =
-            (DateTime.UtcNow - _rolloutCrossingDeclinedUtc).TotalSeconds
+            (MSFSBlindAssist.Utils.SimClock.UtcNow - _rolloutCrossingDeclinedUtc).TotalSeconds
                 >= ROLLOUT_CROSSING_RETRY_FLOOR_SEC;
 
         if ((turnBegun || exitedLaterally || alignedWithExit || speedNearExitHandoff || trulyStopped)
@@ -1084,7 +1084,7 @@ public partial class TaxiGuidanceManager
                         // see ROLLOUT_CROSSING_RETRY_FLOOR_SEC. This is the only path out
                         // of this block that stays in LandingRollout, so it is the only one
                         // that needs it.
-                        _rolloutCrossingDeclinedUtc = DateTime.UtcNow;
+                        _rolloutCrossingDeclinedUtc = MSFSBlindAssist.Utils.SimClock.UtcNow;
                         // Restore the pre-handoff value: the top of this block armed the
                         // post-handoff overshoot monitor on the assumption it ends in Taxiing.
                         _rolloutHandoffActive = false;
@@ -1373,7 +1373,7 @@ public partial class TaxiGuidanceManager
         // when multiple earlier exits are within ROLLOUT_UNDERSHOOT_RANGE_FT.
         if (!_rolloutNoExitMode && !pastExit)
         {
-            bool cooldownOk = (DateTime.UtcNow - _lastUndershootRetargetTime).TotalSeconds >= ROLLOUT_UNDERSHOOT_COOLDOWN_SEC;
+            bool cooldownOk = (MSFSBlindAssist.Utils.SimClock.UtcNow - _lastUndershootRetargetTime).TotalSeconds >= ROLLOUT_UNDERSHOOT_COOLDOWN_SEC;
 
             if (groundSpeedKts < ROLLOUT_UNDERSHOOT_ENTRY_GS_KTS && cooldownOk)
             {
@@ -1430,7 +1430,7 @@ public partial class TaxiGuidanceManager
 
                 if (earlierExit != null)
                 {
-                    _lastUndershootRetargetTime = DateTime.UtcNow;
+                    _lastUndershootRetargetTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
                     RolloutDiag($"UNDERSHOOT: retargeting to '{earlierExit.TaxiwayName}' at {earlierExitDistFt:F0}ft " +
                         $"(planned was '{_rolloutExit.TaxiwayName}')");
                     RetargetLandingExit(earlierExit, lat, lon, headingTrue, Navigation.RetargetReason.Earlier);
@@ -1724,7 +1724,7 @@ public partial class TaxiGuidanceManager
         // A pilot held on the runway stays in LandingRollout indefinitely, and a line per frame would cycle
         // landing_exit.log's 5 MB x 3 rotation within the hour, so a stopped aircraft logs nothing until
         // something changes.
-        DateTime toneLogNowUtc = DateTime.UtcNow;
+        DateTime toneLogNowUtc = MSFSBlindAssist.Utils.SimClock.UtcNow;
         bool toneLogMoving = groundSpeedKts > Navigation.RolloutExitGate.NoExitStoppedGroundSpeedKts
                              && groundSpeedKts <= ROLLOUT_TONE_ACTIVE_BELOW_GS_KTS
                              && (toneLogNowUtc - _rolloutToneLogUtc).TotalMilliseconds >= ROLLOUT_TONE_LOG_MIN_INTERVAL_MS;
@@ -3285,9 +3285,9 @@ public partial class TaxiGuidanceManager
             if (!_routeReachesRunway && absCrossFeet > LINEUP_UNREACHABLE_CROSS_FEET)
             {
                 if (_lineupHugeCrossTrackSince == DateTime.MinValue)
-                    _lineupHugeCrossTrackSince = DateTime.UtcNow;
+                    _lineupHugeCrossTrackSince = MSFSBlindAssist.Utils.SimClock.UtcNow;
                 else if (!_runwayLineupUnreachableWarned &&
-                         (DateTime.UtcNow - _lineupHugeCrossTrackSince).TotalSeconds >= LINEUP_UNREACHABLE_SEC)
+                         (MSFSBlindAssist.Utils.SimClock.UtcNow - _lineupHugeCrossTrackSince).TotalSeconds >= LINEUP_UNREACHABLE_SEC)
                 {
                     _runwayLineupUnreachableWarned = true;
                     _announcer.AnnounceImmediate(
@@ -3438,7 +3438,7 @@ public partial class TaxiGuidanceManager
         string phase, double lat, double lon, double headingTrue,
         double rawHeadingError, double smoothedHeadingError, double distM)
     {
-        var now = DateTime.UtcNow;
+        var now = MSFSBlindAssist.Utils.SimClock.UtcNow;
         if ((now - _lastGuidanceLogTime).TotalMilliseconds < GUIDANCE_LOG_INTERVAL_MS) return;
         _lastGuidanceLogTime = now;
         try

@@ -1021,7 +1021,7 @@ public partial class TaxiGuidanceManager
                 if (distToHold <= HOLD_SHORT_ANNOUNCE_MAX_DIST_M)
                 {
                     _currentSegmentIndex = i + 1;
-                    _lastSegmentAdvanceTime = DateTime.UtcNow;
+                    _lastSegmentAdvanceTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
                     HandleHoldShort(_route.Segments[i]);
                 }
                 else
@@ -1033,14 +1033,14 @@ public partial class TaxiGuidanceManager
                     if (i > _currentSegmentIndex)
                     {
                         _currentSegmentIndex = i;
-                        _lastSegmentAdvanceTime = DateTime.UtcNow;
+                        _lastSegmentAdvanceTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
                     }
                 }
                 return;
             }
 
             _currentSegmentIndex = bestIdx;
-            _lastSegmentAdvanceTime = DateTime.UtcNow;
+            _lastSegmentAdvanceTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
 
             var newSeg = _route.Segments[_currentSegmentIndex];
             AnnounceOrDeferTaxiwayChange(newSeg.TaxiwayName);
@@ -1111,7 +1111,7 @@ public partial class TaxiGuidanceManager
     {
         if (_graph == null) return;
 
-        if ((DateTime.UtcNow - _lastRecalculationTime).TotalSeconds < RECALCULATION_COOLDOWN_SEC)
+        if ((MSFSBlindAssist.Utils.SimClock.UtcNow - _lastRecalculationTime).TotalSeconds < RECALCULATION_COOLDOWN_SEC)
             return;
 
         // Final-segment guard. At the destination hold-short there's nothing
@@ -1140,7 +1140,7 @@ public partial class TaxiGuidanceManager
                 return;
         }
 
-        _lastRecalculationTime = DateTime.UtcNow;
+        _lastRecalculationTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
 
         // Position-aware sequence trim. Walk the original ATC sequence from
         // the LAST taxiway backwards, asking "is there a node on this taxiway
@@ -1474,7 +1474,7 @@ public partial class TaxiGuidanceManager
         // already names the runways, so nothing is lost by holding the tactical callout for the
         // cooldown. LoadRoute deliberately does the opposite (clears the stamp to MinValue) —
         // it announces its own summary through the queue, not over this callout.
-        _lastIncursionWarningTime = DateTime.UtcNow;
+        _lastIncursionWarningTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
         _headingErrorInitialized = false;
 
         string firstTaxiway = newRoute.Segments[0].TaxiwayName;
@@ -1539,13 +1539,13 @@ public partial class TaxiGuidanceManager
             // and a single lateral-deviation sample at the stop line can
             // trigger a spurious recalc the instant the pilot presses
             // Continue.
-            _lastSegmentAdvanceTime = DateTime.UtcNow;
+            _lastSegmentAdvanceTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
             HandleHoldShort(completedSeg);
             return;
         }
 
         _currentSegmentIndex++;
-        _lastSegmentAdvanceTime = DateTime.UtcNow;
+        _lastSegmentAdvanceTime = MSFSBlindAssist.Utils.SimClock.UtcNow;
         _approachAnnounced = false;
         _turnImminentAnnounced = false;
         _crossingAnnounced = false;
@@ -1588,7 +1588,7 @@ public partial class TaxiGuidanceManager
     /// </summary>
     private void AnnounceOrDeferTaxiwayChange(string? newTaxiwayName)
     {
-        bool windowOpen = DateTime.UtcNow < _startChatterSuppressUntil;
+        bool windowOpen = MSFSBlindAssist.Utils.SimClock.UtcNow < _startChatterSuppressUntil;
         switch (TaxiwayChangeGate.Classify(
             newTaxiwayName, _lastAnnouncedTaxiway, windowOpen, _pendingTaxiwayAnnouncement))
         {
@@ -1656,7 +1656,7 @@ public partial class TaxiGuidanceManager
     private void FlushPendingTaxiwayAnnouncement(string? currentTaxiwayName)
     {
         if (_pendingTaxiwayAnnouncement == null) return;
-        if (DateTime.UtcNow < _startChatterSuppressUntil) return; // still waiting
+        if (MSFSBlindAssist.Utils.SimClock.UtcNow < _startChatterSuppressUntil) return; // still waiting
 
         string pending = _pendingTaxiwayAnnouncement;
         _pendingTaxiwayAnnouncement = null; // one-shot delivery either way
