@@ -34,6 +34,67 @@ public partial class TaxiGraph
     public Dictionary<int, List<TaxiEdge>> Adjacency { get; } = new();
 
     /// <summary>
+    /// The taxiway designator a pilot would use for this node, read from the names of the
+    /// edges that meet at it. Prefers a connector-style name carrying both a letter and a
+    /// digit (A5, NB1, K12 — the shortest, ties broken ordinally) over a plain main-taxiway
+    /// name (A, B, K — the longest, ties broken ordinally), and returns "" for a node whose
+    /// edges carry no name at all. This is the ranking <see cref="Build"/> has always used to
+    /// name a hold-short node; the post-landing backtrack's "Taxiway H ahead" reads the same
+    /// method so the two can never name one node differently.
+    /// </summary>
+    public string PreferredTaxiwayNameAt(int nodeId)
+    {
+        if (!Adjacency.TryGetValue(nodeId, out var edges)) return "";
+
+        var distinctNames = new HashSet<string>();
+        foreach (var edge in edges)
+        {
+            if (!string.IsNullOrEmpty(edge.TaxiwayName))
+                distinctNames.Add(edge.TaxiwayName);
+        }
+
+        // Tier 1: names that look like connector/holding-point designators
+        string? connectorName = null;
+        foreach (var n in distinctNames)
+        {
+            bool hasLetter = false, hasDigit = false;
+            foreach (char c in n)
+            {
+                if (char.IsLetter(c)) hasLetter = true;
+                else if (char.IsDigit(c)) hasDigit = true;
+            }
+            if (hasLetter && hasDigit)
+            {
+                // Among connectors, prefer the shortest (A5 > KILO5A);
+                // ties broken by alpha order for determinism.
+                if (connectorName == null ||
+                    n.Length < connectorName.Length ||
+                    (n.Length == connectorName.Length &&
+                     string.Compare(n, connectorName, StringComparison.Ordinal) < 0))
+                {
+                    connectorName = n;
+                }
+            }
+        }
+        if (connectorName != null) return connectorName;
+
+        // No connector pattern — fall back to any name.
+        // Prefer longer over single-letter (more specific).
+        string? best = null;
+        foreach (var n in distinctNames)
+        {
+            if (best == null ||
+                n.Length > best.Length ||
+                (n.Length == best.Length &&
+                 string.Compare(n, best, StringComparison.Ordinal) < 0))
+            {
+                best = n;
+            }
+        }
+        return best ?? "";
+    }
+
+    /// <summary>
     /// One physical runway as a centerline segment between its two thresholds,
     /// with a name for each direction. Built from the navdatareader `start`
     /// table at construction time. Used by DescribeLocation to detect
@@ -825,67 +886,9 @@ public partial class TaxiGraph
                 // Prefer connector-style designators (A5, NB1, K12) over plain
                 // main taxiway names (A, B, K) because the connector name is
                 // the actual *holding point* designator pilots use with ATC.
-                //
-                // Ranking (best first):
-                //   1. Name contains BOTH a letter and a digit (e.g., "A5", "NB1", "K12")
-                //   2. Any non-empty name (longest-first — gives "MAIN" over "A")
-                //   3. Fallback: empty
-                string holdPointName = "";
-                if (graph.Adjacency.TryGetValue(node.NodeId, out var edges))
-                {
-                    var distinctNames = new HashSet<string>();
-                    foreach (var edge in edges)
-                    {
-                        if (!string.IsNullOrEmpty(edge.TaxiwayName))
-                            distinctNames.Add(edge.TaxiwayName);
-                    }
-
-                    // Tier 1: names that look like connector/holding-point designators
-                    string? connectorName = null;
-                    foreach (var n in distinctNames)
-                    {
-                        bool hasLetter = false, hasDigit = false;
-                        foreach (char c in n)
-                        {
-                            if (char.IsLetter(c)) hasLetter = true;
-                            else if (char.IsDigit(c)) hasDigit = true;
-                        }
-                        if (hasLetter && hasDigit)
-                        {
-                            // Among connectors, prefer the shortest (A5 > KILO5A);
-                            // ties broken by alpha order for determinism.
-                            if (connectorName == null ||
-                                n.Length < connectorName.Length ||
-                                (n.Length == connectorName.Length &&
-                                 string.Compare(n, connectorName, StringComparison.Ordinal) < 0))
-                            {
-                                connectorName = n;
-                            }
-                        }
-                    }
-
-                    if (connectorName != null)
-                    {
-                        holdPointName = connectorName;
-                    }
-                    else if (distinctNames.Count > 0)
-                    {
-                        // No connector pattern — fall back to any name.
-                        // Prefer longer over single-letter (more specific).
-                        string? best = null;
-                        foreach (var n in distinctNames)
-                        {
-                            if (best == null ||
-                                n.Length > best.Length ||
-                                (n.Length == best.Length &&
-                                 string.Compare(n, best, StringComparison.Ordinal) < 0))
-                            {
-                                best = n;
-                            }
-                        }
-                        holdPointName = best ?? "";
-                    }
-                }
+                // The ranking is PreferredTaxiwayNameAt's, shared with the
+                // post-landing backtrack's "Taxiway H ahead".
+                string holdPointName = graph.PreferredTaxiwayNameAt(node.NodeId);
 
                 // Primary: associate by nearest runway CENTERLINE (length-invariant),
                 // so a mid-runway crossing of a long runway is named after the runway,

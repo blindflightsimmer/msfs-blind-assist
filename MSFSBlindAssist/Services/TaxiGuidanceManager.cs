@@ -39,10 +39,12 @@ public enum TaxiGuidanceState
     LandingRollout,
     /// <summary>
     /// The pilot reached the runway end without exiting and is backtaxiing
-    /// toward the apron. Steering tone guides on the reciprocal runway heading.
-    /// Transitions to Taxiing once the aircraft is within BACKTRACK_HANDOFF_M of
-    /// the first taxi-graph connection node, or if no connection node was found
-    /// nearby.
+    /// toward the apron. Steering tone guides on the reciprocal runway heading until the
+    /// taxiway connection node is announced, then on the bearing to that node. Hands off
+    /// once the aircraft is clear of every runway corridor or within
+    /// <see cref="Navigation.BacktrackConnectionHandoff.HandoffMetres"/> of the node
+    /// (<see cref="Navigation.BacktrackConnectionHandoff"/>), or if no connection node
+    /// was found nearby.
     /// </summary>
     BacktrackingOnRunway,
     /// <summary>
@@ -1454,12 +1456,12 @@ public partial class TaxiGuidanceManager : IDisposable
     // crawl the countdown has nothing more useful to say.
     private const double ROLLOUT_NO_EXIT_STOPPED_GS_KTS = Navigation.RolloutExitGate.NoExitStoppedGroundSpeedKts;
 
-    // Backtrack guidance thresholds.
-    // Within ANNOUNCE distance: fires the "taxiway ahead" callout.
-    // Within HANDOFF distance: transitions to Taxiing so the pilot can pick up
-    // normal routing via Taxi Assist. 25m = WAYPOINT_CAPTURE_RADIUS_M equivalent.
-    private const double BACKTRACK_TAXI_ANNOUNCE_M = 200.0;
-    private const double BACKTRACK_HANDOFF_M        = 25.0;
+    // Backtrack guidance thresholds — owned by Navigation.BacktrackConnectionHandoff, which also
+    // owns the approach sentence, the node-bearing tone and the hand-off decision.
+    // Within ANNOUNCE distance: the "Taxiway H ahead on the left. Vacate runway." callout and
+    // the tone's swing onto the node. Within HANDOFF distance: hands off regardless of pavement.
+    private const double BACKTRACK_TAXI_ANNOUNCE_M = Navigation.BacktrackConnectionHandoff.AnnounceMetres;
+    private const double BACKTRACK_HANDOFF_M        = Navigation.BacktrackConnectionHandoff.HandoffMetres;
 
     // Full-length backtrack DEPARTURE thresholds (distance to the departure
     // threshold / full-length lineup point).
@@ -2140,9 +2142,15 @@ public partial class TaxiGuidanceManager : IDisposable
     /// Raised by the two landing-rollout entries that can be reached with NO position stream
     /// running: <see cref="BeginLandingRolloutNoGraph"/> (after a failed LoadRoute, so no Taxiing
     /// transition ever started one) and <see cref="BeginRunwayEndCountdownRollout"/> (no route at
-    /// all). MainForm answers by starting the taxi-guidance position stream; without it those
-    /// rollouts would speak their touchdown sentence and never receive another frame. Raised under
-    /// the state lock after the state change, like <see cref="StateChanged"/>.
+    /// all) — and by the two entries into the ended-on-runway clearing phase
+    /// (<c>_arrivedRunwayClearing</c>: the backtrack hand-off at the connection node and
+    /// <see cref="HandleArrival"/>'s "taxiway data ends" arm), whose state is <c>Arrived</c>, on
+    /// which MainForm STOPS the stream that <c>UpdateArrivedRunwayClearing</c> is driven from.
+    /// MainForm answers by starting the taxi-guidance position stream; without it those rollouts
+    /// would speak their touchdown sentence and never receive another frame, and the clearing phase
+    /// would say "continue ahead until clear" and then nothing. Raised under the state lock after
+    /// the state change, like <see cref="StateChanged"/> — after, because that handler's stop runs
+    /// inside <c>SetState</c> and would otherwise undo the restart.
     /// </summary>
     public event EventHandler? PositionStreamRequired;
 
@@ -4455,6 +4463,11 @@ public partial class TaxiGuidanceManager : IDisposable
                     AnnounceInstruction(
                         $"Taxiway data ends at {exitName}. You may still be on the runway — " +
                         $"follow the tone ahead until clear.");
+                    // The state is already Arrived (set above), so MainForm has stopped the
+                    // position feed that UpdateArrivedRunwayClearing is driven from. Without this
+                    // the clearing phase never received a frame: the tone was re-started and held
+                    // its first pan, and nothing more was said (taxi-landing-port review, finding 3).
+                    PositionStreamRequired?.Invoke(this, EventArgs.Empty);
                 }
                 else
                 {

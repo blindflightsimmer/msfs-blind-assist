@@ -3640,7 +3640,10 @@ public partial class TaxiGuidanceManager
     /// is NEVER silent during the turnaround: while heading is >90° from the
     /// backtrack target it pans hard to whichever side the pilot commits the 180°,
     /// then settles to fine steering as they straighten onto the reciprocal heading.
-    /// Transitions to Taxiing when within BACKTRACK_HANDOFF_M of the connection node.
+    /// The connection-node leg is <see cref="Navigation.BacktrackConnectionHandoff"/>'s: inside its
+    /// announce window the taxiway is named with its side and the tone swings onto the node's bearing,
+    /// and the backtrack hands off when the aircraft is clear of every runway corridor or within
+    /// <see cref="Navigation.BacktrackConnectionHandoff.HandoffMetres"/> of the node, whichever first.
     /// </summary>
     private void UpdateBacktracking(double lat, double lon, double headingTrue, double groundSpeedKts)
     {
@@ -3654,11 +3657,51 @@ public partial class TaxiGuidanceManager
         // ±30° of intercept, so off the pavement the tone leans back toward it and
         // silence again means "on the centerline heading the right way". The
         // connection-node handoff below is unchanged.
-        double headingError = _rolloutRunway != null
+        double centerlineError = _rolloutRunway != null
             ? BacktrackToneHeadingError(
                 lat, lon, headingTrue,
                 _rolloutRunway.StartLat, _rolloutRunway.StartLon, _backtrackHeadingTrue)
             : NormalizeAngle(_backtrackHeadingTrue - headingTrue);
+
+        // The taxiway connection node, when this backtrack has one (never a targeted backtrack, which
+        // steers at its own exit). distM is -1 without one.
+        bool haveNode = !_backtrackTargeted && _backtrackConnectionNodeId > 0;
+        double distM = haveNode
+            ? TaxiGraph.FastDistanceMeters(lat, lon, _backtrackConnectionLat, _backtrackConnectionLon)
+            : -1.0;
+        double bearingToNode = haveNode
+            ? NavigationCalculator.CalculateBearing(lat, lon, _backtrackConnectionLat, _backtrackConnectionLon)
+            : double.NaN;
+
+        // The connection-node leg is Navigation.BacktrackConnectionHandoff's (taxi-landing-port review,
+        // finding 1). Once the aircraft has come round onto the backtrack heading and the node is inside
+        // the announce window, the taxiway is named WITH ITS SIDE and the tone leaves the centreline law
+        // for the bearing to the node, the way the Normal-exit tone does after "turn now". CYYZ 05,
+        // 2026-10-03: FindBacktrackConnectionNode's corridor filter put the node on taxiway H, 70-88 m
+        // off the 05/23 centreline; the tone kept steering the centreline, "Taxiway ahead. Vacate
+        // runway." named no side, and the 25 m hand-off was never reached — the pilot passed the node
+        // abeam at 69 m and the distance climbed for good. The filter fixed the false "vacated" claim
+        // and removed the only way to reach the node; this is the way back to it.
+        if (haveNode
+            && !_backtrackApproachAnnounced
+            && Math.Abs(centerlineError) <= 90.0
+            && Navigation.BacktrackConnectionHandoff.InApproachWindow(distM))
+        {
+            _backtrackApproachAnnounced = true;
+            string? side = Navigation.BacktrackConnectionHandoff.SideWord(bearingToNode, _backtrackHeadingTrue);
+            string name = _graph?.PreferredTaxiwayNameAt(_backtrackConnectionNodeId) ?? "";
+            AnnounceInstruction(Navigation.BacktrackConnectionHandoff.ComposeApproach(name, side));
+            // The tone steps onto the node's bearing WITH the words, not through the low-pass: reset
+            // the smoother so the step is heard where it is said.
+            _headingErrorInitialized = false;
+            RolloutDiag($"Backtrack connection node {_backtrackConnectionNodeId} '{name}' announced at " +
+                $"{distM:F0} m, side={side ?? "unspoken"}, brg={bearingToNode:F1}, centerlineErr={centerlineError:F1}");
+        }
+
+        double headingError = haveNode
+            ? Navigation.BacktrackConnectionHandoff.ToneHeadingError(
+                _backtrackApproachAnnounced, bearingToNode, headingTrue, centerlineError)
+            : centerlineError;
         double absError = Math.Abs(headingError);
 
         // Never silent — the tone pans to show which way to turn, follows the
@@ -3694,10 +3737,7 @@ public partial class TaxiGuidanceManager
         }
 
         LogBacktrackFrame("backtrack", lat, lon, headingTrue,
-            headingError, _smoothedHeadingError,
-            _backtrackConnectionNodeId > 0
-                ? TaxiGraph.FastDistanceMeters(lat, lon, _backtrackConnectionLat, _backtrackConnectionLon)
-                : -1);
+            headingError, _smoothedHeadingError, distM);
 
         if (_backtrackTargeted)
         {
@@ -3726,28 +3766,20 @@ public partial class TaxiGuidanceManager
             return;
         }
 
-        double distM = TaxiGraph.FastDistanceMeters(
-            lat, lon, _backtrackConnectionLat, _backtrackConnectionLon);
-
-        if (!_backtrackApproachAnnounced && distM <= BACKTRACK_TAXI_ANNOUNCE_M)
+        // The hand-off. "Runway vacated." is a safety claim and must be TRUE when spoken: the
+        // connection node is off every runway corridor (filtered in FindBacktrackConnectionNode),
+        // but the aircraft itself can still be on the pavement edge when it reaches it. Once the
+        // approach has been announced, being clear of every corridor hands off as vacated wherever
+        // the aircraft is (the node is passed abeam, not driven over, when the taxiway meets the
+        // runway at an angle); within HandoffMetres of the node the backtrack hands off regardless,
+        // into the ended-on-runway clearing phase when still on pavement — the tone keeps steering
+        // ahead toward the taxiway and the honest "Off the runway. Stop and hold position." closure
+        // fires only once the aircraft is laterally clear of every corridor
+        // (UpdateArrivedRunwayClearing, same machinery as a landing-exit route that ends on pavement).
+        switch (Navigation.BacktrackConnectionHandoff.Decide(
+                    distM, _backtrackApproachAnnounced, IsClearOfAllRunwayCorridors(lat, lon)))
         {
-            AnnounceInstruction("Taxiway ahead. Vacate runway.");
-            _backtrackApproachAnnounced = true;
-        }
-
-        if (distM <= BACKTRACK_HANDOFF_M)
-        {
-            // "Runway vacated." is a safety claim and must be TRUE when spoken:
-            // the connection node is off every runway corridor (filtered in
-            // FindBacktrackConnectionNode), but 25 m short of it the aircraft
-            // itself can still be on the pavement edge. When it is, hand into the
-            // existing ended-on-runway clearing phase instead — the tone keeps
-            // steering ahead toward the taxiway and the honest "Off the runway.
-            // Stop and hold position." closure fires only once the aircraft is
-            // laterally clear of every corridor (UpdateArrivedRunwayClearing,
-            // same machinery as a landing-exit route that ends on pavement).
-            if (IsClearOfAllRunwayCorridors(lat, lon))
-            {
+            case Navigation.BacktrackHandoffAction.Vacated:
                 // Stop the tone BEFORE the state change. Taxiing with a null route returns from
                 // UpdatePosition before anything touches the tone, so a tone left sounding here
                 // never gets another heading-error update: it holds its last pan for as long as
@@ -3758,22 +3790,29 @@ public partial class TaxiGuidanceManager
                 // Say what state the pilot is now in. _route is null, so a status query answers
                 // "No route loaded." — which is true but reads as a fault unless they were told.
                 AnnounceInstruction("Runway vacated. No route set — use the taxi planner for a route to your stand.");
+                RolloutDiag($"Backtrack hand-off: vacated at {distM:F0} m from the connection node");
                 SetState(TaxiGuidanceState.Taxiing);
-            }
-            else
-            {
+                break;
+
+            case Navigation.BacktrackHandoffAction.ClearingAhead:
                 AnnounceInstruction("Taxiway reached. Continue ahead until clear of the runway.");
                 _arrivedRunwayClearing = true;
-                _arrivedClearingBearingDeg = NavigationCalculator.CalculateBearing(
-                    lat, lon, _backtrackConnectionLat, _backtrackConnectionLon);
+                _arrivedClearingBearingDeg = bearingToNode;
                 _arrivedClearingStartLat = 0.0;   // stamped on the first clearing frame
                 _arrivedClearingStartLon = 0.0;
                 _headingErrorInitialized = false;
                 _smoothedHeadingError = 0.0;
                 // The backtrack tone is still live — UpdateArrivedRunwayClearing
                 // resumes/drives it per frame; no re-Start needed.
+                RolloutDiag($"Backtrack hand-off: at the connection node ({distM:F0} m) still on pavement -> clearing phase");
                 SetState(TaxiGuidanceState.Arrived);
-            }
+                // MainForm stops the position feed on Arrived (its StateChanged handler runs inside
+                // SetState), and UpdateArrivedRunwayClearing is driven from that feed. Without this
+                // the clearing phase never received a frame and "Continue ahead until clear" was the
+                // last thing said (taxi-landing-port review, finding 3). Raised AFTER the state
+                // change so the restart is not undone by the handler's stop.
+                PositionStreamRequired?.Invoke(this, EventArgs.Empty);
+                break;
         }
     }
 
