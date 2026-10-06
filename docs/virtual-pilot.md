@@ -154,7 +154,7 @@ nothing new appears except what is listed as accepted.
    active." before "…exit taxiway C9") — `StartGuidance(announceStart: false)` at touchdown.
 2. **U-turns on the runway at the handoff: 41 → 1** (KPHL 27R K4, a data mismatch). The
    landing-exit anchor retries a route that starts backwards, points back on its first leg or
-   hairpins within 150 m (`LoadRoute`, see CLAUDE.md for every gate and why). Exits whose own path
+   hairpins within 150 m (`LoadRoute`, see [RTE-32] in `docs/invariants/taxi-routing.md` for every gate and why). Exits whose own path
    turns back are labelled "(sharp turn back)" in the list, warned at touchdown and not picked by
    default (`PathTurnsBack`). Route hairpins 272 → 106.
 3. **Destination hold on runway pavement** (EFHK 22R WD, KSLC 14): the stop moves back to the
@@ -248,14 +248,14 @@ scenario's old finding or a safer route: OIII 11L via B8 no longer drives onto 1
 hold; KPDX 03 via 4E no longer takes a 4.7 km detour to pass the painted point, and says so):**
 
 1. **Clearances that repeat a taxiway** — both readings built, the one that follows the clearance
-   taken unless it loops (see CLAUDE.md). OTBH 16L "A, C, A" 9.1 → 2.9 km, ZPPP 04L "A, B, A"
+   taken unless it loops (see [RTE-33] in `docs/invariants/taxi-routing.md`). OTBH 16L "A, C, A" 9.1 → 2.9 km, ZPPP 04L "A, B, A"
    6.2 → 3.9 km, EDDF/LEMD clearances the old router abandoned for shortest path now followed.
 2. **"Crossing runway X" for a hold line the route never goes past onto a runway** → "Passing the
    runway X hold line" (KDTW F, an approach-area line).
 3. A holding-point route's summary read "Route to  via …" (the pinned route lost its name).
 4. Water runways: "runway 04W" parsed as 04.
 
-**Measured and rejected** (details in CLAUDE.md): a dead-ahead exception to the off-route tracking
+**Measured and rejected** (details in [HLD-15], `docs/invariants/runway-holds.md`): a dead-ahead exception to the off-route tracking
 silence (204, then 148 false warnings), a cost on taxiing along runways, pinning intersection
 departures through the picked taxiway, stopping at a picked painted line behind the navdata hold.
 

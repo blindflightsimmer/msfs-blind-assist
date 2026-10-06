@@ -155,7 +155,8 @@ Each area's rules load automatically when Claude reads its code; their full text
 | [development.md](docs/development.md) | Dependencies, key files, build output paths and traps | — |
 | [tooling.md](docs/tooling.md) | Live debugging over the Coherent debugger (`:19999`), the probes in `tools/`, crash diagnosis | — |
 | [troubleshooting-playbook.md](docs/troubleshooting-playbook.md) | A control "doesn't work": read this FIRST, before calling it broken or unsettable | troubleshooting |
-| [taxi-guidance.md](docs/taxi-guidance.md) | Taxi guidance, runway holds, landing exits and rollout, ground traffic, surroundings, takeoff assist | taxi-routing, runway-holds, taxi-steering, landing-exits, landing-rollout, ground-traffic, surroundings, taxi-augmentation, takeoff-and-callouts |
+| [taxi-guidance.md](docs/taxi-guidance.md) | Taxi guidance, runway holds, landing exits and rollout, ground traffic, surroundings, takeoff assist | taxi-routing, runway-holds, taxi-steering, landing-exits, exit-geometry, landing-rollout, runway-vacate, runway-backtrack, runway-entry, ground-traffic, surroundings, taxi-augmentation, takeoff-and-callouts |
+| [virtual-pilot.md](docs/virtual-pilot.md) | Changing landing-rollout, exit or taxi guidance behaviour: measure it first with simulated landings, taxis and wrong turns through the real guidance code | virtual-pilot |
 | [gsx.md](docs/gsx.md) | GSX gate selection and Remote API, docking guidance, the metres/feet toggle | gsx-remote, gsx-stands-docking |
 | [weather.md](docs/weather.md) | ActiveSky, the weather radar, METAR readouts, weather announcements | weather |
 | [sayintentions.md](docs/sayintentions.md) | SayIntentions: clearance parsing, the taxi-route import, readouts | sayintentions-clearance, sayintentions-import, sayintentions-readouts |

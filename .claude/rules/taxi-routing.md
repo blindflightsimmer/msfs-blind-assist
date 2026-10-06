@@ -30,6 +30,10 @@ paths:
   - "tests/MSFSBlindAssist.Tests/**/*RunwayReachGate*.cs"
   - "MSFSBlindAssist/Services/TaxiGuidanceManager.Announcements.cs"
   - "MSFSBlindAssist/Services/TaxiGuidanceManager.MathUtils.cs"
+  - "tests/MSFSBlindAssist.Tests/**/*RepeatedTaxiwayClearance*.cs"
+  - "tests/MSFSBlindAssist.Tests/**/*TaxiGapBridge*.cs"
+  - "tests/MSFSBlindAssist.Tests/**/*CrossComponentRoute*.cs"
+  - "tests/MSFSBlindAssist.Tests/**/*RouteStartGate*.cs"
 ---
 # Taxi routing rules
 
@@ -64,6 +68,20 @@ Loaded when Claude reads matching code. Background: docs/taxi-guidance.md. Full 
 - [RTE-27] The start grace window (`START_WARNING_CHATTER_GRACE_SEC`, 12.5 s) follows either start warning: turn, destination-ahead and curve callouts wait it out when safe (`StartWarningChatterGate`), the taxiway-change callout defers (`TaxiwayChangeGate`); never make any of them skip, never gate hold-short or runway-crossing callouts on it. Full: docs/invariants/taxi-routing.md#rte-27
 - [RTE-28] Reachability sentences name a stand by its identifier only (the label up to its first spaced dash, `RouteReachabilityMessages.SpokenDestinationName`), never the whole label. Full: docs/invariants/taxi-routing.md#rte-28
 - [RTE-29] A refused `LoadRoute` must put back the destination, lineup and graph state it had already overwritten (`LoadRefusalRollback`), so a refusal mid-taxi leaves the route being flown untouched; the older failure returns do not roll back. Full: docs/invariants/taxi-routing.md#rte-29
+- [RTE-30] A landing-exit handoff route that DETOURS (> 3× and > 500 m over the straight line, `RouteDetoursFromExit`) is retried from every exit-taxiway candidate, keeping the shortest that is not itself a detour. Full: docs/invariants/taxi-routing.md#rte-30
+- [RTE-31] The stand list is ordered by TAXI distance (`TaxiAssistForm.GetGateTaxiDistances` → `TaxiRouter.ComputeGraphDistancesFrom`, cached per airport + anchor), never straight-line; unreachable stands rank last by a FINITE offset; with no anchor the old order stands. Full: docs/invariants/taxi-routing.md#rte-31
+- [RTE-32] A landing-exit route never opens with an avoidable U-turn: `LoadRoute`'s backwards-start retry (`RouteStartsBackwards`, `FirstLegPointsBack`, `RouteHairpinsEarly`) keeps every measured gate; touchdown's `StartGuidance(announceStart: false)` stays silent. Full: docs/invariants/taxi-routing.md#rte-32
+- [RTE-33] A clearance returning to a taxiway it just left ("A, C, A") is routed plain AND honoured (`FindConstrainedPathCore(honourRepeats)`), never "shorter wins"; the branch-off terminal rule never fires once on the destination runway (`IsOnDestinationRunway`). Full: docs/invariants/taxi-routing.md#rte-33
+- [RTE-34] `TaxiGraph.BridgeSameNamedGaps` joins two same-named dead-end chains across a ≤ 40 m gap only through ALL six gates; never loosen one without re-running the census and the destination sweep, diffed occurrence-keyed. Full: docs/invariants/taxi-routing.md#rte-34
+- [RTE-35] Cross-component route notes say WHICH side is cut off (`AircraftIsOnTheSmallerIsland`); refusing an unmapped first leg across runway pavement stays `RouteReachability.CheckFirstLeg`'s job. Full: docs/invariants/taxi-routing.md#rte-35
 
 Mirrored from sayintentions-import.md (it governs `TaxiGraph.GetNamedEdges`; change it there and here together):
 - [SI-20] The snapper takes an already-built `TaxiGraph` (`GetNamedEdges()`) and never fetches names itself; `GetNamedEdges` must stay sorted on an INTRINSIC key (name + endpoint coordinates), never node id. Full: docs/invariants/sayintentions-import.md#si-20
+
+Mirrored from gsx-stands-docking.md (they govern the stand names and parking pass in TaxiGraph.cs, which that file no longer globs whole; change them there and here together):
+- [DCK-14] Any cache holding STAND NAMES must key on `GateDataSource.GetGateListVersion`'s token as well as the ICAO, compared through `ShouldRebuildGateList`, or a graph built before GSX published keeps navdata's letters. Full: docs/invariants/gsx-stands-docking.md#dck-14
+- [DCK-40] A stand has ONE name app-wide: `GetSelectableGates` to ACT on a stand, `GetNamedSpots` to name one and for `TaxiGraph.Build`; never build a pilot-heard list from `GetParkingSpots`, nor call the supplier per position update (more: see full). Full: docs/invariants/gsx-stands-docking.md#dck-40
+- [DCK-41] Never feed `TaxiGraph.Build` a spot list other than navdata's own set: its parking pass sets `TaxiNodeType.Parking` and can MOVE A HOLD-SHORT; the one exception is a runway-rows-only build with no parking. Full: docs/invariants/gsx-stands-docking.md#dck-41
+
+Mirrored from runway-holds.md (the form speaks the warning; change it there and here together):
+- [HLD-17] A runway entered or crossed with no safe stop must be SAID (`DescribeUnheldRunways`), published as `LastRouteStartWarning` and spoken in the form's ONE standstill utterance, never only in the summary; a stop already passed is never reported missing. Full: docs/invariants/runway-holds.md#hld-17

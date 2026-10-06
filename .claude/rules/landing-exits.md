@@ -18,6 +18,9 @@ paths:
   - "tests/MSFSBlindAssist.Tests/**/*LandingAssistRunwaySwitch*.cs"
   - "tests/MSFSBlindAssist.Tests/**/*RunwayFrame*.cs"
   - "tests/MSFSBlindAssist.Tests/**/*EarlyVacateExitMatcher*.cs"
+  - "MSFSBlindAssist/Navigation/ExitOwnSide.cs"
+  - "tests/MSFSBlindAssist.Tests/**/*ExitOwnSide*.cs"
+  - "tests/MSFSBlindAssist.Tests/**/*ExitTurnBack*.cs"
 ---
 # Landing exits: measurement, planner and re-plan rules
 
@@ -30,6 +33,9 @@ Loaded when Claude reads matching code. Background: docs/taxi-guidance.md. Full 
 - [EXIT-5] Log the exit LIST itself, not just its count, at `BeginLandingRollout` and at the no-exit verdict (`DescribeExits`), or a wrong verdict cannot be traced to the list or the scan. Full: docs/invariants/landing-exits.md#exit-5
 - [EXIT-6] Measure every exit by its whole branch (`ExitBranch`, via `TaxiGraph.RefineExitByBranch`), never the first named edge; refinement never relocates an exit or changes WHICH exits exist, its one move is a turnaround's forward-sibling swap; re-run `tools/LandingExitSweep` (more: see full). Full: docs/invariants/landing-exits.md#exit-6
 - [EXIT-7] The planner never pre-selects a turnaround while a forward exit exists (`LandingExitDefault`); the online name refresh restores the pick by node, else the nearest same-named exit of the same kind (`RestoreIndex`), never the name's first entry. Full: docs/invariants/landing-exits.md#exit-7
+- [EXIT-8] The landing-exit list collapses same-turnoff duplicates for DISPLAY ONLY (`LandingExitDisplayList.Collapse` in `LandingExitForm`); never move the collapse into `GetLandingExits`, whose siblings the rollout reads through `_rolloutAllExits`. Full: docs/invariants/landing-exits.md#exit-8
+- [EXIT-9] "(sharp turn back)" comes from `LandingExitDestination.RequiresTurnBack` → `PathTurnsBack` (any >120° leg or turn in the path's first 150 m), never the first leg alone; `CorrectBackwardsStart` deliberately keeps the first-leg test. Full: docs/invariants/landing-exits.md#exit-9
+- [EXIT-10] A landing-exit route starts on the exit's OWN SIDE of the landed runway (`ExitOwnSide`, via `LoadRoute`'s anchor and its backwards-start retry, `ExitOwnSideFilter`); the re-crossing guard is a backstop, not the fix; with no qualifying node the unfiltered pick stands. Full: docs/invariants/landing-exits.md#exit-10
 
 Mirrored from landing-rollout.md (they govern exit and tolerance code in TaxiGraph.cs and ExitBranch.cs; change them there and here together):
 - [ROL-11] The implicit-exit shallow-angle override needs BOTH guards together (apron forward-direction AND `apronAngle > currentAngleFwd`); dropping either regresses the exit bearing. Full: docs/invariants/landing-rollout.md#rol-11

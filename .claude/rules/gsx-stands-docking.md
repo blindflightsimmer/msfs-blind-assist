@@ -12,7 +12,6 @@ paths:
   - "MSFSBlindAssist/Services/GateSearchFilter.cs"
   - "tests/MSFSBlindAssist.Tests/**/*Docking*.cs"
   - "MSFSBlindAssist/Services/Gsx/Remote/GsxRemoteParkingReader.cs"
-  - "MSFSBlindAssist/Navigation/TaxiGraph.cs"
   - "MSFSBlindAssist/Services/Gsx/Remote/GsxConcourseLetterFiller.cs"
   - "MSFSBlindAssist/Services/Gsx/Remote/GsxTerminalDisambiguator.cs"
   - "tests/MSFSBlindAssist.Tests/**/*DistanceFormatter*.cs"
@@ -72,3 +71,4 @@ Loaded when Claude reads matching code. Background: docs/gsx.md. Full text of ea
 - [DCK-39] The Remote API publishes no docking stop position, so stop geometry still comes from GSX's `.ini`/`.py` profiles; never source the stop from the API's `lat`/`lon`, far from the real VDGS stop point. Full: docs/invariants/gsx-stands-docking.md#dck-39
 - [DCK-40] A stand has ONE name app-wide: `GetSelectableGates` to ACT on a stand, `GetNamedSpots` to name one and for `TaxiGraph.Build`; never build a pilot-heard list from `GetParkingSpots`, nor call the supplier per position update (more: see full). Full: docs/invariants/gsx-stands-docking.md#dck-40
 - [DCK-41] Never feed `TaxiGraph.Build` a spot list other than navdata's own set: its parking pass sets `TaxiNodeType.Parking` and can MOVE A HOLD-SHORT; the one exception is a runway-rows-only build with no parking. Full: docs/invariants/gsx-stands-docking.md#dck-41
+- [DCK-42] The stand fit filter (`ParkingSpot.FitsAircraft`) prefers GSX's stated `MaxWingspanMeters` whatever the source, treats a GSX spot without it as fitting, and gives both size tests `FitToleranceFraction` (2 %); never widen it past the next ICAO code letter. Full: docs/invariants/gsx-stands-docking.md#dck-42
