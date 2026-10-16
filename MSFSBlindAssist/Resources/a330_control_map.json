@@ -1,0 +1,5603 @@
+{
+ "version": 1,
+ "sections": [
+  {
+   "name": "Overhead",
+   "panels": [
+    "ADIRS",
+    "Flight Controls",
+    "Fuel",
+    "Electrical",
+    "Hydraulics",
+    "Engine 1 Fire",
+    "Engine 2 Fire",
+    "APU Fire",
+    "Cargo Smoke",
+    "APU",
+    "Bleed Air",
+    "Air Conditioning",
+    "Pressurisation",
+    "Ventilation",
+    "Anti-Ice",
+    "Exterior Lights",
+    "Signs",
+    "Interior Lights",
+    "Wipers",
+    "Engine Start",
+    "Oxygen",
+    "Calls",
+    "Recorders"
+   ]
+  },
+  {
+   "name": "Glareshield",
+   "panels": [
+    "Warnings",
+    "Captain EFIS",
+    "First officer EFIS"
+   ]
+  },
+  {
+   "name": "Main panel",
+   "panels": [
+    "Brakes",
+    "GPWS and Terrain",
+    "Instrument Switching",
+    "Clocks",
+    "Standby Instrument",
+    "Display Brightness"
+   ]
+  },
+  {
+   "name": "Pedestal",
+   "panels": [
+    "Engine Masters",
+    "ECAM",
+    "Captain Radio Panel",
+    "Captain Audio",
+    "Transponder and TCAS",
+    "Weather Radar"
+   ]
+  }
+ ],
+ "controls": [
+  {
+   "key": "A330_IRS1_MODE",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IRS 1 mode",
+   "kind": "select",
+   "event": "AIRLINER_ADIRS1_MODE",
+   "mode": "set",
+   "read": "INI_IRS1_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Nav"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Attitude"
+    }
+   ]
+  },
+  {
+   "key": "A330_IRS2_MODE",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IRS 2 mode",
+   "kind": "select",
+   "event": "AIRLINER_ADIRS2_MODE",
+   "mode": "set",
+   "read": "INI_IRS2_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Nav"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Attitude"
+    }
+   ]
+  },
+  {
+   "key": "A330_IRS3_MODE",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IRS 3 mode",
+   "kind": "select",
+   "event": "AIRLINER_ADIRS3_MODE",
+   "mode": "set",
+   "read": "INI_IRS3_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Nav"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Attitude"
+    }
+   ]
+  },
+  {
+   "key": "A330_IR1",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IR 1",
+   "kind": "select",
+   "event": "AIRLINER_IR1",
+   "mode": "set",
+   "read": "INI_IR1_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_IR1_FAULT",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A330_IR2",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IR 2",
+   "kind": "select",
+   "event": "AIRLINER_IR2",
+   "mode": "set",
+   "read": "INI_IR2_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_IR2_FAULT",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A330_IR3",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IR 3",
+   "kind": "select",
+   "event": "AIRLINER_IR3",
+   "mode": "set",
+   "read": "INI_IR3_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_IR3_FAULT",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A330_ADR1",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "ADR 1",
+   "kind": "select",
+   "event": "AIRLINER_ADIR1",
+   "mode": "set",
+   "read": "INI_ADR1_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_ADR2",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "ADR 2",
+   "kind": "select",
+   "event": "AIRLINER_ADIR2",
+   "mode": "set",
+   "read": "INI_ADR2_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_ADR3",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "ADR 3",
+   "kind": "select",
+   "event": "AIRLINER_ADIR3",
+   "mode": "set",
+   "read": "INI_ADR3_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_IRS1_ALIGNED",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IRS 1 aligned",
+   "kind": "status",
+   "event": null,
+   "mode": "set",
+   "read": "INI_IRS1_ALIGNED",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "No"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Yes"
+    }
+   ]
+  },
+  {
+   "key": "A330_IRS2_ALIGNED",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IRS 2 aligned",
+   "kind": "status",
+   "event": null,
+   "mode": "set",
+   "read": "INI_IRS2_ALIGNED",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "No"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Yes"
+    }
+   ]
+  },
+  {
+   "key": "A330_IRS3_ALIGNED",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IRS 3 aligned",
+   "kind": "status",
+   "event": null,
+   "mode": "set",
+   "read": "INI_IRS3_ALIGNED",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "No"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Yes"
+    }
+   ]
+  },
+  {
+   "key": "A330_PRIM1",
+   "section": "Overhead",
+   "panel": "Flight Controls",
+   "label": "PRIM 1",
+   "kind": "select",
+   "event": "AIRLINER_FLTCTL_PRIM1",
+   "mode": "set",
+   "read": "INI_PRIM1_STATUS",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_PRIM2",
+   "section": "Overhead",
+   "panel": "Flight Controls",
+   "label": "PRIM 2",
+   "kind": "select",
+   "event": "AIRLINER_FTL_CTL_PRIM2",
+   "mode": "set",
+   "read": "INI_PRIM2_STATUS",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_PRIM3",
+   "section": "Overhead",
+   "panel": "Flight Controls",
+   "label": "PRIM 3",
+   "kind": "select",
+   "event": "AIRLINER_FTL_CTL_PRIM3",
+   "mode": "set",
+   "read": "INI_PRIM3_STATUS",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_SEC1",
+   "section": "Overhead",
+   "panel": "Flight Controls",
+   "label": "SEC 1",
+   "kind": "select",
+   "event": "AIRLINER_FLTCTL_SEC1",
+   "mode": "set",
+   "read": "INI_SEC1_STATUS",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_SEC2",
+   "section": "Overhead",
+   "panel": "Flight Controls",
+   "label": "SEC 2",
+   "kind": "select",
+   "event": "AIRLINER_FTL_CTL_SEC2",
+   "mode": "set",
+   "read": "INI_SEC2_STATUS",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_FUEL1L1",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Left pump 1",
+   "kind": "select",
+   "event": "AIRLINER_FUEL_ENG1_L1",
+   "mode": "set",
+   "read": "INI_OUTER_TANK_LEFT",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_FUEL1L2",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Left pump 2",
+   "kind": "select",
+   "event": "AIRLINER_FUEL_ENG1_L2",
+   "mode": "set",
+   "read": "INI_INNER_TANK_LEFT",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_FUEL1LSTBY",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Left standby pump",
+   "kind": "select",
+   "event": "AIRLINER_FUEL_ENG1_LSTBY",
+   "mode": "set",
+   "read": "INI_OUTER_LEFT_STANDBY_PUMP",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_FUEL2R1",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Right pump 1",
+   "kind": "select",
+   "event": "AIRLINER_FUEL_ENG2_R1",
+   "mode": "set",
+   "read": "INI_INNER_TANK_RIGHT",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_FUEL2R2",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Right pump 2",
+   "kind": "select",
+   "event": "AIRLINER_FUEL_ENG2_R2",
+   "mode": "set",
+   "read": "INI_OUTER_TANK_RIGHT",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_FUEL2RSTBY",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Right standby pump",
+   "kind": "select",
+   "event": "AIRLINER_FUEL_ENG2_RSTBY",
+   "mode": "set",
+   "read": "INI_OUTER_RIGHT_STANDBY_PUMP",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_FUEL_CTR_L",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Centre tank left pump",
+   "kind": "select",
+   "event": "AIRLINER_FUEL_CTR_L",
+   "mode": "set",
+   "read": "B:AIRLINER_FUEL_CTR_L",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_FUEL_CTR_R",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Centre tank right pump",
+   "kind": "select",
+   "event": "AIRLINER_FUEL_CTR_R",
+   "mode": "set",
+   "read": "B:AIRLINER_FUEL_CTR_R",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_FUEL_CTR_XFR",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Centre tank transfer",
+   "kind": "select",
+   "event": "AIRLINER_FUEL_CTR_XFR",
+   "mode": "set",
+   "read": "B:AIRLINER_FUEL_CTR_XFR",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_FUEL_XFEED",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Crossfeed",
+   "kind": "select",
+   "event": "AIRLINER_FUEL_XFEED",
+   "mode": "set",
+   "read": "INI_XFEED_TRANSFER_ON",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Shut"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_FUEL_TRIM_MODE",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Trim tank mode",
+   "kind": "select",
+   "event": "AIRLINER_FUEL_MODE",
+   "mode": "set",
+   "read": "INI_TRIM_TANK_MODE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Forward"
+    }
+   ]
+  },
+  {
+   "key": "A330_FUEL_TK_XFR_COVER",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Outer tank transfer guard",
+   "kind": "select",
+   "event": "AIRLINER_FUEL_TK_XFR_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_FUEL_TK_XFR_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_FUEL_TK_XFR",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Outer tank transfer",
+   "kind": "select",
+   "event": "AIRLINER_FUEL_TK_XFR",
+   "mode": "set",
+   "read": "INI_FUEL_XFR_BUTTON",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_INR_TK_L_COVER",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Inner tank left split guard",
+   "kind": "select",
+   "event": "AIRLINER_INR_TK_L_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_INR_TK_L_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_INR_TK_L",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Inner tank left split",
+   "kind": "select",
+   "event": "AIRLINER_INR_TK_L",
+   "mode": "set",
+   "read": "INI_INR_TK_L_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_INR_TK_R_COVER",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Inner tank right split guard",
+   "kind": "select",
+   "event": "AIRLINER_INR_TK_R_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_INR_TK_R_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_INR_TK_R",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Inner tank right split",
+   "kind": "select",
+   "event": "AIRLINER_INR_TK_R",
+   "mode": "set",
+   "read": "INI_INR_TK_R_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_BAT1",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Battery 1",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_BAT1",
+   "mode": "set",
+   "read": "INI_OVHD_ELEC_BAT_1_PB_IS_AUTO",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_BAT2",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Battery 2",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_BAT2",
+   "mode": "set",
+   "read": "INI_OVHD_ELEC_BAT_2_PB_IS_AUTO",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_APU_BAT",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "APU battery",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_APU_BAT",
+   "mode": "set",
+   "read": "INI_OVHD_ELEC_BAT_3_PB_IS_AUTO",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_BAT_DISPLAY",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Battery voltage display",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_BATT_TOGGLE",
+   "mode": "set",
+   "read": "INI_BATTERY_OVERHEAD_SELECTOR",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Battery 1"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Battery 2"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "APU battery"
+    }
+   ]
+  },
+  {
+   "key": "A330_GEN1",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Generator 1",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_GEN1",
+   "mode": "set",
+   "read": "INI_ENG1_GEN_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_GEN2",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Generator 2",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_GEN2",
+   "mode": "set",
+   "read": "INI_ENG2_GEN_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_APU_GEN",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "APU generator",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_APU_GEN",
+   "mode": "set",
+   "read": "INI_APU_GEN_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_EXT_A",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "External power A",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_EXTA",
+   "mode": "set",
+   "read": "INI_GEN_EXT_A_ONLINE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_GPU_AVAIL",
+     "legend": "external power available"
+    }
+   ]
+  },
+  {
+   "key": "A330_EXT_B",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "External power B",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_EXTB",
+   "mode": "set",
+   "read": "INI_GEN_EXT_B_ONLINE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_BUS_TIE",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Bus tie",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_BUS_TIE",
+   "mode": "set",
+   "read": "INI_BUS_TIE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_AC_ESS_COVER",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "AC essential feed guard",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_AC_ESS_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_ELEC_AC_ESS_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_AC_ESS",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "AC essential feed",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_AC_ESS",
+   "mode": "set",
+   "read": "INI_AC_ESS_FEED",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Normal"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Alternate"
+    }
+   ]
+  },
+  {
+   "key": "A330_GALLEY",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Galley",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_GALLEY",
+   "mode": "set",
+   "read": "INI_GALLEY_CAB",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_COMMERCIAL",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Commercial",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_COMMERCIAL",
+   "mode": "set",
+   "read": "INI_COMMERCIAL_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_IDG1_COVER",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "IDG 1 disconnect guard",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_IDG1_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_ELEC_IDG1_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_IDG1",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "IDG 1 disconnect",
+   "kind": "button",
+   "event": "AIRLINER_ELEC_IDG1",
+   "mode": "push",
+   "lamps": [
+    {
+     "read": "INI_IDG1_FAULT",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A330_IDG2_COVER",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "IDG 2 disconnect guard",
+   "kind": "select",
+   "event": "AIRLINER_ELEC_IDG2_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_ELEC_IDG2_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_IDG2",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "IDG 2 disconnect",
+   "kind": "button",
+   "event": "AIRLINER_ELEC_IDG2",
+   "mode": "push",
+   "lamps": [
+    {
+     "read": "INI_IDG2_FAULT",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_GREEN_COVER",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Green engine 1 pump guard",
+   "kind": "select",
+   "event": "AIRLINER_HYD_GREEN_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_HYD_GREEN_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_GREEN",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Green engine 1 pump",
+   "kind": "select",
+   "event": "AIRLINER_HYD_GREEN",
+   "mode": "set",
+   "read": "INI_ENG1_GREEN_PUMP_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_GREEN_ENG2_COVER",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Green engine 2 pump guard",
+   "kind": "select",
+   "event": "AIRLINER_HYD_GREEN_ENG2_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_HYD_GREEN_ENG2_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_GREEN_ENG2",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Green engine 2 pump",
+   "kind": "select",
+   "event": "AIRLINER_HYD_GREEN_ENG2",
+   "mode": "set",
+   "read": "INI_ENG2_GREEN_PUMP_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_BLUE_COVER",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Blue engine 1 pump guard",
+   "kind": "select",
+   "event": "AIRLINER_HYD_BLUE_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_HYD_BLUE_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_BLUE",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Blue engine 1 pump",
+   "kind": "select",
+   "event": "AIRLINER_HYD_BLUE",
+   "mode": "set",
+   "read": "INI_ENG1_BLUE_PUMP_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_YELLOW_COVER",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Yellow engine 2 pump guard",
+   "kind": "select",
+   "event": "AIRLINER_HYD_YELLOW_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_HYD_YELLOW_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_YELLOW",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Yellow engine 2 pump",
+   "kind": "select",
+   "event": "AIRLINER_HYD_YELLOW",
+   "mode": "set",
+   "read": "INI_ENG2_YELLOW_PUMP_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_GREEN_ELEC_OFF",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Green electric pump",
+   "kind": "select",
+   "event": "AIRLINER_HYD_GREEN_OFF",
+   "mode": "set",
+   "read": "INI_ENG1_GREEN_ELEC_PUMP_LOWER_PB",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_GREEN_ELEC_COVER",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Green electric pump on guard",
+   "kind": "select",
+   "event": "AIRLINER_HYD_GREEN_ELEC_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_HYD_GREEN_ELEC_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_GREEN_ELEC_ON",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Green electric pump on",
+   "kind": "select",
+   "event": "AIRLINER_HYD_GREEN_ELEC",
+   "mode": "set",
+   "read": "INI_ENG1_GREEN_ELEC_PUMP_PB",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_BLUE_ELEC_OFF",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Blue electric pump",
+   "kind": "select",
+   "event": "AIRLINER_HYD_BLUE_OFF",
+   "mode": "set",
+   "read": "INI_ENG1_BLUE_ELEC_PUMP_LOWER_PB",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_BLUE_ELEC_COVER",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Blue electric pump on guard",
+   "kind": "select",
+   "event": "AIRLINER_HYD_BLUE_ELEC_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_HYD_BLUE_ELEC_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_BLUE_ELEC_ON",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Blue electric pump on",
+   "kind": "select",
+   "event": "AIRLINER_HYD_BLUE_ELEC",
+   "mode": "set",
+   "read": "INI_ENG1_BLUE_ELEC_PUMP_PB",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_YELLOW_ELEC_OFF",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Yellow electric pump",
+   "kind": "select",
+   "event": "AIRLINER_HYD_YELLOW_OFF",
+   "mode": "set",
+   "read": "INI_ENG2_YELLOW_ELEC_PUMP_LOWER_PB",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_YELLOW_ELEC_COVER",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Yellow electric pump on guard",
+   "kind": "select",
+   "event": "AIRLINER_HYD_YELLOW_ELEC_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_HYD_YELLOW_ELEC_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_HYD_YELLOW_ELEC_ON",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Yellow electric pump on",
+   "kind": "select",
+   "event": "AIRLINER_HYD_YELLOW_ELEC",
+   "mode": "set",
+   "read": "INI_ENG2_YELLOW_ELEC_PUMP_PB",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_RAT_COVER",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "RAT manual on guard",
+   "kind": "select",
+   "event": "AIRLINER_HYD_RAT_MAN_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_HYD_RAT_MAN_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_RAT",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "RAT manual on",
+   "kind": "button",
+   "event": "AIRLINER_HYD_RAT_MAN",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ENG1_FIRE_COVER",
+   "section": "Overhead",
+   "panel": "Engine 1 Fire",
+   "label": "Engine 1 fire handle guard",
+   "kind": "select",
+   "event": "AIRLINER_ENG1_FIRE_HANDLE_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_ENG1_FIRE_HANDLE_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_ENG1_FIRE",
+   "section": "Overhead",
+   "panel": "Engine 1 Fire",
+   "label": "Engine 1 fire handle",
+   "kind": "select",
+   "event": "AIRLINER_ENG1_FIRE_HANDLE",
+   "mode": "set",
+   "read": "INI_FIRE_HANDLE_ENG1",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Normal"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Pulled"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_ENG1_IS_FIRE",
+     "legend": "fire"
+    }
+   ]
+  },
+  {
+   "key": "A330_ENG1_AGENT1",
+   "section": "Overhead",
+   "panel": "Engine 1 Fire",
+   "label": "Engine 1 agent 1",
+   "kind": "button",
+   "event": "AIRLINER_ENG1_AGENT1",
+   "mode": "push",
+   "lamps": [
+    {
+     "read": "INI_ENG1_AGENT1_SQUIB",
+     "legend": "squib"
+    },
+    {
+     "read": "INI_ENG1_AGENT1_DISCH",
+     "legend": "discharged"
+    }
+   ]
+  },
+  {
+   "key": "A330_ENG1_AGENT2",
+   "section": "Overhead",
+   "panel": "Engine 1 Fire",
+   "label": "Engine 1 agent 2",
+   "kind": "button",
+   "event": "AIRLINER_ENG1_AGENT2",
+   "mode": "push",
+   "lamps": [
+    {
+     "read": "INI_ENG1_AGENT2_SQUIB",
+     "legend": "squib"
+    },
+    {
+     "read": "INI_ENG1_AGENT2_DISCH",
+     "legend": "discharged"
+    }
+   ]
+  },
+  {
+   "key": "A330_ENG2_FIRE_COVER",
+   "section": "Overhead",
+   "panel": "Engine 2 Fire",
+   "label": "Engine 2 fire handle guard",
+   "kind": "select",
+   "event": "AIRLINER_ENG2_FIRE_HANDLE_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_ENG2_FIRE_HANDLE_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_ENG2_FIRE",
+   "section": "Overhead",
+   "panel": "Engine 2 Fire",
+   "label": "Engine 2 fire handle",
+   "kind": "select",
+   "event": "AIRLINER_ENG2_FIRE_HANDLE",
+   "mode": "set",
+   "read": "INI_FIRE_HANDLE_ENG2",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Normal"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Pulled"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_ENG2_IS_FIRE",
+     "legend": "fire"
+    }
+   ]
+  },
+  {
+   "key": "A330_ENG2_AGENT1",
+   "section": "Overhead",
+   "panel": "Engine 2 Fire",
+   "label": "Engine 2 agent 1",
+   "kind": "button",
+   "event": "AIRLINER_ENG2_AGENT1",
+   "mode": "push",
+   "lamps": [
+    {
+     "read": "INI_ENG2_AGENT1_SQUIB",
+     "legend": "squib"
+    },
+    {
+     "read": "INI_ENG2_AGENT1_DISCH",
+     "legend": "discharged"
+    }
+   ]
+  },
+  {
+   "key": "A330_ENG2_AGENT2",
+   "section": "Overhead",
+   "panel": "Engine 2 Fire",
+   "label": "Engine 2 agent 2",
+   "kind": "button",
+   "event": "AIRLINER_ENG2_AGENT2",
+   "mode": "push",
+   "lamps": [
+    {
+     "read": "INI_ENG2_AGENT2_SQUIB",
+     "legend": "squib"
+    },
+    {
+     "read": "INI_ENG2_AGENT2_DISCH",
+     "legend": "discharged"
+    }
+   ]
+  },
+  {
+   "key": "A330_ENG_FIRE_TEST",
+   "section": "Overhead",
+   "panel": "Engine 1 Fire",
+   "label": "Engine fire test",
+   "kind": "button",
+   "event": "AIRLINER_ENGINE_FIRE_TEST",
+   "mode": "push",
+   "holdMs": 5000
+  },
+  {
+   "key": "A330_APU_FIRE_COVER",
+   "section": "Overhead",
+   "panel": "APU Fire",
+   "label": "APU fire handle guard",
+   "kind": "select",
+   "event": "AIRLINER_APU_FIRE_HANDLE_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_APU_FIRE_HANDLE_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_APU_FIRE",
+   "section": "Overhead",
+   "panel": "APU Fire",
+   "label": "APU fire handle",
+   "kind": "select",
+   "event": "AIRLINER_APU_FIRE_HANDLE",
+   "mode": "set",
+   "read": "INI_FIRE_HANDLE_APU",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Normal"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Pulled"
+    }
+   ]
+  },
+  {
+   "key": "A330_APU_AGENT",
+   "section": "Overhead",
+   "panel": "APU Fire",
+   "label": "APU agent",
+   "kind": "button",
+   "event": "AIRLINER_APU_AGENT",
+   "mode": "push",
+   "lamps": [
+    {
+     "read": "INI_APU_SQUIB",
+     "legend": "squib"
+    },
+    {
+     "read": "INI_APU_DISCH",
+     "legend": "discharged"
+    }
+   ]
+  },
+  {
+   "key": "A330_APU_FIRE_TEST",
+   "section": "Overhead",
+   "panel": "APU Fire",
+   "label": "APU fire test",
+   "kind": "button",
+   "event": "AIRLINER_APU_AGENT_TEST",
+   "mode": "push",
+   "holdMs": 5000
+  },
+  {
+   "key": "A330_CARGO_SMOKE_TEST",
+   "section": "Overhead",
+   "panel": "Cargo Smoke",
+   "label": "Cargo smoke test",
+   "kind": "button",
+   "event": "AIRLINER_CARGO_SMOKE_TEST",
+   "mode": "push",
+   "holdMs": 5000
+  },
+  {
+   "key": "A330_FWD_CARGO_AGENT_COVER",
+   "section": "Overhead",
+   "panel": "Cargo Smoke",
+   "label": "Forward cargo agent guard",
+   "kind": "select",
+   "event": "AIRLINER_FWD_AGENT_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_FWD_AGENT_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_FWD_CARGO_AGENT",
+   "section": "Overhead",
+   "panel": "Cargo Smoke",
+   "label": "Forward cargo agent",
+   "kind": "button",
+   "event": "AIRLINER_FWD_AGENT",
+   "mode": "push"
+  },
+  {
+   "key": "A330_AFT_CARGO_AGENT_COVER",
+   "section": "Overhead",
+   "panel": "Cargo Smoke",
+   "label": "Aft cargo agent guard",
+   "kind": "select",
+   "event": "AIRLINER_AFT_AGENT_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_AFT_AGENT_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_AFT_CARGO_AGENT",
+   "section": "Overhead",
+   "panel": "Cargo Smoke",
+   "label": "Aft cargo agent",
+   "kind": "button",
+   "event": "AIRLINER_AFT_AGENT",
+   "mode": "push"
+  },
+  {
+   "key": "A330_FWD_ISO",
+   "section": "Overhead",
+   "panel": "Cargo Smoke",
+   "label": "Forward cargo isolation valve",
+   "kind": "select",
+   "event": "AIRLINER_FWD_ISO_VALVE",
+   "mode": "set",
+   "read": "B:AIRLINER_FWD_ISO_VALVE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Shut"
+    }
+   ]
+  },
+  {
+   "key": "A330_AFT_ISO",
+   "section": "Overhead",
+   "panel": "Cargo Smoke",
+   "label": "Aft cargo isolation valve",
+   "kind": "select",
+   "event": "AIRLINER_AFT_ISO_VALVE",
+   "mode": "set",
+   "read": "B:AIRLINER_AFT_ISO_VALVE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Shut"
+    }
+   ]
+  },
+  {
+   "key": "A330_BULK_ISO",
+   "section": "Overhead",
+   "panel": "Cargo Smoke",
+   "label": "Bulk cargo isolation valve",
+   "kind": "select",
+   "event": "AIRLINER_BULK_ISO_VALVE",
+   "mode": "set",
+   "read": "INI_BULK_ISOL_VALVE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Shut"
+    }
+   ]
+  },
+  {
+   "key": "A330_APU_MASTER",
+   "section": "Overhead",
+   "panel": "APU",
+   "label": "APU master",
+   "kind": "select",
+   "event": "AIRLINER_APU_MASTER",
+   "mode": "set",
+   "read": "INI_APU_MASTER_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_APU_MASTER_SWITCH_FAULT",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A330_APU_START",
+   "section": "Overhead",
+   "panel": "APU",
+   "label": "APU start",
+   "kind": "button",
+   "event": "AIRLINER_APU_START",
+   "mode": "push",
+   "lamps": [
+    {
+     "read": "INI_APU_START_BUTTON_CMD",
+     "legend": "start"
+    },
+    {
+     "read": "INI_APU_AVAILABLE",
+     "legend": "available"
+    }
+   ]
+  },
+  {
+   "key": "A330_ENG1_BLEED",
+   "section": "Overhead",
+   "panel": "Bleed Air",
+   "label": "Engine 1 bleed",
+   "kind": "select",
+   "event": "AIRLINER_ENG1_BLEED",
+   "mode": "set",
+   "read": "INI_ENGINE1_BLEED",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_ENG2_BLEED",
+   "section": "Overhead",
+   "panel": "Bleed Air",
+   "label": "Engine 2 bleed",
+   "kind": "select",
+   "event": "AIRLINER_ENG2_BLEED",
+   "mode": "set",
+   "read": "INI_ENGINE2_BLEED",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_APU_BLEED",
+   "section": "Overhead",
+   "panel": "Bleed Air",
+   "label": "APU bleed",
+   "kind": "select",
+   "event": "AIRLINER_AIR_APU_BLEED",
+   "mode": "set",
+   "read": "INI_APU_BLEED_BUTTON",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_XBLEED",
+   "section": "Overhead",
+   "panel": "Bleed Air",
+   "label": "Crossbleed",
+   "kind": "select",
+   "event": "AIRLINER_XBLEED",
+   "mode": "set",
+   "read": "INI_XBLEED_MODE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Shut"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_PACK1",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Pack 1",
+   "kind": "select",
+   "event": "AIRLINER_PACK1",
+   "mode": "set",
+   "read": "INI_PACK1_BUTTON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_PACK1_FAULT",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A330_PACK2",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Pack 2",
+   "kind": "select",
+   "event": "AIRLINER_PACK2",
+   "mode": "set",
+   "read": "INI_PACK2_BUTTON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_PACK2_FAULT",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A330_PACK_FLOW",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Pack flow",
+   "kind": "select",
+   "event": "AIRLINER_PACK_FLOW",
+   "mode": "set",
+   "read": "INI_PACK_FLOW",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Low"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "High"
+    }
+   ]
+  },
+  {
+   "key": "A330_HOT_AIR1",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Hot air 1",
+   "kind": "select",
+   "event": "AIRLINER_HOT_AIR1",
+   "mode": "set",
+   "read": "INI_HOT_AIR_SUPPLY1_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_HOT_AIR2",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Hot air 2",
+   "kind": "select",
+   "event": "AIRLINER_HOT_AIR2",
+   "mode": "set",
+   "read": "INI_HOT_AIR_SUPPLY2_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_CKPT_TEMP",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Cockpit temperature (0 cold, 50 middle, 100 hot)",
+   "kind": "continuous",
+   "event": "AIRLINER_COCKPIT_TEMP",
+   "mode": "set",
+   "read": "INI_AIRCOND_LVL_1",
+   "min": 0,
+   "max": 100,
+   "step": 5
+  },
+  {
+   "key": "A330_CABIN_TEMP",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Cabin temperature (0 cold, 50 middle, 100 hot)",
+   "kind": "continuous",
+   "event": "AIRLINER_CABIN_TEMP",
+   "mode": "set",
+   "read": "INI_AIRCOND_LVL_2",
+   "min": 0,
+   "max": 100,
+   "step": 5
+  },
+  {
+   "key": "A330_BULK_TEMP",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Bulk cargo temperature (0 cold, 50 middle, 100 hot)",
+   "kind": "continuous",
+   "event": "AIRLINER_CARGO_AIR_TEMP",
+   "mode": "set",
+   "read": "INI_AIRCOND_LVL_3",
+   "min": 0,
+   "max": 100,
+   "step": 5
+  },
+  {
+   "key": "A330_FWD_CARGO_TEMP",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Forward cargo temperature (0 cold, 50 middle, 100 hot)",
+   "kind": "continuous",
+   "event": "AIRLINER_CARGO_AIR_TEMP1",
+   "mode": "set",
+   "read": "INI_AIRCOND_LVL_4",
+   "min": 0,
+   "max": 100,
+   "step": 5
+  },
+  {
+   "key": "A330_CARGO_HOT_AIR",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Cargo hot air",
+   "kind": "select",
+   "event": "AIRLINER_HOT_AIR",
+   "mode": "set",
+   "read": "INI_BULK_HOT_AIR_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_RAM_AIR_COVER",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Ram air guard",
+   "kind": "select",
+   "event": "AIRLINER_RAM_AIR_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_RAM_AIR_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_RAM_AIR",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Ram air",
+   "kind": "select",
+   "event": "AIRLINER_RAM_AIR",
+   "mode": "set",
+   "read": "INI_RAM_AIR_ON",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_PRESS_MODE",
+   "section": "Overhead",
+   "panel": "Pressurisation",
+   "label": "Pressurisation mode",
+   "kind": "select",
+   "event": "AIRLINER_MODE_SEL",
+   "mode": "set",
+   "read": "INI_CABIN_PRESS_MODE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Manual"
+    }
+   ]
+  },
+  {
+   "key": "A330_LDG_ELEV",
+   "section": "Overhead",
+   "panel": "Pressurisation",
+   "label": "Landing elevation knob (0 auto, 100 = 14000 feet)",
+   "kind": "continuous",
+   "event": "AIRLINER_LDG_ELEV",
+   "mode": "set",
+   "read": "INI_LDG_ELEV_KNOB",
+   "min": 0,
+   "max": 100,
+   "step": 5
+  },
+  {
+   "key": "A330_LDG_ELEV_FT",
+   "section": "Overhead",
+   "panel": "Pressurisation",
+   "label": "Landing elevation selected (feet)",
+   "kind": "status",
+   "event": null,
+   "mode": "set",
+   "read": "INI_LANDING_ELEVATION",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Lit"
+    }
+   ]
+  },
+  {
+   "key": "A330_DITCHING_COVER",
+   "section": "Overhead",
+   "panel": "Pressurisation",
+   "label": "Ditching guard",
+   "kind": "select",
+   "event": "AIRLINER_DITCHING_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_DITCHING_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_DITCHING",
+   "section": "Overhead",
+   "panel": "Pressurisation",
+   "label": "Ditching",
+   "kind": "select",
+   "event": "AIRLINER_DITCHING",
+   "mode": "set",
+   "read": "B:AIRLINER_DITCHING",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_CAB_FANS",
+   "section": "Overhead",
+   "panel": "Ventilation",
+   "label": "Cabin fans",
+   "kind": "select",
+   "event": "AIRLINER_VENT_CAB",
+   "mode": "set",
+   "read": "INI_CABIN_FANS_BUTTON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_EXTRACT",
+   "section": "Overhead",
+   "panel": "Ventilation",
+   "label": "Avionics extract",
+   "kind": "select",
+   "event": "AIRLINER_VENT_EXTRACT",
+   "mode": "set",
+   "read": "INI_CABIN_EXTRACT_VALVE_BUTTON",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Override"
+    }
+   ]
+  },
+  {
+   "key": "A330_GND_COOL",
+   "section": "Overhead",
+   "panel": "Ventilation",
+   "label": "Ground cooling",
+   "kind": "select",
+   "event": "AIRLINER_GND_COOL",
+   "mode": "set",
+   "read": "B:AIRLINER_GND_COOL",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_WING_ANTI_ICE",
+   "section": "Overhead",
+   "panel": "Anti-Ice",
+   "label": "Wing anti-ice",
+   "kind": "select",
+   "event": "AIRLINER_WING_ICE",
+   "mode": "set",
+   "read": "INI_WING_ANTI_ICE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_ENG1_ANTI_ICE",
+   "section": "Overhead",
+   "panel": "Anti-Ice",
+   "label": "Engine 1 anti-ice",
+   "kind": "select",
+   "event": "AIRLINER_ENG1_ICE",
+   "mode": "set",
+   "read": "INI_ENG1_ANTI_ICE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_ENG2_ANTI_ICE",
+   "section": "Overhead",
+   "panel": "Anti-Ice",
+   "label": "Engine 2 anti-ice",
+   "kind": "select",
+   "event": "AIRLINER_ENG2_ICE",
+   "mode": "set",
+   "read": "INI_ENG2_ANTI_ICE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_PROBE_HEAT",
+   "section": "Overhead",
+   "panel": "Anti-Ice",
+   "label": "Probe and window heat",
+   "kind": "select",
+   "event": "AIRLINER_PROBE_HEAT",
+   "mode": "set",
+   "read": "B:AIRLINER_PROBE_HEAT",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_STROBE",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Strobe",
+   "kind": "select",
+   "event": "AIRLINER_STROBE_TOGGLE",
+   "mode": "set",
+   "read": "INI_STROBE_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_BEACON",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Beacon",
+   "kind": "select",
+   "event": "AIRLINER_BEACON_TOGGLE",
+   "mode": "set",
+   "read": "INI_BEACON_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_WING_LT",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Wing lights",
+   "kind": "select",
+   "event": "AIRLINER_WING_TOGGLE",
+   "mode": "set",
+   "read": "INI_WING_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_NAV_LOGO",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Navigation and logo lights",
+   "kind": "select",
+   "event": "AIRLINER_NAVLOGO_TOGGLE",
+   "mode": "set",
+   "read": "INI_LOGO_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "2"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "1"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_RWY_TURNOFF",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Runway turn-off lights",
+   "kind": "select",
+   "event": "AIRLINER_RWYTURN_TOGGLE",
+   "mode": "set",
+   "read": "INI_TURNOFF_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_LANDING_LT",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Landing lights",
+   "kind": "select",
+   "event": "AIRLINER_LDGLIGHT_TOGGLE",
+   "mode": "set",
+   "read": "INI_LANDING_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_NOSE_LT",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Nose light",
+   "kind": "select",
+   "event": "AIRLINER_TAXILIGHT_TOGGLE",
+   "mode": "set",
+   "read": "INI_TAXI_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Take-off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Taxi"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_SEAT_BELTS",
+   "section": "Overhead",
+   "panel": "Signs",
+   "label": "Seat belts",
+   "kind": "select",
+   "event": "AIRLINER_SEATBELTS_TOGGLE",
+   "mode": "set",
+   "read": "INI_SEATBELTS_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_NO_SMOKING",
+   "section": "Overhead",
+   "panel": "Signs",
+   "label": "No smoking",
+   "kind": "select",
+   "event": "AIRLINER_NOSMOKING_TOGGLE",
+   "mode": "set",
+   "read": "INI_NO_SMOKING_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_EMER_EXIT_LT",
+   "section": "Overhead",
+   "panel": "Signs",
+   "label": "Emergency exit lights",
+   "kind": "select",
+   "event": "AIRLINER_EMER_EXIT_TOGGLE",
+   "mode": "set",
+   "read": "INI_EMER_EXIT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Armed"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_DOME",
+   "section": "Overhead",
+   "panel": "Interior Lights",
+   "label": "Dome light",
+   "kind": "select",
+   "event": "AIRLINER_CTL_TOGGLE",
+   "mode": "set",
+   "read": "INI_DOME_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Bright"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Dim"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_ANN_LT",
+   "section": "Overhead",
+   "panel": "Interior Lights",
+   "label": "Annunciator lights",
+   "kind": "select",
+   "event": "AIRLINER_ANNLT_TOGGLE",
+   "mode": "set",
+   "read": "INI_ANNLT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Test"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Bright"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Dim"
+    }
+   ]
+  },
+  {
+   "key": "A330_STBY_COMPASS_LT",
+   "section": "Overhead",
+   "panel": "Interior Lights",
+   "label": "Standby compass light",
+   "kind": "select",
+   "event": "AIRLINER_STBYCOMPASS_LIGHT",
+   "mode": "set",
+   "read": "INI_STANDBY_COMPASS_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_CONSOLE_LT",
+   "section": "Overhead",
+   "panel": "Interior Lights",
+   "label": "Captain console and floor light",
+   "kind": "select",
+   "event": "AIRLINER_CPT_CONSOLE_TOGGLE",
+   "mode": "set",
+   "read": "INI_CPT_CONSOLE_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Bright"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Dim"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_CONSOLE_LT",
+   "section": "Overhead",
+   "panel": "Interior Lights",
+   "label": "First officer console and floor light",
+   "kind": "select",
+   "event": "AIRLINER_FO_CONSOLE_TOGGLE",
+   "mode": "set",
+   "read": "B:AIRLINER_FO_CONSOLE_TOGGLE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Bright"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Dim"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_WIPER",
+   "section": "Overhead",
+   "panel": "Wipers",
+   "label": "Captain wiper",
+   "kind": "select",
+   "event": "AIRLINER_CPT_WIPER_SWITCH",
+   "mode": "set",
+   "read": "B:AIRLINER_CPT_WIPER_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Slow"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Fast"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_WIPER",
+   "section": "Overhead",
+   "panel": "Wipers",
+   "label": "First officer wiper",
+   "kind": "select",
+   "event": "AIRLINER_FO_WIPER_SWITCH",
+   "mode": "set",
+   "read": "B:AIRLINER_FO_WIPER_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Slow"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Fast"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_RAIN_RPL",
+   "section": "Overhead",
+   "panel": "Wipers",
+   "label": "Captain rain repellent",
+   "kind": "button",
+   "event": "AIRLINER_CPT_RAIN_RPL",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ENG_MODE",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "Engine mode selector",
+   "kind": "select",
+   "event": "AIRLINER_ENG_START",
+   "mode": "set",
+   "read": "INI_IGNITION_KNOB",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Crank"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Ignition start"
+    }
+   ]
+  },
+  {
+   "key": "A330_MAN_START1_COVER",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "Engine 1 manual start guard",
+   "kind": "select",
+   "event": "AIRLINER_MAN_START_1_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_MAN_START_1_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_MAN_START1",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "Engine 1 manual start",
+   "kind": "select",
+   "event": "AIRLINER_MAN_START_1",
+   "mode": "set",
+   "read": "INI_ENG1_MAN_START",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_MAN_START2_COVER",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "Engine 2 manual start guard",
+   "kind": "select",
+   "event": "AIRLINER_MAN_START_2_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_MAN_START_2_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_MAN_START2",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "Engine 2 manual start",
+   "kind": "select",
+   "event": "AIRLINER_MAN_START_2",
+   "mode": "set",
+   "read": "INI_ENG2_MAN_START",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_FADEC1_COVER",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "FADEC 1 ground power guard",
+   "kind": "select",
+   "event": "AIRLINER_FADEC_ENG1_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_FADEC_ENG1_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_FADEC1",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "FADEC 1 ground power",
+   "kind": "select",
+   "event": "AIRLINER_FADEC_ENG1",
+   "mode": "set",
+   "read": "INI_FADEC1_GND_POWER_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_FADEC2_COVER",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "FADEC 2 ground power guard",
+   "kind": "select",
+   "event": "AIRLINER_FADEC_ENG2_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_FADEC_ENG2_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_FADEC2",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "FADEC 2 ground power",
+   "kind": "select",
+   "event": "AIRLINER_FADEC_ENG2",
+   "mode": "set",
+   "read": "INI_FADEC2_GND_POWER_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_CREW_OXY",
+   "section": "Overhead",
+   "panel": "Oxygen",
+   "label": "Crew oxygen supply",
+   "kind": "select",
+   "event": "AIRLINER_OXYGEN_CREW",
+   "mode": "set",
+   "read": "INI_CREW_SUPPLY",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_CALL_ALL",
+   "section": "Overhead",
+   "panel": "Calls",
+   "label": "Call all",
+   "kind": "button",
+   "event": "AIRLINER_CALL_ALL",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CALL_FWD",
+   "section": "Overhead",
+   "panel": "Calls",
+   "label": "Call forward",
+   "kind": "button",
+   "event": "AIRLINER_CALL_FWD",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CALL_MID",
+   "section": "Overhead",
+   "panel": "Calls",
+   "label": "Call mid",
+   "kind": "button",
+   "event": "AIRLINER_CALL_MID",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CALL_AFT",
+   "section": "Overhead",
+   "panel": "Calls",
+   "label": "Call aft",
+   "kind": "button",
+   "event": "AIRLINER_CALL_AFT",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CALL_PURS",
+   "section": "Overhead",
+   "panel": "Calls",
+   "label": "Call purser",
+   "kind": "button",
+   "event": "AIRLINER_CALL_PURS",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CALL_EXIT",
+   "section": "Overhead",
+   "panel": "Calls",
+   "label": "Call exit",
+   "kind": "button",
+   "event": "AIRLINER_CALL_EXIT",
+   "mode": "push"
+  },
+  {
+   "key": "A330_MECH_CALL",
+   "section": "Overhead",
+   "panel": "Calls",
+   "label": "Call mechanic",
+   "kind": "button",
+   "event": "AIRLINER_MECH_CALL",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CVR_GND_CTL",
+   "section": "Overhead",
+   "panel": "Recorders",
+   "label": "Recorder ground control",
+   "kind": "select",
+   "event": "AIRLINER_GND_CTL",
+   "mode": "set",
+   "read": "B:AIRLINER_GND_CTL",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_DFDR_EVENT",
+   "section": "Overhead",
+   "panel": "Recorders",
+   "label": "DFDR event",
+   "kind": "button",
+   "event": "AIRLINER_DFDR_EVENT",
+   "mode": "push"
+  },
+  {
+   "key": "A330_MASTER_WARN",
+   "section": "Glareshield",
+   "panel": "Warnings",
+   "label": "Master warning (silence)",
+   "kind": "button",
+   "event": "AIRLINER_CPT_MASTER_WARN",
+   "mode": "push"
+  },
+  {
+   "key": "A330_MASTER_CAUT",
+   "section": "Glareshield",
+   "panel": "Warnings",
+   "label": "Master caution (silence)",
+   "kind": "button",
+   "event": "AIRLINER_CPT_MASTER_CAUT",
+   "mode": "push"
+  },
+  {
+   "key": "A330_MASTER_WARN_LT",
+   "section": "Glareshield",
+   "panel": "Warnings",
+   "label": "Master warning",
+   "kind": "status",
+   "event": null,
+   "mode": "set",
+   "read": "INI_MASTER_WARNING_ACTIVE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Lit"
+    }
+   ]
+  },
+  {
+   "key": "A330_MASTER_CAUT_LT",
+   "section": "Glareshield",
+   "panel": "Warnings",
+   "label": "Master caution",
+   "kind": "status",
+   "event": null,
+   "mode": "set",
+   "read": "INI_MASTER_CAUTION_ACTIVE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Lit"
+    }
+   ]
+  },
+  {
+   "key": "A330_CHRONO",
+   "section": "Glareshield",
+   "panel": "Warnings",
+   "label": "Captain chrono",
+   "kind": "button",
+   "event": "AIRLINER_CPT_CHRONO",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ATC_MSG",
+   "section": "Glareshield",
+   "panel": "Warnings",
+   "label": "ATC message",
+   "kind": "button",
+   "event": "AIRLINER_CPT_ATC_MSG",
+   "mode": "push"
+  },
+  {
+   "key": "A330_AUTOLAND_LT",
+   "section": "Glareshield",
+   "panel": "Warnings",
+   "label": "Autoland warning",
+   "kind": "status",
+   "event": null,
+   "mode": "set",
+   "read": "INI_AUTOLAND_LIGHT",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Lit"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_FD",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain flight director",
+   "kind": "select",
+   "event": "AIRLINER_CPT_FD",
+   "mode": "set",
+   "read": "INI_FD1_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_LS",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain LS",
+   "kind": "select",
+   "event": "AIRLINER_CPT_LS",
+   "mode": "set",
+   "read": "INI_LS_CAPTAIN",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_ND_MODE",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND mode",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_CPT_MODE",
+   "mode": "set",
+   "read": "INI_MAP_MODE_CAPT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "LS"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "VOR"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "NAV"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "ARC"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "PLAN"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_ND_RANGE",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND range",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_CPT_RANGE",
+   "mode": "set",
+   "read": "INI_MAP_RANGE_CAPT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "10 miles"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "20 miles"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "40 miles"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "80 miles"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "160 miles"
+    },
+    {
+     "value": 5,
+     "input": 5,
+     "label": "320 miles"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_ND_CSTR",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND shows constraints",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_CPT_CSTR",
+   "mode": "set",
+   "read": "INI_SHOW_CONSTRAINTS",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_ND_WPT",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND shows waypoints",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_CPT_WPT",
+   "mode": "set",
+   "read": "INI_SHOW_FIXES",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_ND_VOR",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND shows VOR and DME",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_CPT_VOR",
+   "mode": "set",
+   "read": "INI_SHOW_VORS",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_ND_NDB",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND shows NDBs",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_CPT_NDB",
+   "mode": "set",
+   "read": "INI_SHOW_NDBS",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_ND_ARPT",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND shows airports",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_CPT_ARPT",
+   "mode": "set",
+   "read": "INI_SHOW_AIRPORTS",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_ND_NAV1",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND needle 1",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_CPT_VOR1",
+   "mode": "set",
+   "read": "INI_VOR_ADF1_CAPT_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "ADF"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "VOR"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_ND_NAV2",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND needle 2",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_CPT_VOR2",
+   "mode": "set",
+   "read": "INI_VOR_ADF2_CAPT_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "ADF"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "VOR"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_TERR_ON_ND",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain terrain on ND",
+   "kind": "select",
+   "event": "AIRLINER_CPT_TERR_ON_ND",
+   "mode": "set",
+   "read": "INI_TERR_ON_CAPT",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_BARO_UNIT",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain altimeter unit",
+   "kind": "select",
+   "event": "AIRLINER_CPT_BARO_TOGGLE",
+   "mode": "set",
+   "read": "B:AIRLINER_CPT_BARO_TOGGLE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "inches"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "hectopascals"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_PFD_ND_XFR",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain PFD/ND transfer",
+   "kind": "button",
+   "event": "AIRLINER_CPT_PFD_ND",
+   "mode": "push"
+  },
+  {
+   "key": "A330_FO_FD",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer flight director",
+   "kind": "select",
+   "event": "AIRLINER_FO_FD",
+   "mode": "set",
+   "read": "INI_FD2_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_LS",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer LS",
+   "kind": "select",
+   "event": "AIRLINER_FO_LS",
+   "mode": "set",
+   "read": "INI_LS_FO",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_ND_MODE",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND mode",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_FO_MODE",
+   "mode": "set",
+   "read": "INI_MAP_MODE_FO_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "LS"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "VOR"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "NAV"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "ARC"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "PLAN"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_ND_RANGE",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND range",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_FO_RANGE",
+   "mode": "set",
+   "read": "INI_MAP_RANGE_FO_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "10 miles"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "20 miles"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "40 miles"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "80 miles"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "160 miles"
+    },
+    {
+     "value": 5,
+     "input": 5,
+     "label": "320 miles"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_ND_CSTR",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND shows constraints",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_FO_CSTR",
+   "mode": "set",
+   "read": "INI_SHOW_CONSTRAINTS2",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_ND_WPT",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND shows waypoints",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_FO_WPT",
+   "mode": "set",
+   "read": "INI_SHOW_FIXES2",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_ND_VOR",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND shows VOR and DME",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_FO_VOR",
+   "mode": "set",
+   "read": "INI_SHOW_VORS2",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_ND_NDB",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND shows NDBs",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_FO_NDB",
+   "mode": "set",
+   "read": "INI_SHOW_NDBS2",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_ND_ARPT",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND shows airports",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_FO_ARPT",
+   "mode": "set",
+   "read": "INI_SHOW_AIRPORTS2",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_ND_NAV1",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND needle 1",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_FO_VOR1",
+   "mode": "set",
+   "read": "INI_VOR_ADF1_FO_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "ADF"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "VOR"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_ND_NAV2",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND needle 2",
+   "kind": "select",
+   "event": "AIRLINER_EFIS_FO_VOR2",
+   "mode": "set",
+   "read": "INI_VOR_ADF2_FO_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "ADF"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "VOR"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_TERR_ON_ND",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer terrain on ND",
+   "kind": "select",
+   "event": "AIRLINER_FO_TERR_ON_ND",
+   "mode": "set",
+   "read": "INI_TERR_ON_FO",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_BARO_UNIT",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer altimeter unit",
+   "kind": "select",
+   "event": "AIRLINER_FO_BARO_TOGGLE",
+   "mode": "set",
+   "read": "B:AIRLINER_FO_BARO_TOGGLE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "inches"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "hectopascals"
+    }
+   ]
+  },
+  {
+   "key": "A330_FO_PFD_ND_XFR",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer PFD/ND transfer",
+   "kind": "button",
+   "event": "AIRLINER_FO_PFD_ND",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ANTISKID",
+   "section": "Main panel",
+   "panel": "Brakes",
+   "label": "Anti-skid and nosewheel steering",
+   "kind": "select",
+   "event": "AIRLINER_ANTISKD",
+   "mode": "set",
+   "read": "INI_ANTISKID_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_BRAKE_FAN",
+   "section": "Main panel",
+   "panel": "Brakes",
+   "label": "Brake fans",
+   "kind": "select",
+   "event": "AIRLINER_BRK_FAN",
+   "mode": "set",
+   "read": "INI_BRAKE_FAN_ON",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_BRAKE_SYSTEM",
+   "section": "Main panel",
+   "panel": "Brakes",
+   "label": "Brake system",
+   "kind": "status",
+   "event": null,
+   "mode": "set",
+   "read": "INI_BRAKE_SYSTEM",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Normal"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Alternate"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Alternate, no anti-skid"
+    }
+   ]
+  },
+  {
+   "key": "A330_GPWS_SYS",
+   "section": "Main panel",
+   "panel": "GPWS and Terrain",
+   "label": "GPWS system",
+   "kind": "select",
+   "event": "AIRLINER_GPWS_SYS",
+   "mode": "set",
+   "read": "INI_GPWS_SYS_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_GPWS_TERR",
+   "section": "Main panel",
+   "panel": "GPWS and Terrain",
+   "label": "Terrain",
+   "kind": "select",
+   "event": "AIRLINER_GPWS_TERR",
+   "mode": "set",
+   "read": "INI_GPWS_TERR_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_GPWS_GS",
+   "section": "Main panel",
+   "panel": "GPWS and Terrain",
+   "label": "Glide slope mode",
+   "kind": "select",
+   "event": "AIRLINER_GS_MODE",
+   "mode": "set",
+   "read": "INI_GPWS_GS_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_GPWS_FLAP",
+   "section": "Main panel",
+   "panel": "GPWS and Terrain",
+   "label": "Flap mode",
+   "kind": "select",
+   "event": "AIRLINER_FLAP_MODE",
+   "mode": "set",
+   "read": "INI_GPWS_FLAP_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 1,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A330_LAND_RECOVERY",
+   "section": "Main panel",
+   "panel": "GPWS and Terrain",
+   "label": "Landing recovery",
+   "kind": "select",
+   "event": "AIRLINER_LAND_RECOVERY",
+   "mode": "set",
+   "read": "INI_LAND_RECOVERY",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_ATT_HDG",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "ATT HDG switching",
+   "kind": "select",
+   "event": "AIRLINER_ATT_HDG_SELECT",
+   "mode": "set",
+   "read": "INI_ATT_HDG_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Captain on 3"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "First officer on 3"
+    }
+   ]
+  },
+  {
+   "key": "A330_AIR_DATA",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "Air data switching",
+   "kind": "select",
+   "event": "AIRLINER_AIR_DATA_SELECT",
+   "mode": "set",
+   "read": "INI_AIR_DATA_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Captain on 3"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "First officer on 3"
+    }
+   ]
+  },
+  {
+   "key": "A330_AUDIO_SW",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "Audio switching",
+   "kind": "select",
+   "event": "AIRLINER_AUDIO_SELECT",
+   "mode": "set",
+   "read": "INI_AUDIO_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Captain on 3"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "First officer on 3"
+    }
+   ]
+  },
+  {
+   "key": "A330_FM_SW",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "FMS switching",
+   "kind": "select",
+   "event": "AIRLINER_FM_SELECT",
+   "mode": "set",
+   "read": "INI_FM_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Both on 1"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Both on 2"
+    }
+   ]
+  },
+  {
+   "key": "A330_ECAM_ND_XFR",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "ECAM/ND transfer",
+   "kind": "select",
+   "event": "AIRLINER_ECAM_SWITCH",
+   "mode": "set",
+   "read": "INI_ECAM_ND_NORM_MODE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Captain"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "First officer"
+    }
+   ]
+  },
+  {
+   "key": "A330_ECAM_DMC",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "ECAM DMC",
+   "kind": "select",
+   "event": "AIRLINER_ECAM_DMC_AUTO",
+   "mode": "set",
+   "read": "INI_ECAM_DMC_MODE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "1"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "2"
+    }
+   ]
+  },
+  {
+   "key": "A330_EFIS_DMC",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "EFIS DMC",
+   "kind": "select",
+   "event": "AIRLINER_CPT_EFIS_DMC_NORM",
+   "mode": "set",
+   "read": "INI_EFIS_DMC_NORM_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Normal"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Captain on 3"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "First officer on 3"
+    }
+   ]
+  },
+  {
+   "key": "A330_CLOCK_CHR",
+   "section": "Main panel",
+   "panel": "Clocks",
+   "label": "Clock chrono",
+   "kind": "button",
+   "event": "AIRLINER_CLOCK_CHR",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CLOCK_RST",
+   "section": "Main panel",
+   "panel": "Clocks",
+   "label": "Clock reset",
+   "kind": "button",
+   "event": "AIRLINER_CLOCK_RST",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CLOCK_ET",
+   "section": "Main panel",
+   "panel": "Clocks",
+   "label": "Elapsed time",
+   "kind": "select",
+   "event": "AIRLINER_CLOCK_RUN",
+   "mode": "set",
+   "read": "INI_CLOCK_RUN_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Run"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Stop"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Reset"
+    }
+   ]
+  },
+  {
+   "key": "A330_ISIS_LS",
+   "section": "Main panel",
+   "panel": "Standby Instrument",
+   "label": "Standby LS",
+   "kind": "button",
+   "event": "AIRLINER_ISIS_LS",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ISIS_BUGS",
+   "section": "Main panel",
+   "panel": "Standby Instrument",
+   "label": "Standby bugs",
+   "kind": "button",
+   "event": "AIRLINER_ISIS_BUGS",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ISIS_RST",
+   "section": "Main panel",
+   "panel": "Standby Instrument",
+   "label": "Standby attitude reset",
+   "kind": "button",
+   "event": "AIRLINER_ISIS_RST",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_PFD_BRT",
+   "section": "Main panel",
+   "panel": "Display Brightness",
+   "label": "Captain PFD brightness",
+   "kind": "continuous",
+   "event": "AIRLINER_CPT_PFD_BRT",
+   "mode": "set",
+   "read": "B:AIRLINER_CPT_PFD_BRT",
+   "min": 0,
+   "max": 100,
+   "step": 10
+  },
+  {
+   "key": "A330_CPT_ND_BRT",
+   "section": "Main panel",
+   "panel": "Display Brightness",
+   "label": "Captain ND brightness",
+   "kind": "continuous",
+   "event": "AIRLINER_CPT_ND_BRT",
+   "mode": "set",
+   "read": "B:AIRLINER_CPT_ND_BRT",
+   "min": 0,
+   "max": 100,
+   "step": 10
+  },
+  {
+   "key": "A330_FO_PFD_BRT",
+   "section": "Main panel",
+   "panel": "Display Brightness",
+   "label": "First officer PFD brightness",
+   "kind": "continuous",
+   "event": "AIRLINER_FO_PFD_BRT",
+   "mode": "set",
+   "read": "B:AIRLINER_FO_PFD_BRT",
+   "min": 0,
+   "max": 100,
+   "step": 10
+  },
+  {
+   "key": "A330_FO_ND_BRT",
+   "section": "Main panel",
+   "panel": "Display Brightness",
+   "label": "First officer ND brightness",
+   "kind": "continuous",
+   "event": "AIRLINER_FO_ND_BRT",
+   "mode": "set",
+   "read": "B:AIRLINER_FO_ND_BRT",
+   "min": 0,
+   "max": 100,
+   "step": 10
+  },
+  {
+   "key": "A330_ECAM_UPPER_BRT",
+   "section": "Main panel",
+   "panel": "Display Brightness",
+   "label": "Upper ECAM brightness",
+   "kind": "continuous",
+   "event": "AIRLINER_ECAM_UPDISP",
+   "mode": "set",
+   "read": "B:AIRLINER_ECAM_UPDISP",
+   "min": 0,
+   "max": 100,
+   "step": 10
+  },
+  {
+   "key": "A330_ECAM_LOWER_BRT",
+   "section": "Main panel",
+   "panel": "Display Brightness",
+   "label": "Lower ECAM brightness",
+   "kind": "continuous",
+   "event": "AIRLINER_ECAM_LOWDISP",
+   "mode": "set",
+   "read": "B:AIRLINER_ECAM_LOWDISP",
+   "min": 0,
+   "max": 100,
+   "step": 10
+  },
+  {
+   "key": "A330_CPT_MCDU_BRT",
+   "section": "Main panel",
+   "panel": "Display Brightness",
+   "label": "Captain MCDU brightness (the MCDU reader needs it on)",
+   "kind": "continuous",
+   "event": "AIRLINER_CPT_MCDU_BRT",
+   "mode": "set",
+   "read": "B:AIRLINER_CPT_MCDU_BRT",
+   "min": 0,
+   "max": 1,
+   "step": 0.1
+  },
+  {
+   "key": "A330_FO_MCDU_BRT",
+   "section": "Main panel",
+   "panel": "Display Brightness",
+   "label": "First officer MCDU brightness (the MCDU reader needs it on)",
+   "kind": "continuous",
+   "event": "AIRLINER_FO_MCDU_BRT",
+   "mode": "set",
+   "read": "B:AIRLINER_FO_MCDU_BRT",
+   "min": 0,
+   "max": 1,
+   "step": 0.1
+  },
+  {
+   "key": "A330_ENG1_MASTER",
+   "section": "Pedestal",
+   "panel": "Engine Masters",
+   "label": "Engine 1 master",
+   "kind": "select",
+   "event": "AIRLINER_ENG1_CUTOFF",
+   "mode": "set",
+   "read": "A:GENERAL ENG FUEL VALVE:1, bool",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_ENG2_MASTER",
+   "section": "Pedestal",
+   "panel": "Engine Masters",
+   "label": "Engine 2 master",
+   "kind": "select",
+   "event": "AIRLINER_ENG2_CUTOFF",
+   "mode": "set",
+   "read": "A:GENERAL ENG FUEL VALVE:2, bool",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_ECAM_ENG",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM ENG",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_ENG",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_BLEED",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM BLEED",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_BLEED",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_PRESS",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM PRESS",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_PRESS",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_ELAC",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM EL/AC",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_ELAC",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_ELDC",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM EL/DC",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_ELDC",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_HYD",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM HYD",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_HYD",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_CB",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM C/B",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_CB",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_APU",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM APU",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_APU",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_COND",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM COND",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_COND",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_DOOR",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM DOOR",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_DOOR",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_WHEEL",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM WHEEL",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_WHEEL",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_FCTL",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM F/CTL",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_FCTL",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_FUEL",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM FUEL",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_FUEL",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_ALL",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM ALL",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_ALL",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_STS",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM STS",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_STS",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_RCL",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM RCL",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_RCL",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_CLR",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM CLR (left)",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_CLR",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_CLR1",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM CLR (right)",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_CLR1",
+   "mode": "push"
+  },
+  {
+   "key": "A330_ECAM_EMER_CANC_COVER",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "Emergency cancel guard",
+   "kind": "select",
+   "event": "AIRLINER_ECAM_EMERCANC_GAURD",
+   "mode": "set",
+   "read": "B:AIRLINER_ECAM_EMERCANC_GAURD",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_ECAM_EMER_CANC",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "Emergency cancel",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_EMERCANC",
+   "mode": "push"
+  },
+  {
+   "key": "A330_TO_CONFIG",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "Take-off config test",
+   "kind": "button",
+   "event": "AIRLINER_ECAM_TOCONFIG",
+   "mode": "push",
+   "holdMs": 3000
+  },
+  {
+   "key": "A330_ECAM_PAGE",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "System display page",
+   "kind": "status",
+   "event": null,
+   "mode": "set",
+   "read": "INI_ECAM_ACTIVE_PAGE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "ENG"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "HYD"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "EL/AC"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "EL/DC"
+    },
+    {
+     "value": 5,
+     "input": 5,
+     "label": "BLEED"
+    },
+    {
+     "value": 6,
+     "input": 6,
+     "label": "COND"
+    },
+    {
+     "value": 7,
+     "input": 7,
+     "label": "PRESS"
+    },
+    {
+     "value": 8,
+     "input": 8,
+     "label": "FUEL"
+    },
+    {
+     "value": 9,
+     "input": 9,
+     "label": "APU"
+    },
+    {
+     "value": 10,
+     "input": 10,
+     "label": "F/CTL"
+    },
+    {
+     "value": 11,
+     "input": 11,
+     "label": "DOOR"
+    },
+    {
+     "value": 12,
+     "input": 12,
+     "label": "WHEEL"
+    },
+    {
+     "value": 13,
+     "input": 13,
+     "label": "CRUISE"
+    },
+    {
+     "value": 14,
+     "input": 14,
+     "label": "STATUS"
+    }
+   ]
+  },
+  {
+   "key": "A330_RMP1_POWER",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel power",
+   "kind": "select",
+   "event": "AIRLINER_CPT_VHF_ONOFF",
+   "mode": "set",
+   "read": "INI_RMP1_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_CPT_COM_VHF1",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel VHF 1",
+   "kind": "button",
+   "event": "AIRLINER_CPT_COM_VHF1",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_COM_VHF2",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel VHF 2",
+   "kind": "button",
+   "event": "AIRLINER_CPT_COM_VHF2",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_COM_VHF3",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel VHF 3",
+   "kind": "button",
+   "event": "AIRLINER_CPT_COM_VHF3",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_COM_HF1",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel HF 1",
+   "kind": "button",
+   "event": "AIRLINER_CPT_COM_HF1",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_COM_HF2",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel HF 2",
+   "kind": "button",
+   "event": "AIRLINER_CPT_COM_HF2",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_COM_AM",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel AM",
+   "kind": "button",
+   "event": "AIRLINER_CPT_COM_AM",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_BTN_TRANSFER",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel Transfer (swap active and standby)",
+   "kind": "button",
+   "event": "AIRLINER_CPT_BTN_TRANSFER",
+   "mode": "push"
+  },
+  {
+   "key": "A330_RMP1_SELECTED",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel selected radio",
+   "kind": "status",
+   "event": null,
+   "mode": "set",
+   "read": "INI_SELECTED_RADIO_CPT",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "VHF 1"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "VHF 2"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "VHF 3"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "HF 1"
+    },
+    {
+     "value": 5,
+     "input": 5,
+     "label": "HF 2"
+    }
+   ]
+  },
+  {
+   "key": "A330_RMP1_NAV_COVER",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel NAV guard",
+   "kind": "select",
+   "event": "AIRLINER_CPT_COM_NAV_COVER",
+   "mode": "set",
+   "read": "B:AIRLINER_CPT_COM_NAV_COVER",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Closed"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A330_RMP1_NAV",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel NAV (backup navigation)",
+   "kind": "button",
+   "event": "AIRLINER_CPT_COM_NAV",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_COM_VOR",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel VOR",
+   "kind": "button",
+   "event": "AIRLINER_CPT_COM_VOR",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_COM_LS",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel LS",
+   "kind": "button",
+   "event": "AIRLINER_CPT_COM_LS",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_COM_ADF",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel ADF",
+   "kind": "button",
+   "event": "AIRLINER_CPT_COM_ADF",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_COM_BFO",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel BFO",
+   "kind": "button",
+   "event": "AIRLINER_CPT_COM_BFO",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_BTN_VHF1",
+   "section": "Pedestal",
+   "panel": "Captain Audio",
+   "label": "Transmit VHF 1",
+   "kind": "button",
+   "event": "AIRLINER_CPT_BTN_VHF1",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_BTN_VHF2",
+   "section": "Pedestal",
+   "panel": "Captain Audio",
+   "label": "Transmit VHF 2",
+   "kind": "button",
+   "event": "AIRLINER_CPT_BTN_VHF2",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_BTN_VHF3",
+   "section": "Pedestal",
+   "panel": "Captain Audio",
+   "label": "Transmit VHF 3",
+   "kind": "button",
+   "event": "AIRLINER_CPT_BTN_VHF3",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_BTN_HF1",
+   "section": "Pedestal",
+   "panel": "Captain Audio",
+   "label": "Transmit HF 1",
+   "kind": "button",
+   "event": "AIRLINER_CPT_BTN_HF1",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_BTN_HF2",
+   "section": "Pedestal",
+   "panel": "Captain Audio",
+   "label": "Transmit HF 2",
+   "kind": "button",
+   "event": "AIRLINER_CPT_BTN_HF2",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_BTN_INT",
+   "section": "Pedestal",
+   "panel": "Captain Audio",
+   "label": "Transmit Interphone",
+   "kind": "button",
+   "event": "AIRLINER_CPT_BTN_INT",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_BTN_CAB",
+   "section": "Pedestal",
+   "panel": "Captain Audio",
+   "label": "Transmit Cabin",
+   "kind": "button",
+   "event": "AIRLINER_CPT_BTN_CAB",
+   "mode": "push"
+  },
+  {
+   "key": "A330_CPT_BTN_PA",
+   "section": "Pedestal",
+   "panel": "Captain Audio",
+   "label": "Transmit PA",
+   "kind": "button",
+   "event": "AIRLINER_CPT_BTN_PA",
+   "mode": "push"
+  },
+  {
+   "key": "A330_XPDR_MODE",
+   "section": "Pedestal",
+   "panel": "Transponder and TCAS",
+   "label": "Transponder mode",
+   "kind": "select",
+   "event": "AIRLINER_TCAS_MODE",
+   "mode": "set",
+   "read": "INI_TCAS_STBY_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Standby"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_TCAS_MODE",
+   "section": "Pedestal",
+   "panel": "Transponder and TCAS",
+   "label": "TCAS mode",
+   "kind": "select",
+   "event": "AIRLINER_TCAS_STBY",
+   "mode": "set",
+   "read": "INI_TCAS_MODE_PEDESTAL",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Standby"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "TA only"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "TA/RA"
+    }
+   ]
+  },
+  {
+   "key": "A330_TCAS_TRAFFIC",
+   "section": "Pedestal",
+   "panel": "Transponder and TCAS",
+   "label": "TCAS traffic display",
+   "kind": "select",
+   "event": "AIRLINER_TCAS_ABV",
+   "mode": "set",
+   "read": "INI_TCAS_MODE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Threat"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "All"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Above"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "Below"
+    }
+   ]
+  },
+  {
+   "key": "A330_XPDR_ALT_RPTG",
+   "section": "Pedestal",
+   "panel": "Transponder and TCAS",
+   "label": "Altitude reporting",
+   "kind": "select",
+   "event": "AIRLINER_TCAS_ALT",
+   "mode": "set",
+   "read": "B:AIRLINER_TCAS_ALT",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A330_XPDR_SYSTEM",
+   "section": "Pedestal",
+   "panel": "Transponder and TCAS",
+   "label": "Transponder system",
+   "kind": "select",
+   "event": "AIRLINER_TCAS_ATC",
+   "mode": "set",
+   "read": "B:AIRLINER_TCAS_ATC",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "1"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "2"
+    }
+   ]
+  },
+  {
+   "key": "A330_XPDR_IDENT",
+   "section": "Pedestal",
+   "panel": "Transponder and TCAS",
+   "label": "Ident",
+   "kind": "button",
+   "event": "AIRLINER_TCAS_IDENT",
+   "mode": "push"
+  },
+  {
+   "key": "A330_WX_SYS",
+   "section": "Pedestal",
+   "panel": "Weather Radar",
+   "label": "Weather radar system",
+   "kind": "select",
+   "event": "AIRLINER_WX_SYS",
+   "mode": "set",
+   "read": "INI_WX_SYS_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "1"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "2"
+    }
+   ]
+  },
+  {
+   "key": "A330_WX_MODE",
+   "section": "Pedestal",
+   "panel": "Weather Radar",
+   "label": "Weather radar mode",
+   "kind": "select",
+   "event": "AIRLINER_WX_MODE",
+   "mode": "set",
+   "read": "INI_WXR_MODE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "WX"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "WX plus turbulence"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Turbulence"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "Map"
+    }
+   ]
+  },
+  {
+   "key": "A330_WX_PWS",
+   "section": "Pedestal",
+   "panel": "Weather Radar",
+   "label": "Predictive windshear",
+   "kind": "select",
+   "event": "AIRLINER_WX_PWS",
+   "mode": "set",
+   "read": "INI_WX_PWS_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    }
+   ]
+  },
+  {
+   "key": "A330_WX_GAIN",
+   "section": "Pedestal",
+   "panel": "Weather Radar",
+   "label": "Weather radar gain",
+   "kind": "continuous",
+   "event": "AIRLINER_WX_GAIN",
+   "mode": "set",
+   "read": "B:AIRLINER_WX_GAIN",
+   "min": 0,
+   "max": 100,
+   "step": 10,
+   "notes": "the input event's own 0-100 (INI_WXR_GAIN reads the same setting as 0-10)"
+  },
+  {
+   "key": "A330_WX_TILT",
+   "section": "Pedestal",
+   "panel": "Weather Radar",
+   "label": "Weather radar tilt (15 = level)",
+   "kind": "continuous",
+   "event": "AIRLINER_WX_TILT",
+   "mode": "set",
+   "read": "B:AIRLINER_WX_TILT",
+   "min": 0,
+   "max": 30,
+   "step": 1
+  }
+ ]
+}

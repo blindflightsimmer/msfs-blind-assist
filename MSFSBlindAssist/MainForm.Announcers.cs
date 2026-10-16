@@ -346,6 +346,13 @@ public partial class MainForm
                     return; // Skip announcement for disabled variable
                 }
 
+                // Check if disabled in the iniBuilds A330 / A321LR Monitor Manager (one list each).
+                if (currentAircraft is IniA330Definition iniGate &&
+                    iniGate.DisabledMonitorSet.Contains(e.VarName))
+                {
+                    return;
+                }
+
                 // Check if disabled in the A380 Monitor Manager.
                 if (currentAircraft.AircraftCode == "FBW_A380" &&
                     Settings.SettingsManager.Current.A380DisabledMonitorVariablesSet.Contains(e.VarName))

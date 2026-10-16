@@ -1,0 +1,149 @@
+{
+ "q_aoc": {
+  "0": "ACARS FUNCTIONS",
+  "1": "F-PLN RPT UPLINK",
+  "2": "REQ*",
+  "3": "TO DATA",
+  "4": "REQ*",
+  "5": "WIND DATA",
+  "6": "REQ*",
+  "11": "PRINT",
+  "12": "<RETURN FUNCTION>",
+  "13": "NOT ALLOWED"
+ },
+ "q_xload": {
+  "0": "ACARS FUNCTIONS",
+  "1": "F-PLN RPT UPLINK",
+  "2": "REQ*",
+  "3": "TO DATA",
+  "4": "REQ*",
+  "5": "WIND DATA",
+  "6": "REQ*",
+  "11": "PRINT",
+  "12": "<RETURN FUNCTION>",
+  "13": "NOT ALLOWED"
+ },
+ "q_atcmenu": {
+  "0": "AOC PRE-FLIGHT MENU",
+  "2": "<OOOI STATUS MESSAGES>",
+  "4": "<WX REQUEST D-ATIS>",
+  "6": "DCL>",
+  "8": "<FLIGHT INIT",
+  "10": "*INIT DATALINK",
+  "12": "<RETURN MISC>",
+  "13": "NOT ALLOWED"
+ },
+ "q_closest": {
+  "0": "CLOSEST AIRPORTS",
+  "1": "BRG DIST TIME",
+  "2": "EGBB 325° 0 ----",
+  "4": "EGBE 115° 10 ----",
+  "6": "EG74 082° 22 ----",
+  "8": "EGNX 032° 27 ----",
+  "10": "[ ]",
+  "12": "<FREEZE",
+  "13": "NOT ALLOWED"
+ },
+ "q_fmgc": {
+  "0": "A321-200",
+  "1": "ENG",
+  "2": "LEAP-1A32",
+  "3": "ACTIVE NAV DATA BASE",
+  "4": "01OCT-29OCT AB49012001",
+  "5": "SECOND NAV DATA BASE",
+  "6": "←03SEP-01OCT",
+  "9": "CHG CODE",
+  "10": "[ ]",
+  "11": "IDLE/PERF SOFTWARE",
+  "12": "+0.0/+0.0 STATUS/XLOAD>",
+  "13": "NOT ALLOWED"
+ },
+ "q_irs1": {
+  "0": "NEW NAVAID",
+  "1": "IDENT",
+  "2": "###",
+  "10": "RETURN>",
+  "13": "NOT ALLOWED"
+ },
+ "q_irsinit": {
+  "0": "IRS INIT",
+  "1": "LAT REFERENCE LON",
+  "2": "----.-- ---- ----.--",
+  "3": "LAT GPS POSITION LON",
+  "4": "52°26.7N 001°44.3W",
+  "5": "IRS1 ALIGNED ON GPS",
+  "6": "52°26.7N/001°44.3W",
+  "7": "IRS2 ALIGNED ON GPS",
+  "8": "52°26.7N/001°44.3W",
+  "9": "IRS3 ALIGNED ON GPS",
+  "10": "52°26.7N/001°44.3W",
+  "12": "<RETURN",
+  "13": "NOT ALLOWED"
+ },
+ "q_posmon": {
+  "0": "NEW WAYPOINT",
+  "1": "IDENT",
+  "2": "####",
+  "13": "NOT ALLOWED"
+ },
+ "q_print": {
+  "0": "PRINT FUNCTION",
+  "1": "AUTO F-PLN INITMANUAL",
+  "2": "*YES PRINT*",
+  "3": "TO DATA",
+  "4": "PRINT*",
+  "5": "WIND DATA",
+  "6": "*NO PRINT*",
+  "11": "AOC",
+  "12": "<RETURN FUNCTION>",
+  "13": "NOT ALLOWED"
+ },
+ "q_report": {
+  "0": "REPORT",
+  "1": "OVHD UTC ALT",
+  "2": "----- ----- -----",
+  "3": "TO",
+  "4": "----- ----- -----",
+  "5": "NEXT",
+  "6": "----- ----- -----",
+  "7": "SAT T.WIND FOB",
+  "8": "---° ---°/--- ---.-",
+  "11": "DEST UTC DIST EFOB",
+  "12": "---- ---- ---- ---.-",
+  "13": "NOT ALLOWED"
+ },
+ "q_secinit": {
+  "0": "SEC INIT ←→",
+  "1": "CO RTE FROM/TO",
+  "2": "########## ####/####",
+  "5": "FLT NBR",
+  "6": "########",
+  "9": "COST INDEX",
+  "10": "--- WIND>",
+  "11": "CRZ FL/TEMP TROPO",
+  "12": "---- /---° 36090",
+  "13": "NOT ALLOWED"
+ },
+ "q_selnav": {
+  "0": "RADIO NAV",
+  "1": "VOR1/FREQ VOR2/FREQ",
+  "2": "HON/113.65 HON/113.65",
+  "3": "CRS CRS",
+  "4": "[ ] [ ]",
+  "5": "ILS /FREQ",
+  "6": "[ ]/[ ]",
+  "7": "CRS",
+  "8": "[ ]",
+  "9": "ADF1/FREQ ADF2/FREQ",
+  "10": "[ ]/[ . ][ ]/[ .]",
+  "13": "NOT ALLOWED"
+ },
+ "q_wind": {
+  "0": "CLIMB WIND",
+  "1": "TRU WIND/ALT HISTORY",
+  "2": "[ ]°/[ ]/[ ] WIND>",
+  "13": "NOT ALLOWED",
+  "9": "NEXT",
+  "10": "PHASE>"
+ }
+}

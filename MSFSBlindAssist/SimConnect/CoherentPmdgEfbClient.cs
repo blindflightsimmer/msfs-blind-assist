@@ -134,6 +134,21 @@ namespace MSFSBlindAssist.SimConnect
         public static CoherentPmdgEfbClient ForMd11()
             => new("TFDi_MD11_efb", "coherent-md11-efb-agent.js", "__MSFSBA_MD11_EFB", side: null);
 
+        /// <summary>
+        /// The iniBuilds A330 (MSFS 2024) EFB: one Coherent view titled "VCockpitNN - iniEfbA330", an
+        /// msfs-sdk/Bootstrap tablet with a side bar for its pages, read by its own agent.
+        /// </summary>
+        public static CoherentPmdgEfbClient ForIniA330()
+            => new("iniEfbA330", "coherent-a330-efb-agent.js", "__MSFSBA_A330_EFB", side: null);
+
+        /// <summary>
+        /// The iniBuilds A321LR (MSFS 2024) EFB: "VCockpitNN - iniEfbA321LR", the A330's tablet page for
+        /// page (same side bar, same element ids — live-verified 2026-10-16), so the A330 agent reads it as is.
+        /// Its doors are 1 and 4 on the page itself: 2 and 3 are over-wing emergency exits on this airframe.
+        /// </summary>
+        public static CoherentPmdgEfbClient ForIniA321()
+            => new("iniEfbA321LR", "coherent-a330-efb-agent.js", "__MSFSBA_A330_EFB", side: null);
+
         public void Start()
         {
             if (_cts != null)

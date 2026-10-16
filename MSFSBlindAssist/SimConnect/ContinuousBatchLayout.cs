@@ -21,6 +21,8 @@ internal static class ContinuousBatchLayout
         def.UpdateFrequency == UpdateFrequency.Continuous
         && def.IsAnnounced
         && def.Type != SimVarType.PMDGVar
+        // InputEvent reads arrive as input-event subscriptions (SimConnectManager.InputEventReads.cs)
+        && def.Type != SimVarType.InputEvent
         && !def.ExcludeFromBatch;
 
     /// <summary>The name registered with SimConnect: an L:var carries its "L:" prefix.</summary>

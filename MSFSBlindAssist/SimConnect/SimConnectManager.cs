@@ -520,6 +520,9 @@ public partial class SimConnectManager
         REQUEST_GROUND_TRAFFIC = 600,
         // Aircraft-specific InputEvent (B:) catalog enumeration.
         REQUEST_ENUMERATE_INPUT_EVENTS = 700,
+        // GetInputEvent reads of InputEvent-typed variables (SimConnectManager.InputEventReads.cs):
+        // the FIRST of InputEventReadIdCount (190) rotating ids, 701-890 — keep 702-890 free.
+        REQUEST_INPUT_EVENT_READ = 701,
         // Individual variable requests start from 1000
         INDIVIDUAL_VARIABLE_BASE = 1000
     }
@@ -1240,6 +1243,7 @@ public partial class SimConnectManager
             CalcPathVerified = false;        // re-probe after the next bridge init
             CalcPathProbeConcluded = false;
             lock (pendingCalcEvents) pendingCalcEvents.Clear();   // don't carry queued events across a teardown
+            ForgetInputEventReads();   // the next connection enumerates and subscribes afresh
             Log.Debug("SimConnect", "MobiFlight WASM module disconnected");
         }
 

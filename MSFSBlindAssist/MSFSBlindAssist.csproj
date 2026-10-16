@@ -103,6 +103,10 @@
     <!-- TFDi MD-11 control map. EmbeddedResource, not a copied file: the aircraft has zero
          controls without it, so it must not be able to go missing from the output folder. -->
     <EmbeddedResource Include="Resources\md11_control_map.json" />
+    <EmbeddedResource Include="Resources\a330_control_map.json" />
+    <EmbeddedResource Include="Resources\a330-cdu-glyphs.bin" />
+    <EmbeddedResource Include="Resources\a321_control_map.json" />
+    <EmbeddedResource Include="Resources\a321-cdu-glyphs.bin" />
   </ItemGroup>
 
   <ItemGroup>
@@ -156,6 +160,12 @@
     </None>
     <None Update="HotkeyGuides\iFly_737MAX8_Hotkeys.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="HotkeyGuides\iniBuilds_A330_Hotkeys.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="HotkeyGuides\iniBuilds_A321_Hotkeys.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="HotkeyGuides\TFDi_MD11_Hotkeys.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -212,6 +222,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="Resources\coherent-pmdg-efb-agent.js">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Resources\coherent-a330-efb-agent.js">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="Resources\coherent-md11-efb-agent.js">

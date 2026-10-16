@@ -23,6 +23,8 @@
         private System.Windows.Forms.ToolStripMenuItem headwindA330MenuItem = null!;
         private System.Windows.Forms.ToolStripMenuItem ifly737MaxMenuItem = null!;
         private System.Windows.Forms.ToolStripMenuItem tfdiMd11MenuItem = null!;
+        private System.Windows.Forms.ToolStripMenuItem iniA330MenuItem = null!;
+        private System.Windows.Forms.ToolStripMenuItem iniA321MenuItem = null!;
         private System.Windows.Forms.ListBox sectionsListBox = null!;
         private System.Windows.Forms.ListBox panelsListBox = null!;
         private System.Windows.Forms.Panel controlsContainer = null!;
@@ -59,6 +61,8 @@
             this.headwindA330MenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.ifly737MaxMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.tfdiMd11MenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.iniA330MenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.iniA321MenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.sectionsListBox = new System.Windows.Forms.ListBox();
             this.panelsListBox = new System.Windows.Forms.ListBox();
             this.controlsContainer = new System.Windows.Forms.Panel();
@@ -186,7 +190,9 @@
             this.pmdg777MenuItem,
             this.horizonSim787MenuItem,
             this.ifly737MaxMenuItem,
-            this.tfdiMd11MenuItem});
+            this.tfdiMd11MenuItem,
+            this.iniA330MenuItem,
+            this.iniA321MenuItem});
             this.aircraftMenuItem.Name = "aircraftMenuItem";
             this.aircraftMenuItem.Size = new System.Drawing.Size(75, 24);
             this.aircraftMenuItem.Text = "&Aircraft";
@@ -280,6 +286,26 @@
             this.tfdiMd11MenuItem.Text = "TFDi Design &MD-11";
             this.tfdiMd11MenuItem.Checked = false;
             this.tfdiMd11MenuItem.Click += new System.EventHandler(this.TFDiMD11MenuItem_Click);
+            //
+            // iniA330MenuItem
+            //
+            this.iniA330MenuItem.AccessibleName = "iniBuilds Airbus A330 (MSFS 2024)";
+            this.iniA330MenuItem.AccessibleDescription = "Switch to the iniBuilds Airbus A330 (MSFS 2024)";
+            this.iniA330MenuItem.Name = "iniA330MenuItem";
+            this.iniA330MenuItem.Size = new System.Drawing.Size(240, 26);
+            this.iniA330MenuItem.Text = "iniBuilds Airbus A33&0 (MSFS 2024)";
+            this.iniA330MenuItem.Checked = false;
+            this.iniA330MenuItem.Click += new System.EventHandler(this.IniA330MenuItem_Click);
+            //
+            // iniA321MenuItem
+            //
+            this.iniA321MenuItem.AccessibleName = "iniBuilds Airbus A321LR (MSFS 2024)";
+            this.iniA321MenuItem.AccessibleDescription = "Switch to the iniBuilds Airbus A321LR (MSFS 2024)";
+            this.iniA321MenuItem.Name = "iniA321MenuItem";
+            this.iniA321MenuItem.Size = new System.Drawing.Size(240, 26);
+            this.iniA321MenuItem.Text = "iniBuilds Airbus A32&1LR (MSFS 2024)";
+            this.iniA321MenuItem.Checked = false;
+            this.iniA321MenuItem.Click += new System.EventHandler(this.IniA321MenuItem_Click);
             //
             // sectionsListBox
             // 

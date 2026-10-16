@@ -157,6 +157,8 @@ public partial class MainForm
             "HW_A330" => new HeadwindA330Definition(),
             "IFLY_737MAX8" => new IFly737MAXDefinition(),
             "TFDI_MD11" => new TFDiMD11Definition(),
+            "INI_A330" => new IniA330Definition(),
+            "INI_A321" => new IniA321Definition(),
             // Future aircraft will be added here
             _ => new FlyByWireA320Definition() // Default to A320
         };
@@ -882,6 +884,9 @@ public partial class MainForm
         if (simConnectManager.IsConnected)
         {
             simConnectManager.ReregisterAllVariables();
+            // An Aircraft-menu switch never reconnects, so nothing else would subscribe the new
+            // aircraft's input-event reads (the iniBuilds A330's switch states).
+            simConnectManager.RefreshInputEventReads(reenumerate: false);
             simConnectManager.RestartContinuousMonitoring();
             // Re-read ATC MODEL / ICAO for the newly selected aircraft definition so
             // the door-offset map is refreshed for the new aircraft profile.
@@ -1265,6 +1270,8 @@ public partial class MainForm
         headwindA330MenuItem.Checked = false;
         ifly737MaxMenuItem.Checked = false;
         tfdiMd11MenuItem.Checked = false;
+        iniA330MenuItem.Checked = false;
+        iniA321MenuItem.Checked = false;
 
         // Set the check on the current aircraft's menu item.
         // NOTE: HeadwindA330Definition derives from FlyByWireA320Definition, so it MUST
@@ -1272,6 +1279,15 @@ public partial class MainForm
         if (currentAircraft is TFDiMD11Definition)
         {
             tfdiMd11MenuItem.Checked = true;
+        }
+        // IniA321Definition derives from IniA330Definition, so it is tested first.
+        else if (currentAircraft is IniA321Definition)
+        {
+            iniA321MenuItem.Checked = true;
+        }
+        else if (currentAircraft is IniA330Definition)
+        {
+            iniA330MenuItem.Checked = true;
         }
         else if (currentAircraft is HeadwindA330Definition)
         {

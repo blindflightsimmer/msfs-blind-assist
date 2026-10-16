@@ -1,0 +1,178 @@
+INIBUILDS A321LR (MSFS 2024) HOTKEY REFERENCE
+
+The A321LR that ships with Microsoft Flight Simulator 2024, built by iniBuilds.
+
+Application Navigation:
+  Ctrl+1     Focus Sections List
+  Ctrl+2     Focus Panels List
+  Ctrl+3     Focus Status Display field of the current panel (refreshes it if empty)
+
+Tip: Press the same bracket key again to cancel a mode you activated by accident.
+
+OUTPUT MODE - Press right bracket to activate
+
+FCU Readouts (each one also tells you the active mode):
+  Shift+H    Read FCU Heading (or Track in TRK/FPA), with the lateral mode
+  Shift+S    Read FCU Speed or Mach, with the thrust mode. When the speed is
+             managed it says so, with the managed target speed.
+  Shift+A    Read FCU Altitude, with the vertical mode
+  Shift+V    Read FCU Vertical Speed (or Flight Path Angle), with the vertical mode
+
+Characteristic Speeds (from the aircraft's own speed tape):
+  Shift+1    Read Green Dot Speed
+  Shift+2    Read S Speed
+  Shift+3    Read F Speed
+  Shift+4    Read VLS
+  Shift+6    Read the maximum speed
+
+Altitude:
+  Q          Read Altitude AGL
+  A          Read Altitude MSL
+
+Airspeed:
+  S          Read IAS (Indicated Airspeed)
+  T          Read TAS (True Airspeed)
+  G          Read Ground Speed
+  M          Read Mach Number
+
+Heading:
+  H          Read Magnetic Heading
+  U          Read True Heading
+
+Fuel:
+  F          Read Fuel - total and each tank, in the aircraft's own weight unit
+
+Flaps:
+  L          Read the flap lever position and the actual slat and flap angles
+
+Landing Gear:
+  Shift+G    Read Gear Lever
+
+Flight Plan:
+  D          Distance to destination, with the time at the current ground speed
+  Shift+D    Distance to top of descent, with the time at the current ground speed
+
+Approach:
+  Ctrl+0     Read Landing Capability
+
+Altimeter:
+  B          Read Altimeter Setting
+
+Radios:
+  N          Read the ILS, both VORs and VHF 1 (active and standby)
+
+Vertical:
+  V          Read Vertical Speed
+
+Weather:
+  I          Wind Info
+  O          Read Outside Temperature (Celsius)
+
+Cockpit Display Read-outs (AI vision, need a Gemini or Claude API key):
+  Alt+P      Read the PFD
+  Alt+N      Read the Navigation Display
+  Alt+E      Read the upper ECAM
+  Alt+S      Read the system display (lower ECAM)
+  (MSFSBA switches to the aircraft's own instrument camera for these.)
+
+Monitor Manager:
+  Ctrl+M     Choose which background announcements are spoken. "Flight mode
+             changes" mutes every flight-mode call-out; V1, Rotate and V2 each
+             have their own row.
+
+Time:
+  Z          Read Zulu Time
+  Shift+Z    Read Local Time
+
+Guides:
+  Shift+K    Open this Hotkey List
+
+INPUT MODE - Press left bracket to activate
+
+FCU - typing a value (the window is set directly and read back, so you hear the
+value the FCU is really showing):
+  Ctrl+H     Set FCU Heading or Track. Dialog buttons: heading pull, heading
+             push (NAV), LOC and HDG-V/S / TRK-FPA.
+  Ctrl+S     Set FCU Speed - knots 100-399 or Mach 0.10-0.89; the units are
+             switched for you. Dialog buttons: speed pull, speed push, SPD/MACH
+             and A/THR.
+  Ctrl+A     Set FCU Altitude. Dialog buttons: altitude pull, altitude push,
+             EXPED, metric altitude, AP 1 and AP 2. (The 100/1000 foot knob
+             selector cannot be worked from outside on this aircraft.)
+  Ctrl+V     Set Vertical Speed or Flight Path Angle. Dialog buttons: V/S pull,
+             V/S push (level off), HDG-V/S / TRK-FPA and APPR.
+  Every button says its live state (On/Off, Active/Armed, the mode shown).
+
+FCU - knob pushes and pulls:
+  Ctrl+1     Pull the heading knob (selected heading)
+  Shift+1    Push the heading knob (NAV)
+  Ctrl+2     Pull the altitude knob (open climb or descent)
+  Shift+2    Push the altitude knob (managed climb or descent)
+  Ctrl+3     Pull the speed knob (selected speed)
+  Shift+3    Push the speed knob (managed speed)
+  Ctrl+4     Pull the V/S knob (selected vertical speed)
+  Shift+4    Push the V/S knob (level off)
+
+Autoflight toggles:
+  Shift+A    Autopilot 1
+  Ctrl+O     Autopilot 2
+  Ctrl+J     Autothrust (A/THR)
+  Ctrl+L     LOC
+  Shift+P    APPR
+  Ctrl+P     Open the Autopilot window - both autopilots, A/THR, LOC, APPR, all
+             four knobs' push and pull, EXPED and a Read Flight Modes button.
+  Engagement and disengagement are announced by the aircraft's own state, not by
+  the key press, so you hear what actually happened.
+
+MCDU:
+  Shift+M    Open the MCDU window. The A321 does not export its MCDU text, so
+             MSFSBA reads the screen itself: the first time you open the window
+             it pops the captain's MCDU out of the cockpit (it briefly brings the
+             simulator to the front, clicks the MCDU with Right-Alt and moves the
+             pop-out off your desktop), then gives focus back. Inside the window:
+               Ctrl+1-6      Left line select keys L1-L6
+               Alt+1-6       Right line select keys R1-R6
+               (or F1-F6 / F7-F12 with the alternate layout from MCDU Settings)
+               Type into the scratchpad field and press Enter to send text
+               Alt+S                Jump to the scratchpad field
+               Alt+Home             Back to the screen
+               Page Up / Page Down  Previous / next page
+               Alt+Up / Alt+Down    Slew up / down
+               Backspace            CLR (with the screen focused)
+               Alt+D DIR, Alt+G PROG, Alt+P PERF, Alt+I INIT, Alt+A DATA,
+               Alt+F F-PLN, Alt+R RAD NAV, Alt+U FUEL PRED, Alt+X SEC F-PLN,
+               Alt+T ATC COMM, Alt+M MCDU MENU, Alt+O AIRPORT
+             Text the MCDU draws in grey (an option that is not available yet) is
+             read with "(unavailable)" after it.
+
+Position:
+  Alt+L      Look Around (where you are, the apron or concourse you are in, and the nearest buildings with direction and distance)
+  Ctrl+Shift+L  Surroundings window (everything nearby as a list, with the airport's fuel and frequencies)
+                In its Frequencies list, Enter tunes the selected frequency into COM 1 standby
+                and Shift+Enter tunes it straight into COM 1 active; COM 1 is read back to confirm.
+
+EFB:
+  Shift+T    Open the EFB tablet. The Pages list at the top is the tablet's side
+             bar: Dashboard, OFP, Ground (doors, GPU, chocks, covers, jetway,
+             catering, luggage, pushback), Payload, Panel State, Take Off
+             (performance) and Options. Doors and ground equipment say their
+             state.
+
+Panels:
+  All cockpit systems are in the Sections and Panels lists on the main window.
+  Glareshield: Autopilot (every FCU button and switch plus the live FCU windows
+  and AP/ATHR state), Flight Modes (read live), EFIS and warnings. Overhead, Main
+  panel and Pedestal: the switches the aircraft models, grouped as in the cockpit.
+  A switch under a guard has a separate "guard" row just before it.
+
+Auto-announcements (in addition to switch and light changes):
+  - Flight mode changes: thrust, vertical, lateral, armed modes and landing
+    capability.
+  - Autopilot 1, autopilot 2 and autothrust engaging and disengaging.
+  - Flap lever positions.
+  - V1, Rotate and V2 on the take-off roll.
+
+Notes:
+  - Switches are the aircraft's own input events, so most panel controls work
+    without MobiFlight. The MCDU, the FCU knob pushes and pulls, the momentary
+    buttons and the FCU set dialogs need the MobiFlight WASM module.

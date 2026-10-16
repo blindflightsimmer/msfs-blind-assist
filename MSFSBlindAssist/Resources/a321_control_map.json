@@ -1,0 +1,3874 @@
+{
+ "version": 1,
+ "sections": [
+  {
+   "name": "Overhead",
+   "panels": [
+    "ADIRS",
+    "Flight Controls",
+    "Fuel",
+    "Electrical",
+    "Hydraulics",
+    "Fire Tests",
+    "APU",
+    "Bleed Air",
+    "Air Conditioning",
+    "Pressurisation",
+    "Ventilation",
+    "Anti-Ice",
+    "Exterior Lights",
+    "Signs",
+    "Interior Lights",
+    "Wipers",
+    "Engine Start",
+    "Oxygen",
+    "Calls",
+    "Cargo"
+   ]
+  },
+  {
+   "name": "Glareshield",
+   "panels": [
+    "Warnings",
+    "Captain EFIS",
+    "First officer EFIS"
+   ]
+  },
+  {
+   "name": "Main panel",
+   "panels": [
+    "Brakes",
+    "GPWS and Terrain",
+    "Instrument Switching",
+    "Clocks",
+    "Standby Instrument"
+   ]
+  },
+  {
+   "name": "Pedestal",
+   "panels": [
+    "ECAM",
+    "Captain Radio Panel",
+    "Transponder and TCAS",
+    "Weather Radar"
+   ]
+  }
+ ],
+ "controls": [
+  {
+   "key": "A321_IR1",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IR 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_IR1_STATE)",
+   "read": "INI_IR1_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_IR1_FAULT",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A321_IR2",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IR 2",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_IR2_STATE)",
+   "read": "INI_IR2_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_IR2_FAULT",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A321_IR3",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IR 3",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_IR3_STATE)",
+   "read": "INI_IR3_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_IR3_FAULT",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A321_ADR1",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "ADR 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ADR1_STATE)",
+   "read": "INI_ADR1_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_ADR2",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "ADR 2",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ADR2_STATE)",
+   "read": "INI_ADR2_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_ADR3",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "ADR 3",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ADR3_STATE)",
+   "read": "INI_ADR3_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_IRS1_ALIGNED",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IRS 1 aligned",
+   "kind": "status",
+   "mode": "set",
+   "read": "INI_IRS1_ALIGNED",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "No"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Yes"
+    }
+   ]
+  },
+  {
+   "key": "A321_IRS2_ALIGNED",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IRS 2 aligned",
+   "kind": "status",
+   "mode": "set",
+   "read": "INI_IRS2_ALIGNED",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "No"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Yes"
+    }
+   ]
+  },
+  {
+   "key": "A321_IRS3_ALIGNED",
+   "section": "Overhead",
+   "panel": "ADIRS",
+   "label": "IRS 3 aligned",
+   "kind": "status",
+   "mode": "set",
+   "read": "INI_IRS3_ALIGNED",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "No"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Yes"
+    }
+   ]
+  },
+  {
+   "key": "A321_ELAC1",
+   "section": "Overhead",
+   "panel": "Flight Controls",
+   "label": "ELAC 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:A320_ELAC1_STATUS)",
+   "read": "A320_ELAC1_STATUS",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "A320_ELAC1_FAILURE",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A321_ELAC2",
+   "section": "Overhead",
+   "panel": "Flight Controls",
+   "label": "ELAC 2",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:A320_ELAC2_STATUS)",
+   "read": "A320_ELAC2_STATUS",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "A320_ELAC2_FAILURE",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A321_SEC1",
+   "section": "Overhead",
+   "panel": "Flight Controls",
+   "label": "SEC 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:A320_SEC1_STATUS)",
+   "read": "A320_SEC1_STATUS",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "A320_SEC1_FAILURE",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A321_SEC2",
+   "section": "Overhead",
+   "panel": "Flight Controls",
+   "label": "SEC 2",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:A320_SEC2_STATUS)",
+   "read": "A320_SEC2_STATUS",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "A320_SEC2_FAILURE",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A321_SEC3",
+   "section": "Overhead",
+   "panel": "Flight Controls",
+   "label": "SEC 3",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:A320_SEC3_STATUS)",
+   "read": "A320_SEC3_STATUS",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "A320_SEC3_FAILURE",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A321_FAC1",
+   "section": "Overhead",
+   "panel": "Flight Controls",
+   "label": "FAC 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:A320_FAC1_STATUS)",
+   "read": "A320_FAC1_STATUS",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "A320_FAC1_FAILURE",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A321_FAC2",
+   "section": "Overhead",
+   "panel": "Flight Controls",
+   "label": "FAC 2",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:A320_FAC2_STATUS)",
+   "read": "A320_FAC2_STATUS",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "A320_FAC2_FAILURE",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A321_FUEL1L1",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Left pump 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_OUTER_TANK_LEFT)",
+   "read": "INI_OUTER_TANK_LEFT",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_FUEL1L2",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Left pump 2",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_INNER_TANK_LEFT)",
+   "read": "INI_INNER_TANK_LEFT",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_FUEL1LSTBY",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Left standby pump",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_OUTER_LEFT_STANDBY_PUMP)",
+   "read": "INI_OUTER_LEFT_STANDBY_PUMP",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_FUEL2R1",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Right pump 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_INNER_TANK_RIGHT)",
+   "read": "INI_INNER_TANK_RIGHT",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_FUEL2R2",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Right pump 2",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_OUTER_TANK_RIGHT)",
+   "read": "INI_OUTER_TANK_RIGHT",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_FUEL2RSTBY",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Right standby pump",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_OUTER_RIGHT_STANDBY_PUMP)",
+   "read": "INI_OUTER_RIGHT_STANDBY_PUMP",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_FUEL_XFEED",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Crossfeed",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_XFEED_TRANSFER_ON)",
+   "read": "INI_XFEED_TRANSFER_ON",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Shut"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A321_FUEL_CTR1",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Centre tank pump 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_CENTER_TANK_LEFT)",
+   "read": "INI_CENTER_TANK_LEFT",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_FUEL_CTR2",
+   "section": "Overhead",
+   "panel": "Fuel",
+   "label": "Centre tank pump 2",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_CENTER_TANK_RIGHT)",
+   "read": "INI_CENTER_TANK_RIGHT",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_APU_BAT",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "APU battery",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_OVHD_ELEC_BAT_3_PB_IS_AUTO)",
+   "read": "INI_OVHD_ELEC_BAT_3_PB_IS_AUTO",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_BAT_DISPLAY",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Battery voltage display",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_BATTERY_OVERHEAD_SELECTOR)",
+   "read": "INI_BATTERY_OVERHEAD_SELECTOR",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Battery 1"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Battery 2"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "APU battery"
+    }
+   ]
+  },
+  {
+   "key": "A321_GEN1",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Generator 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENG1_GEN_ON)",
+   "read": "INI_ENG1_GEN_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_GEN2",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Generator 2",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENG2_GEN_ON)",
+   "read": "INI_ENG2_GEN_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_APU_GEN",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "APU generator",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_APU_GEN_ON)",
+   "read": "INI_APU_GEN_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_BUS_TIE",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Bus tie",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_BUS_TIE)",
+   "read": "INI_BUS_TIE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_AC_ESS",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "AC essential feed",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_AC_ESS_FEED)",
+   "read": "INI_AC_ESS_FEED",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Normal"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Alternate"
+    }
+   ]
+  },
+  {
+   "key": "A321_GALLEY",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Galley",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_GALLEY_CAB)",
+   "read": "INI_GALLEY_CAB",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_COMMERCIAL",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Commercial",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_COMMERCIAL_ON)",
+   "read": "INI_COMMERCIAL_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_BAT1",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Battery 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_OVHD_ELEC_BAT_1_PB_IS_AUTO_SWITCH)",
+   "read": "INI_OVHD_ELEC_BAT_1_PB_IS_AUTO_SWITCH",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_BAT2",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "Battery 2",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_OVHD_ELEC_BAT_2_PB_IS_AUTO_SWITCH)",
+   "read": "INI_OVHD_ELEC_BAT_2_PB_IS_AUTO_SWITCH",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_EXT_PWR",
+   "section": "Overhead",
+   "panel": "Electrical",
+   "label": "External power",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_EXT_PWR_ON)",
+   "read": "INI_EXT_PWR_ON",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_EXT_PWR_AVAILABLE_AC",
+     "legend": "available"
+    }
+   ]
+  },
+  {
+   "key": "A321_HYD_GREEN",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Green engine 1 pump",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENG1_GREEN_PUMP_ON)",
+   "read": "INI_ENG1_GREEN_PUMP_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_HYD_YELLOW",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Yellow engine 2 pump",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENG2_YELLOW_PUMP_ON)",
+   "read": "INI_ENG2_YELLOW_PUMP_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_HYD_BLUE_ELEC_OFF",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Blue electric pump",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENG1_BLUE_ELEC_PUMP_LOWER_PB)",
+   "read": "INI_ENG1_BLUE_ELEC_PUMP_LOWER_PB",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_HYD_BLUE_ELEC_ON",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Blue electric pump on",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENG1_BLUE_ELEC_PUMP_PB)",
+   "read": "INI_ENG1_BLUE_ELEC_PUMP_PB",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_HYD_YELLOW_ELEC_OFF",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Yellow electric pump",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENG2_YELLOW_ELEC_PUMP_LOWER_PB)",
+   "read": "INI_ENG2_YELLOW_ELEC_PUMP_LOWER_PB",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_HYD_YELLOW_ELEC_ON",
+   "section": "Overhead",
+   "panel": "Hydraulics",
+   "label": "Yellow electric pump on",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENG2_YELLOW_ELEC_PUMP_PB)",
+   "read": "INI_ENG2_YELLOW_ELEC_PUMP_PB",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_SMOKE_TEST",
+   "section": "Overhead",
+   "panel": "Fire Tests",
+   "label": "Cargo smoke test",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_SMOKE_TEST_BUTTON)",
+   "holdMs": 3000
+  },
+  {
+   "key": "A321_APU_MASTER",
+   "section": "Overhead",
+   "panel": "APU",
+   "label": "APU master",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_APU_MASTER_SWITCH)",
+   "read": "INI_APU_MASTER_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_APU_START",
+   "section": "Overhead",
+   "panel": "APU",
+   "label": "APU start",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_APU_START_BUTTON)",
+   "lamps": [
+    {
+     "read": "INI_APU_AVAILABLE",
+     "legend": "available"
+    }
+   ]
+  },
+  {
+   "key": "A321_ENG1_BLEED",
+   "section": "Overhead",
+   "panel": "Bleed Air",
+   "label": "Engine 1 bleed",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENGINE1_BLEED)",
+   "read": "INI_ENGINE1_BLEED",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_ENG2_BLEED",
+   "section": "Overhead",
+   "panel": "Bleed Air",
+   "label": "Engine 2 bleed",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENGINE2_BLEED)",
+   "read": "INI_ENGINE2_BLEED",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_APU_BLEED",
+   "section": "Overhead",
+   "panel": "Bleed Air",
+   "label": "APU bleed",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_APU_BLEED_BUTTON)",
+   "read": "INI_APU_BLEED_BUTTON",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_XBLEED",
+   "section": "Overhead",
+   "panel": "Bleed Air",
+   "label": "Crossbleed",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_XBLEED_MODE)",
+   "read": "INI_XBLEED_MODE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Shut"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Open"
+    }
+   ]
+  },
+  {
+   "key": "A321_PACK1",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Pack 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_PACK1_BUTTON)",
+   "read": "INI_PACK1_BUTTON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_PACK1_FAULT",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A321_PACK2",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Pack 2",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_PACK2_BUTTON)",
+   "read": "INI_PACK2_BUTTON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ],
+   "lamps": [
+    {
+     "read": "INI_PACK2_FAULT",
+     "legend": "fault"
+    }
+   ]
+  },
+  {
+   "key": "A321_PACK_FLOW",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Pack flow",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_PACK_FLOW)",
+   "read": "INI_PACK_FLOW",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Low"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "High"
+    }
+   ]
+  },
+  {
+   "key": "A321_HOT_AIR1",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Hot air 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_HOT_AIR_SUPPLY1_ON)",
+   "read": "INI_HOT_AIR_SUPPLY1_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_CARGO_HOT_AIR",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Cargo hot air",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_BULK_HOT_AIR_STATE)",
+   "read": "INI_BULK_HOT_AIR_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_RAM_AIR",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Ram air",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_RAM_AIR_ON)",
+   "read": "INI_RAM_AIR_ON",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_CKPT_TEMP",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Cockpit temperature",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_AIRCOND_LVL_1)",
+   "read": "INI_AIRCOND_LVL_1",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "18 degrees"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "20 degrees"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "22 degrees"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "24 degrees"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "26 degrees"
+    },
+    {
+     "value": 5,
+     "input": 5,
+     "label": "28 degrees"
+    },
+    {
+     "value": 6,
+     "input": 6,
+     "label": "30 degrees"
+    }
+   ]
+  },
+  {
+   "key": "A321_FWD_CAB_TEMP",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Forward cabin temperature",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_AIRCOND_LVL_2)",
+   "read": "INI_AIRCOND_LVL_2",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "18 degrees"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "20 degrees"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "22 degrees"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "24 degrees"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "26 degrees"
+    },
+    {
+     "value": 5,
+     "input": 5,
+     "label": "28 degrees"
+    },
+    {
+     "value": 6,
+     "input": 6,
+     "label": "30 degrees"
+    }
+   ]
+  },
+  {
+   "key": "A321_AFT_CAB_TEMP",
+   "section": "Overhead",
+   "panel": "Air Conditioning",
+   "label": "Aft cabin temperature",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_AIRCOND_LVL_3)",
+   "read": "INI_AIRCOND_LVL_3",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "18 degrees"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "20 degrees"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "22 degrees"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "24 degrees"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "26 degrees"
+    },
+    {
+     "value": 5,
+     "input": 5,
+     "label": "28 degrees"
+    },
+    {
+     "value": 6,
+     "input": 6,
+     "label": "30 degrees"
+    }
+   ]
+  },
+  {
+   "key": "A321_LDG_ELEV_FT",
+   "section": "Overhead",
+   "panel": "Pressurisation",
+   "label": "Landing elevation selected (feet)",
+   "kind": "status",
+   "mode": "set",
+   "read": "INI_LANDING_ELEVATION",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Lit"
+    }
+   ]
+  },
+  {
+   "key": "A321_PRESS_MODE",
+   "section": "Overhead",
+   "panel": "Pressurisation",
+   "label": "Cabin pressure mode",
+   "kind": "select",
+   "mode": "toggle",
+   "rpn": "1 (>L:INI_CABIN_MAN_PRESS_BUTTON)",
+   "read": "INI_CABIN_MAN_PRESS",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Manual"
+    }
+   ]
+  },
+  {
+   "key": "A321_CAB_FANS",
+   "section": "Overhead",
+   "panel": "Ventilation",
+   "label": "Cabin fans",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_CABIN_FANS_BUTTON)",
+   "read": "INI_CABIN_FANS_BUTTON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_BLOWER",
+   "section": "Overhead",
+   "panel": "Ventilation",
+   "label": "Avionics blower",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_VENT_BLOWER_STATE)",
+   "read": "INI_VENT_BLOWER_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Override"
+    }
+   ]
+  },
+  {
+   "key": "A321_EXTRACT",
+   "section": "Overhead",
+   "panel": "Ventilation",
+   "label": "Avionics extract",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_VENT_EXTRACT)",
+   "read": "INI_VENT_EXTRACT",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Override"
+    }
+   ]
+  },
+  {
+   "key": "A321_WING_ANTI_ICE",
+   "section": "Overhead",
+   "panel": "Anti-Ice",
+   "label": "Wing anti-ice",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_WING_ANTI_ICE)",
+   "read": "INI_WING_ANTI_ICE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_ENG1_ANTI_ICE",
+   "section": "Overhead",
+   "panel": "Anti-Ice",
+   "label": "Engine 1 anti-ice",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENG1_ANTI_ICE)",
+   "read": "INI_ENG1_ANTI_ICE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_ENG2_ANTI_ICE",
+   "section": "Overhead",
+   "panel": "Anti-Ice",
+   "label": "Engine 2 anti-ice",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENG2_ANTI_ICE)",
+   "read": "INI_ENG2_ANTI_ICE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_PROBE_HEAT",
+   "section": "Overhead",
+   "panel": "Anti-Ice",
+   "label": "Probe and window heat",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_PROBE_HEAT)",
+   "read": "INI_PROBE_HEAT",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Auto"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_STROBE",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Strobe",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_STROBE_LIGHT_SWITCH)",
+   "read": "INI_STROBE_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_BEACON",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Beacon",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_BEACON_LIGHT_SWITCH)",
+   "read": "INI_BEACON_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_WING_LT",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Wing lights",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_WING_LIGHT_SWITCH)",
+   "read": "INI_WING_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_NAV_LOGO",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Navigation and logo lights",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_LOGO_LIGHT_SWITCH)",
+   "read": "INI_LOGO_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "2"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "1"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_RWY_TURNOFF",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Runway turn-off lights",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_TURNOFF_LIGHT_SWITCH)",
+   "read": "INI_TURNOFF_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_NOSE_LT",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Nose light",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_TAXI_LIGHT_SWITCH)",
+   "read": "INI_TAXI_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Take-off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Taxi"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_LDG_LT_L",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Left landing light",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:A320_LANDING_LIGHT_SWITCH_LEFT)",
+   "read": "A320_LANDING_LIGHT_SWITCH_LEFT",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Retract"
+    }
+   ]
+  },
+  {
+   "key": "A321_LDG_LT_R",
+   "section": "Overhead",
+   "panel": "Exterior Lights",
+   "label": "Right landing light",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:A320_LANDING_LIGHT_SWITCH_RIGHT)",
+   "read": "A320_LANDING_LIGHT_SWITCH_RIGHT",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Retract"
+    }
+   ]
+  },
+  {
+   "key": "A321_SEAT_BELTS",
+   "section": "Overhead",
+   "panel": "Signs",
+   "label": "Seat belts",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_SEATBELTS_SWITCH)",
+   "read": "INI_SEATBELTS_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_NO_SMOKING",
+   "section": "Overhead",
+   "panel": "Signs",
+   "label": "No smoking",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_NO_SMOKING_SWITCH)",
+   "read": "INI_NO_SMOKING_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_EMER_EXIT_LT",
+   "section": "Overhead",
+   "panel": "Signs",
+   "label": "Emergency exit lights",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_EMER_EXIT_SWITCH)",
+   "read": "INI_EMER_EXIT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "On"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Armed"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_DOME",
+   "section": "Overhead",
+   "panel": "Interior Lights",
+   "label": "Dome light",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_DOME_LIGHT_SWITCH)",
+   "read": "INI_DOME_LIGHT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Bright"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Dim"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_ANN_LT",
+   "section": "Overhead",
+   "panel": "Interior Lights",
+   "label": "Annunciator lights",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ANNLT_SWITCH)",
+   "read": "INI_ANNLT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Test"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Bright"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Dim"
+    }
+   ]
+  },
+  {
+   "key": "A321_STBY_COMPASS_LT",
+   "section": "Overhead",
+   "panel": "Interior Lights",
+   "label": "Standby compass light",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_STANDBY_COMPASS_SWITCH)",
+   "read": "INI_STANDBY_COMPASS_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_CONSOLE_LT",
+   "section": "Overhead",
+   "panel": "Interior Lights",
+   "label": "Captain console and floor light",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_CPT_CONSOLE_SWITCH)",
+   "read": "INI_CPT_CONSOLE_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Bright"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Dim"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_WIPER",
+   "section": "Overhead",
+   "panel": "Wipers",
+   "label": "Captain wiper",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:CPT_WIPER_SWITCH)",
+   "read": "CPT_WIPER_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Slow"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Fast"
+    }
+   ]
+  },
+  {
+   "key": "A321_FO_WIPER",
+   "section": "Overhead",
+   "panel": "Wipers",
+   "label": "First officer wiper",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:FO_WIPER_SWITCH)",
+   "read": "FO_WIPER_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Slow"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Fast"
+    }
+   ]
+  },
+  {
+   "key": "A321_ENG_MODE",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "Engine mode selector",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_IGNITION_KNOB)",
+   "read": "INI_IGNITION_KNOB",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Crank"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Ignition start"
+    }
+   ]
+  },
+  {
+   "key": "A321_MAN_START1",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "Engine 1 manual start",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENG1_MAN_START)",
+   "read": "INI_ENG1_MAN_START",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_MAN_START2",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "Engine 2 manual start",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ENG2_MAN_START)",
+   "read": "INI_ENG2_MAN_START",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_FADEC1",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "FADEC 1 ground power",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_FADEC1_GND_POWER_STATE)",
+   "read": "INI_FADEC1_GND_POWER_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_FADEC2",
+   "section": "Overhead",
+   "panel": "Engine Start",
+   "label": "FADEC 2 ground power",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_FADEC2_GND_POWER_STATE)",
+   "read": "INI_FADEC2_GND_POWER_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_CREW_OXY",
+   "section": "Overhead",
+   "panel": "Oxygen",
+   "label": "Crew oxygen supply",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_CREW_SUPPLY)",
+   "read": "INI_CREW_SUPPLY",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_CALL_ALL",
+   "section": "Overhead",
+   "panel": "Calls",
+   "label": "Call all",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_CALL_ALL_BUTTON)"
+  },
+  {
+   "key": "A321_CALL_FWD",
+   "section": "Overhead",
+   "panel": "Calls",
+   "label": "Call forward",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_CALL_FWD_BUTTON)"
+  },
+  {
+   "key": "A321_AFT_CRG_HEAT",
+   "section": "Overhead",
+   "panel": "Cargo",
+   "label": "Aft cargo heat",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_AFT_CRG_BUTTON)",
+   "read": "INI_AFT_CRG_BUTTON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_MASTER_WARN_LT",
+   "section": "Glareshield",
+   "panel": "Warnings",
+   "label": "Master warning",
+   "kind": "status",
+   "mode": "set",
+   "read": "INI_MASTER_WARNING_ACTIVE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Lit"
+    }
+   ]
+  },
+  {
+   "key": "A321_MASTER_CAUT_LT",
+   "section": "Glareshield",
+   "panel": "Warnings",
+   "label": "Master caution",
+   "kind": "status",
+   "mode": "set",
+   "read": "INI_MASTER_CAUTION_ACTIVE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Lit"
+    }
+   ]
+  },
+  {
+   "key": "A321_AUTOLAND_LT",
+   "section": "Glareshield",
+   "panel": "Warnings",
+   "label": "Autoland warning",
+   "kind": "status",
+   "mode": "set",
+   "read": "INI_AUTOLAND_LIGHT",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Lit"
+    }
+   ]
+  },
+  {
+   "key": "A321_MASTER_WARN",
+   "section": "Glareshield",
+   "panel": "Warnings",
+   "label": "Master warning (silence)",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_MASTER_WARNING_COMMAND)"
+  },
+  {
+   "key": "A321_MASTER_CAUT",
+   "section": "Glareshield",
+   "panel": "Warnings",
+   "label": "Master caution (silence)",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_MASTER_CAUTION_COMMAND)"
+  },
+  {
+   "key": "A321_CPT_CHRONO",
+   "section": "Glareshield",
+   "panel": "Warnings",
+   "label": "Captain chrono",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_CPT_CHRONO_BUTTON)"
+  },
+  {
+   "key": "A321_CPT_FD",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain flight director",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_FD1_ON)",
+   "read": "INI_FD1_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_LS",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain LS",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_LS_CAPTAIN)",
+   "read": "INI_LS_CAPTAIN",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_ND_MODE",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND mode",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_MAP_MODE_CAPT_SWITCH)",
+   "read": "INI_MAP_MODE_CAPT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "LS"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "VOR"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "NAV"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "ARC"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "PLAN"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_ND_RANGE",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND range",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_MAP_RANGE_CAPT_SWITCH)",
+   "read": "INI_MAP_RANGE_CAPT_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "10 miles"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "20 miles"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "40 miles"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "80 miles"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "160 miles"
+    },
+    {
+     "value": 5,
+     "input": 5,
+     "label": "320 miles"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_ND_CSTR",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND shows constraints",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_SHOW_CONSTRAINTS)",
+   "read": "INI_SHOW_CONSTRAINTS",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_ND_WPT",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND shows waypoints",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_SHOW_FIXES)",
+   "read": "INI_SHOW_FIXES",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_ND_VOR",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND shows VOR and DME",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_SHOW_VORS)",
+   "read": "INI_SHOW_VORS",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_ND_NDB",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND shows NDBs",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_SHOW_NDBS)",
+   "read": "INI_SHOW_NDBS",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_ND_ARPT",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND shows airports",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_SHOW_AIRPORTS)",
+   "read": "INI_SHOW_AIRPORTS",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_ND_NAV1",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND needle 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_VOR_ADF1_CAPT_STATE)",
+   "read": "INI_VOR_ADF1_CAPT_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "ADF"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "VOR"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_ND_NAV2",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain ND needle 2",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_VOR_ADF2_CAPT_STATE)",
+   "read": "INI_VOR_ADF2_CAPT_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "ADF"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "VOR"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_TERR_ON_ND",
+   "section": "Glareshield",
+   "panel": "Captain EFIS",
+   "label": "Captain terrain on ND",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_TERR_ON_CAPT)",
+   "read": "INI_TERR_ON_CAPT",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_FO_FD",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer flight director",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_FD2_ON)",
+   "read": "INI_FD2_ON",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_FO_LS",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer LS",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_LS_FO)",
+   "read": "INI_LS_FO",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_FO_ND_MODE",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND mode",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_MAP_MODE_FO_SWITCH)",
+   "read": "INI_MAP_MODE_FO_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "LS"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "VOR"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "NAV"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "ARC"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "PLAN"
+    }
+   ]
+  },
+  {
+   "key": "A321_FO_ND_RANGE",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND range",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_MAP_RANGE_FO_SWITCH)",
+   "read": "INI_MAP_RANGE_FO_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "10 miles"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "20 miles"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "40 miles"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "80 miles"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "160 miles"
+    },
+    {
+     "value": 5,
+     "input": 5,
+     "label": "320 miles"
+    }
+   ]
+  },
+  {
+   "key": "A321_FO_ND_CSTR",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND shows constraints",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_SHOW_CONSTRAINTS2)",
+   "read": "INI_SHOW_CONSTRAINTS2",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_FO_ND_WPT",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND shows waypoints",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_SHOW_FIXES2)",
+   "read": "INI_SHOW_FIXES2",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_FO_ND_VOR",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND shows VOR and DME",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_SHOW_VORS2)",
+   "read": "INI_SHOW_VORS2",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_FO_ND_NDB",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND shows NDBs",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_SHOW_NDBS2)",
+   "read": "INI_SHOW_NDBS2",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_FO_ND_ARPT",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND shows airports",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_SHOW_AIRPORTS2)",
+   "read": "INI_SHOW_AIRPORTS2",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_FO_ND_NAV1",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND needle 1",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_VOR_ADF1_FO_STATE)",
+   "read": "INI_VOR_ADF1_FO_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "ADF"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "VOR"
+    }
+   ]
+  },
+  {
+   "key": "A321_FO_ND_NAV2",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer ND needle 2",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_VOR_ADF2_FO_STATE)",
+   "read": "INI_VOR_ADF2_FO_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "ADF"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "VOR"
+    }
+   ]
+  },
+  {
+   "key": "A321_FO_TERR_ON_ND",
+   "section": "Glareshield",
+   "panel": "First officer EFIS",
+   "label": "First officer terrain on ND",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_TERR_ON_FO)",
+   "read": "INI_TERR_ON_FO",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_ANTISKID",
+   "section": "Main panel",
+   "panel": "Brakes",
+   "label": "Anti-skid and nosewheel steering",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ANTISKID_SWITCH)",
+   "read": "INI_ANTISKID_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_BRAKE_FAN",
+   "section": "Main panel",
+   "panel": "Brakes",
+   "label": "Brake fans",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_BRAKE_FAN_ON)",
+   "read": "INI_BRAKE_FAN_ON",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_BRAKE_SYSTEM",
+   "section": "Main panel",
+   "panel": "Brakes",
+   "label": "Brake system",
+   "kind": "status",
+   "mode": "set",
+   "read": "INI_BRAKE_SYSTEM",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Normal"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Alternate"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Alternate, no anti-skid"
+    }
+   ]
+  },
+  {
+   "key": "A321_GPWS_SYS",
+   "section": "Main panel",
+   "panel": "GPWS and Terrain",
+   "label": "GPWS system",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_GPWS_SYS_STATE)",
+   "read": "INI_GPWS_SYS_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_GPWS_TERR",
+   "section": "Main panel",
+   "panel": "GPWS and Terrain",
+   "label": "Terrain",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_GPWS_TERR_STATE)",
+   "read": "INI_GPWS_TERR_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_GPWS_GS",
+   "section": "Main panel",
+   "panel": "GPWS and Terrain",
+   "label": "Glide slope mode",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_GPWS_GS_STATE)",
+   "read": "INI_GPWS_GS_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_GPWS_FLAP",
+   "section": "Main panel",
+   "panel": "GPWS and Terrain",
+   "label": "Flap mode",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_GPWS_FLAP_STATE)",
+   "read": "INI_GPWS_FLAP_STATE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    },
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    }
+   ]
+  },
+  {
+   "key": "A321_LAND_RECOVERY",
+   "section": "Main panel",
+   "panel": "GPWS and Terrain",
+   "label": "Landing recovery",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_LAND_RECOVERY)",
+   "read": "INI_LAND_RECOVERY",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_ATT_HDG",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "ATT HDG switching",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ATT_HDG_STATE)",
+   "read": "INI_ATT_HDG_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Captain on 3"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "First officer on 3"
+    }
+   ]
+  },
+  {
+   "key": "A321_AIR_DATA",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "Air data switching",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_AIR_DATA_STATE)",
+   "read": "INI_AIR_DATA_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Captain on 3"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "First officer on 3"
+    }
+   ]
+  },
+  {
+   "key": "A321_AUDIO_SW",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "Audio switching",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_AUDIO_STATE)",
+   "read": "INI_AUDIO_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Captain on 3"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "First officer on 3"
+    }
+   ]
+  },
+  {
+   "key": "A321_FM_SW",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "FMS switching",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_FM_STATE)",
+   "read": "INI_FM_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Both on 1"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Both on 2"
+    }
+   ]
+  },
+  {
+   "key": "A321_ECAM_ND_XFR",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "ECAM/ND transfer",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ECAM_ND_NORM_MODE)",
+   "read": "INI_ECAM_ND_NORM_MODE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Captain"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Normal"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "First officer"
+    }
+   ]
+  },
+  {
+   "key": "A321_ECAM_DMC",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "ECAM DMC",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_ECAM_DMC_MODE)",
+   "read": "INI_ECAM_DMC_MODE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "1"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "2"
+    }
+   ]
+  },
+  {
+   "key": "A321_EFIS_DMC",
+   "section": "Main panel",
+   "panel": "Instrument Switching",
+   "label": "EFIS DMC",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_EFIS_DMC_NORM_STATE)",
+   "read": "INI_EFIS_DMC_NORM_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Normal"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Captain on 3"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "First officer on 3"
+    }
+   ]
+  },
+  {
+   "key": "A321_CLOCK_CHR",
+   "section": "Main panel",
+   "panel": "Clocks",
+   "label": "Clock chrono",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_CHR_START_COMMAND)"
+  },
+  {
+   "key": "A321_CLOCK_RST",
+   "section": "Main panel",
+   "panel": "Clocks",
+   "label": "Clock chrono reset",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_CHR_RESET_COMMAND)"
+  },
+  {
+   "key": "A321_ISIS_BUGS",
+   "section": "Main panel",
+   "panel": "Standby Instrument",
+   "label": "Standby bugs",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_ISIS_BUGS_COMMAND)"
+  },
+  {
+   "key": "A321_ECAM_PAGE",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "System display page",
+   "kind": "status",
+   "mode": "set",
+   "read": "INI_ECAM_ACTIVE_PAGE",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "ENG"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "HYD"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "EL/AC"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "EL/DC"
+    },
+    {
+     "value": 5,
+     "input": 5,
+     "label": "BLEED"
+    },
+    {
+     "value": 6,
+     "input": 6,
+     "label": "COND"
+    },
+    {
+     "value": 7,
+     "input": 7,
+     "label": "PRESS"
+    },
+    {
+     "value": 8,
+     "input": 8,
+     "label": "FUEL"
+    },
+    {
+     "value": 9,
+     "input": 9,
+     "label": "APU"
+    },
+    {
+     "value": 10,
+     "input": 10,
+     "label": "F/CTL"
+    },
+    {
+     "value": 11,
+     "input": 11,
+     "label": "DOOR"
+    },
+    {
+     "value": 12,
+     "input": 12,
+     "label": "WHEEL"
+    },
+    {
+     "value": 13,
+     "input": 13,
+     "label": "CRUISE"
+    },
+    {
+     "value": 14,
+     "input": 14,
+     "label": "STATUS"
+    }
+   ]
+  },
+  {
+   "key": "A321_ECAM_ENG",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM ENG",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_ECAM_ACTIVE_PAGE)"
+  },
+  {
+   "key": "A321_ECAM_BLEED",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM BLEED",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "5 (>L:INI_ECAM_ACTIVE_PAGE)"
+  },
+  {
+   "key": "A321_ECAM_PRESS",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM PRESS",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "7 (>L:INI_ECAM_ACTIVE_PAGE)"
+  },
+  {
+   "key": "A321_ECAM_ELAC",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM EL/AC",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "3 (>L:INI_ECAM_ACTIVE_PAGE)"
+  },
+  {
+   "key": "A321_ECAM_ELDC",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM EL/DC",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "4 (>L:INI_ECAM_ACTIVE_PAGE)"
+  },
+  {
+   "key": "A321_ECAM_HYD",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM HYD",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "2 (>L:INI_ECAM_ACTIVE_PAGE)"
+  },
+  {
+   "key": "A321_ECAM_APU",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM APU",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "9 (>L:INI_ECAM_ACTIVE_PAGE)"
+  },
+  {
+   "key": "A321_ECAM_COND",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM COND",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "6 (>L:INI_ECAM_ACTIVE_PAGE)"
+  },
+  {
+   "key": "A321_ECAM_DOOR",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM DOOR",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "11 (>L:INI_ECAM_ACTIVE_PAGE)"
+  },
+  {
+   "key": "A321_ECAM_WHEEL",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM WHEEL",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "12 (>L:INI_ECAM_ACTIVE_PAGE)"
+  },
+  {
+   "key": "A321_ECAM_FCTL",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM F/CTL",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "10 (>L:INI_ECAM_ACTIVE_PAGE)"
+  },
+  {
+   "key": "A321_ECAM_FUEL",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM FUEL",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "8 (>L:INI_ECAM_ACTIVE_PAGE)"
+  },
+  {
+   "key": "A321_ECAM_STS",
+   "section": "Pedestal",
+   "panel": "ECAM",
+   "label": "ECAM STS",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "14 (>L:INI_ECAM_ACTIVE_PAGE)"
+  },
+  {
+   "key": "A321_RMP1_POWER",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel power",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_RMP1_STATE)",
+   "read": "INI_RMP1_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_RMP1_SELECTED",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel selected radio",
+   "kind": "status",
+   "mode": "set",
+   "read": "INI_SELECTED_RADIO_CPT",
+   "positions": [
+    {
+     "value": 1,
+     "input": 1,
+     "label": "VHF 1"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "VHF 2"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "VHF 3"
+    },
+    {
+     "value": 4,
+     "input": 4,
+     "label": "HF 1"
+    },
+    {
+     "value": 5,
+     "input": 5,
+     "label": "HF 2"
+    }
+   ]
+  },
+  {
+   "key": "A321_CPT_VHF1",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel VHF 1",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_VHF1_CPT_BUTTON)"
+  },
+  {
+   "key": "A321_CPT_VHF2",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel VHF 2",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_VHF2_CPT_BUTTON)"
+  },
+  {
+   "key": "A321_CPT_VHF3",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel VHF 3",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_VHF3_CPT_BUTTON)"
+  },
+  {
+   "key": "A321_CPT_TRANSFER",
+   "section": "Pedestal",
+   "panel": "Captain Radio Panel",
+   "label": "Radio panel transfer (swap active and standby)",
+   "kind": "button",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_CPT_VHF_TRANSFER_SWITCH_COMMAND)"
+  },
+  {
+   "key": "A321_XPDR_MODE",
+   "section": "Pedestal",
+   "panel": "Transponder and TCAS",
+   "label": "Transponder mode",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_TCAS_STBY_STATE)",
+   "read": "INI_TCAS_STBY_STATE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Standby"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "On"
+    }
+   ]
+  },
+  {
+   "key": "A321_TCAS_MODE",
+   "section": "Pedestal",
+   "panel": "Transponder and TCAS",
+   "label": "TCAS mode",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_TCAS_MODE_PEDESTAL)",
+   "read": "INI_TCAS_MODE_PEDESTAL",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Standby"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "TA only"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "TA/RA"
+    }
+   ]
+  },
+  {
+   "key": "A321_TCAS_TRAFFIC",
+   "section": "Pedestal",
+   "panel": "Transponder and TCAS",
+   "label": "TCAS traffic display",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_TCAS_MODE)",
+   "read": "INI_TCAS_MODE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Threat"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "All"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Above"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "Below"
+    }
+   ]
+  },
+  {
+   "key": "A321_WX_SYS",
+   "section": "Pedestal",
+   "panel": "Weather Radar",
+   "label": "Weather radar system",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_WX_SYS_SWITCH)",
+   "read": "INI_WX_SYS_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "1"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Off"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "2"
+    }
+   ]
+  },
+  {
+   "key": "A321_WX_MODE",
+   "section": "Pedestal",
+   "panel": "Weather Radar",
+   "label": "Weather radar mode",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_WXR_MODE)",
+   "read": "INI_WXR_MODE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "WX"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "WX plus turbulence"
+    },
+    {
+     "value": 2,
+     "input": 2,
+     "label": "Turbulence"
+    },
+    {
+     "value": 3,
+     "input": 3,
+     "label": "Map"
+    }
+   ]
+  },
+  {
+   "key": "A321_WX_PWS",
+   "section": "Pedestal",
+   "panel": "Weather Radar",
+   "label": "Predictive windshear",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_WX_PWS_SWITCH)",
+   "read": "INI_WX_PWS_SWITCH",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "Auto"
+    }
+   ]
+  }
+ ]
+}

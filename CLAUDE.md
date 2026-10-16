@@ -149,6 +149,8 @@ Each area's rules load automatically when Claude reads its code; their full text
 | [ifly-737.md](docs/ifly-737.md) | iFly 737 MAX8: SDK shared memory + WM_COPYDATA, no MobiFlight, no L:var writes except named clickspot replays | ifly-737 |
 | [hs787.md](docs/hs787.md) | HorizonSim 787-9: CDU, IRS, EICAS over the Coherent debugger | hs787 |
 | [md11.md](docs/md11.md) | TFDi MD-11: CEVENT transport, control state, layout, the control-map generator | md11, md11-controls |
+| [ini-a330.md](docs/ini-a330.md) | iniBuilds A330 (MSFS 2024): input-event controls, pixel-read MCDU, FCU dialogs, EFB | inibuilds |
+| [ini-a321.md](docs/ini-a321.md) | iniBuilds A321LR (MSFS 2024): the A330 code base with direct L:var writes, its own MCDU reader | inibuilds |
 | [gemini.md](docs/gemini.md) | AI providers (Gemini or Claude): display reads, scene and route description, route briefing | ai-display, route-briefing |
 | [location-data.md](docs/location-data.md) | Output C and Location Info (Shift+L): the offline GeoNames + Natural Earth download, its database and lookups | location-data |
 

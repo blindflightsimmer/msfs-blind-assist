@@ -386,6 +386,9 @@ public partial class SimConnectManager
             // Skip write-only variables (Never frequency), H-variables, AND PMDG variables (handled by IPMDGDataManager)
             if (varDef.UpdateFrequency == UpdateFrequency.Never || varDef.Type == SimVarType.HVar || varDef.Type == SimVarType.PMDGVar)
                 continue;
+            // InputEvent reads are subscriptions, not data definitions (SimConnectManager.InputEventReads.cs)
+            if (varDef.Type == SimVarType.InputEvent)
+                continue;
 
             // Batch-covered: Continuous + IsAnnounced + not ExcludeFromBatch. These are monitored
             // (and cached) via the continuous batches — no individual data def needed.
@@ -821,6 +824,8 @@ public partial class SimConnectManager
         sc.OnRecvClientData += SimConnect_OnRecvClientData;
         sc.OnRecvException += SimConnect_OnRecvException;
         sc.OnRecvEnumerateInputEvents += SimConnect_OnRecvEnumerateInputEvents;
+        sc.OnRecvGetInputEvent += SimConnect_OnRecvGetInputEvent;
+        sc.OnRecvSubscribeInputEvent += SimConnect_OnRecvSubscribeInputEvent;
         // AircraftLoaded fires when the user changes aircraft in-sim (or reloads).
         // The handler re-reads ATC MODEL / ICAO so AircraftIcaoTypeDetected re-fires
         // and the door-offset map is re-queried for the new aircraft.
@@ -843,6 +848,7 @@ public partial class SimConnectManager
         if (!IsConnected || simConnect == null) return;
         try
         {
+            UnsubscribeInputEventReads();
             inputEventHashes.Clear();
             simConnect.EnumerateInputEvents(DATA_REQUESTS.REQUEST_ENUMERATE_INPUT_EVENTS);
             Log.Debug("SimConnect", "Requested InputEvent enumeration");
@@ -877,6 +883,7 @@ public partial class SimConnectManager
                 Log.Debug("SimConnect", 
                     $"InputEvent enumeration complete: {inputEventHashes.Count} events");
                 DumpInputEventCatalog();
+                SubscribeInputEventReads();
             }
         }
         catch (Exception ex)

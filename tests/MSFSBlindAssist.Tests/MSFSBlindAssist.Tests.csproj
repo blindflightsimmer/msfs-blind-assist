@@ -36,6 +36,9 @@
        assembly; without this the fixtures are just loose files in the source tree and
        every test that loads one fails with FileNotFoundException. -->
   <ItemGroup>
+    <None Update="Fixtures\A321Cdu\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="Fixtures\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

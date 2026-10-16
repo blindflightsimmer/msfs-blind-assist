@@ -58,3 +58,7 @@ Corrected 2026-10-08: the rule said both headings always arrive in radians and m
 Moved 2026-10-10 from gsx-stands-docking.md (split for the rule budget).
 
 Moved 2026-10-10 from gsx-docking.md: a fact about SimConnect data definitions, not a docking rule.
+
+## INI-3
+
+- `SimVarType.InputEvent` reads (`SimConnectManager.InputEventReads.cs`) are answered by `GetInputEvent` and input-event subscriptions, never by a data definition: they must stay out of data-definition registration (`SetupDataDefinitions`) and out of the continuous batch (`ContinuousBatchLayout`), and must be re-subscribed after every input-event enumeration (the hashes change per aircraft load). Their request ids are the rotating range 701-890 starting at `REQUEST_INPUT_EVENT_READ`; keep that range free. → [ini-a330.md](../ini-a330.md)

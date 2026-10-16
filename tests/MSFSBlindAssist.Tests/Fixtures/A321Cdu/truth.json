@@ -1,0 +1,5 @@
+{
+ "t_data2": {"0": "DATA INDEX 2/2 ←→", "1": "STORED", "2": "<WAYPOINTS WAYPOINTS>", "3": "STORED", "4": "<NAVAIDS NAVAIDS>", "5": "STORED", "6": "<RUNWAYS RUNWAYS>", "7": "STORED", "8": "<ROUTES ROUTES>", "13": "NOT ALLOWED"},
+ "t_fuel": {"0": "FUEL PRED", "1": "AT UTC EFOB", "2": "---- ---- --.-", "4": "---- ---- --.-", "5": "RTE RSV/% ZFW/ZFWCG", "6": "---.-/5.0 46.6/25.5", "7": "ALTN /TIME FOB", "8": "---.-/---- 12.1/FF+FQ", "9": "FINAL/TIME GW/ CG", "10": "1.1/0030 58.7/ 25.4", "11": "MIN DEST FOB EXTRA/TIME", "12": "1.1 -.--/----", "13": "NOT ALLOWED"},
+ "t_prog": {"0": "TO", "1": "CRZ OPT REC MAX", "2": "FL100 FL395 FL398", "4": "<REPORT", "7": "BRG /DIST", "8": "---° /--- TO [ ]", "9": "PREDICTIVE", "10": "<GPS GPS PRIMARY", "11": "REQUIRED ACCURESTIMATED", "12": "1.00NM HIGH 0.02NM", "13": "NOT ALLOWED"}
+}

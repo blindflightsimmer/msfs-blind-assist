@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>A321Harness</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.FlightSimulator.SimConnect">
+      <HintPath Condition="Exists('$(MSFS_SDK)\SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll')">$(MSFS_SDK)\SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll</HintPath>
+      <HintPath Condition="!Exists('$(MSFS_SDK)\SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll')">..\..\..\lib\managed\Microsoft.FlightSimulator.SimConnect.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="$(MSFS_SDK)\SimConnect SDK\lib\SimConnect.dll" Condition="Exists('$(MSFS_SDK)\SimConnect SDK\lib\SimConnect.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <!-- The managed wrapper P/Invokes into a NATIVE SimConnect.dll. Without the MSFS SDK installed
+       there is none to copy above, so fall back to the repo's committed native — the same one the
+       main app ships. Named SimConnect.dll because that is the name the wrapper's DllImport asks
+       for; the app renames at runtime instead, but a probe only ever talks to one sim. -->
+  <Target Name="CopyNativeSimConnect" AfterTargets="Build"
+          Condition="!Exists('$(MSFS_SDK)\SimConnect SDK\lib\SimConnect.dll')">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\..\SimConnect_msfs_2020.dll"
+          DestinationFiles="$(TargetDir)SimConnect.dll"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>
+
+
