@@ -90,6 +90,11 @@ public sealed class IniA321Definition : IniA330Definition
         return base.SetOwnEvent(sim, announcer, what, a330Event, value);
     }
 
+    /// <summary>The A321's input events do nothing from outside, so STD/QNH is the code base's own
+    /// altimeter commands (the same names the A300 uses).</summary>
+    internal override IEnumerable<(string name, Action<SimConnectManager> press)> BaroPresses(bool toStd)
+        => AltimeterCommandPresses(toStd);
+
     protected override bool AutobrakeWritesCalc => true;
 
     protected override void SetAutobrake(SimConnectManager sim, int level, double? current)

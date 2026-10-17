@@ -43,8 +43,8 @@ internal sealed record CduFormProfile(
             ("D&ATA", "DATA", "Alt+A"), ("&F-PLN", "FPLAN", "Alt+F"), ("&RAD NAV", "RADNAV", "Alt+R"),
             ("FUEL PRED", "FUEL", "Alt+U"), ("SEC F-PLN", "SEC", "Alt+X"), ("ATC COMM", "ATC", "Alt+T"),
             ("MCDU &MENU", "MENU", "Alt+M"), ("AIRPORT", "AIRPORT", "Alt+O"), ("OVFY", "OVERFLY", "Alt+V"),
-            ("Previous page", "PREV", "Page Up"), ("Next page", "NEXT", "Page Down"),
-            ("Slew up", "UARROW", "Alt+Up"), ("Slew down", "DOWN", "Alt+Down"), ("CLR", "CLR", "Backspace"),
+            ("Previous page", "PREV", "Alt+Left"), ("Next page", "NEXT", "Alt+Right"),
+            ("Slew up", "DOWN", "Page Up"), ("Slew down", "UARROW", "Page Down"), ("CLR", "CLR", "Backspace"),
         },
         new Dictionary<Keys, string>
         {
@@ -52,7 +52,9 @@ internal sealed record CduFormProfile(
             [Keys.F] = "FPLAN", [Keys.R] = "RADNAV", [Keys.U] = "FUEL", [Keys.X] = "SEC",
             [Keys.T] = "ATC", [Keys.M] = "MENU", [Keys.O] = "AIRPORT", [Keys.V] = "OVERFLY",
         },
-        SlewUp: "UARROW", SlewDown: "DOWN", NextPage: "NEXT", PrevPage: "PREV", ReadColour: true,
+        // Like the A300, the slew keys are named the other way round from what they do (measured live
+        // 2026-10-17 on the F-PLN page: UARROW moves on down the plan, DOWN back toward the top).
+        SlewUp: "DOWN", SlewDown: "UARROW", NextPage: "NEXT", PrevPage: "PREV", ReadColour: true,
         KeyForChar: A330KeyForChar) { Device = "MCDU" };
 
     /// <summary>

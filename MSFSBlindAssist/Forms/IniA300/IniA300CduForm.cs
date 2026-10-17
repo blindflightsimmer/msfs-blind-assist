@@ -133,9 +133,25 @@ public sealed class IniA300CduForm : Form
         SetStatus($"Opening the {_device} pop-out from the simulator...");
         try
         {
-            string? err = await Task.Run(() => _popout.EnsureAsync(false,
-                async () => await _sim.ReadCameraViewAsync(1500) is { } r ? (r.ViewType, r.ViewIndex) : null,
-                (t, i) => _sim.SetCameraView(t, i)));
+            // The pop-out runs on a pool thread, but SimConnect calls belong on the UI thread: the camera
+            // read and write are sent back here (an off-thread restore left the camera on the MCDU).
+            var ui = SynchronizationContext.Current;
+            Task<(int, int)?> ReadCamera()
+            {
+                var done = new TaskCompletionSource<(int, int)?>(TaskCreationOptions.RunContinuationsAsynchronously);
+                async void Read()
+                {
+                    try { done.TrySetResult(await _sim.ReadCameraViewAsync(1500) is { } r ? (r.ViewType, r.ViewIndex) : null); }
+                    catch (Exception ex) { done.TrySetException(ex); }
+                }
+                if (ui != null) ui.Post(_ => Read(), null); else Read();
+                return done.Task;
+            }
+            void SetCamera(int t, int i)
+            {
+                if (ui != null) ui.Send(_ => _sim.SetCameraView(t, i), null); else _sim.SetCameraView(t, i);
+            }
+            string? err = await Task.Run(() => _popout.EnsureAsync(false, ReadCamera, SetCamera));
             if (IsDisposed) return;
             // the pop-out procedure took the foreground; give it back to this window
             Activate();
@@ -298,10 +314,13 @@ public sealed class IniA300CduForm : Form
             if (e.Control && !e.Alt && e.KeyCode >= Keys.D1 && e.KeyCode <= Keys.D6) key = $"LSK{e.KeyCode - Keys.D1 + 1}L";
             else if (e.Alt && !e.Control && e.KeyCode >= Keys.D1 && e.KeyCode <= Keys.D6) key = $"LSK{e.KeyCode - Keys.D1 + 1}R";
         }
-        if (key == null && !e.Control && !e.Alt && e.KeyCode == Keys.PageDown) key = _profile.NextPage;
-        if (key == null && !e.Control && !e.Alt && e.KeyCode == Keys.PageUp) key = _profile.PrevPage;
-        if (key == null && e.Alt && e.KeyCode == Keys.Down) key = _profile.SlewDown;
-        if (key == null && e.Alt && e.KeyCode == Keys.Up) key = _profile.SlewUp;
+        // The Airbus convention the A320 windows set (2026-10-17): Page Up/Down and Alt+Up/Down scroll
+        // (the MCDU's up/down slew keys — the F-PLN is what a pilot scrolls most), Alt+Left/Right turn
+        // the page (the MCDU's left/right arrow keys).
+        if (key == null && !e.Control && ((!e.Alt && e.KeyCode == Keys.PageDown) || (e.Alt && e.KeyCode == Keys.Down))) key = _profile.SlewDown;
+        if (key == null && !e.Control && ((!e.Alt && e.KeyCode == Keys.PageUp) || (e.Alt && e.KeyCode == Keys.Up))) key = _profile.SlewUp;
+        if (key == null && e.Alt && !e.Control && e.KeyCode == Keys.Right) key = _profile.NextPage;
+        if (key == null && e.Alt && !e.Control && e.KeyCode == Keys.Left) key = _profile.PrevPage;
         if (key == null && e.Alt && !e.Control && !e.Shift)
         {
             key = _profile.AltKeys.TryGetValue(e.KeyCode, out var page) ? page : null;

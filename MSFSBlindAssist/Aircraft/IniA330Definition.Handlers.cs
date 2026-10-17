@@ -461,6 +461,7 @@ public partial class IniA330Definition
             case HotkeyAction.FCUSetSpeed: ShowSpeedDialog(simConnect, announcer, parentForm); return true;
             case HotkeyAction.FCUSetAltitude: ShowAltitudeDialog(simConnect, announcer, parentForm); return true;
             case HotkeyAction.FCUSetVS: ShowVsDialog(simConnect, announcer, parentForm); return true;
+            case HotkeyAction.FCUSetBaro: ShowBaroDialog(simConnect, announcer, parentForm); return true;
             case HotkeyAction.FCUSetAutopilot:
                 hotkeyManager.ExitInputHotkeyMode();
                 ShowTrackedWindow(() => new Forms.IniA300.IniA300AutopilotWindow(AutopilotRows(simConnect, announcer), ShortName), w => w.ShowForm());
@@ -615,18 +616,133 @@ public partial class IniA330Definition
         return toTod ? $"{d:0} miles to top of descent{time}" : $"Destination {d:0} miles{time}";
     }
 
+    // =====================================================================
+    // Altimeter: the B key and its set dialog (captain's side; a set writes all three altimeters)
+    // =====================================================================
+
+    /// <summary>The cockpit's baro mode: 2 and 3 are STD (the A300 code base's XMLVAR_Baro1_Mode).</summary>
+    internal static bool IsStdMode(double? mode) => mode is double m && m >= 1.5;
+
+    internal static string DescribeAltimeter(double? millibars, double? mode)
+    {
+        if (IsStdMode(mode)) return "Altimeter standard";
+        if (millibars is not double mb || mb <= 0) return "Altimeter not available";
+        return $"Altimeter {mb.ToString("0", CultureInfo.InvariantCulture)} hectopascals, "
+             + $"{(mb / 33.8639).ToString("0.00", CultureInfo.InvariantCulture)} inches";
+    }
+
+    /// <summary>STD from the cockpit's own mode var; the stock STD flag only when that did not answer.</summary>
+    private static async Task<double?> ReadBaroModeAsync(SimConnectManager sim)
+    {
+        double? mode = await sim.ReadFreshAsync("A330_BARO_MODE_FRESH", 1000);
+        if (mode is not null) return mode;
+        double? std = await sim.ReadFreshAsync("A330_BARO_STD_FRESH", 1000);
+        return std is double s ? (s > 0.5 ? 3 : 0) : null;
+    }
+
     private static void ReadAltimeter(SimConnectManager sim, ScreenReaderAnnouncer announcer)
     {
         var ui = SynchronizationContext.Current;
         _ = Task.Run(async () =>
         {
             double? mb = await sim.ReadFreshAsync("A330_BARO_FRESH", 1000);
-            double? std = await sim.ReadFreshAsync("A330_BARO_STD_FRESH", 1000);
-            string msg = std is double s && s > 0.5 ? "Altimeter standard"
-                : mb is double m && m > 800 ? $"Altimeter {m:0} hectopascals, {(m * 0.02953).ToString("0.00", CultureInfo.InvariantCulture)} inches"
-                : "Altimeter not available";
+            double? mode = await ReadBaroModeAsync(sim);
+            string msg = DescribeAltimeter(mb, mode);
             if (ui != null) ui.Post(_ => announcer.AnnounceImmediate(msg), null);
         });
+    }
+
+    /// <summary>The ways this airframe might take a baro knob pull (STD) or push (QNH), tried in order
+    /// until the mode reads back changed. None is measured yet on either airframe, so the walk is
+    /// closed-loop and logs which one worked. A330: its own input events first (Airbus: pull = STD,
+    /// push = QNH), then the code base's L:var commands; the A321 overrides with the L:vars alone
+    /// (its input events do nothing from outside).</summary>
+    internal virtual IEnumerable<(string name, Action<SimConnectManager> press)> BaroPresses(bool toStd)
+    {
+        string knob = toStd ? "PULL" : "PUSH";
+        yield return ($"input {knob} action", s => { PushEvent(s, $"AIRLINER_CPT_BARO_SET_{knob}"); PushEvent(s, $"AIRLINER_FO_BARO_SET_{knob}"); });
+        yield return ($"input {knob} value", s => { PressByValue(s, $"AIRLINER_CPT_BARO_SET_{knob}"); PressByValue(s, $"AIRLINER_FO_BARO_SET_{knob}"); });
+        foreach (var p in AltimeterCommandPresses(toStd)) yield return p;
+    }
+
+    /// <summary>The A300 code base's altimeter commands. Which flag does which is not proven (the A300
+    /// carries the same doubt), so both are offered, the likely one first.</summary>
+    protected IEnumerable<(string name, Action<SimConnectManager> press)> AltimeterCommandPresses(bool toStd)
+    {
+        foreach (var flag in toStd ? new[] { "STD", "PULL" } : new[] { "PULL", "STD" })
+            yield return ($"L:var {flag}", s => { Pulse(s, $"INI_CPT_ALTIMETER_{flag}_COMMAND"); Pulse(s, $"INI_FO_ALTIMETER_{flag}_COMMAND"); });
+    }
+
+    private void ToggleStandard(SimConnectManager sim, ScreenReaderAnnouncer announcer)
+    {
+        if (!CanCalc(sim, announcer, "Altimeter standard")) return;
+        var ui = SynchronizationContext.Current;
+        string log = ShortName.ToLowerInvariant();
+        _ = Task.Run(async () =>
+        {
+            double? start = await ReadBaroModeAsync(sim);
+            if (start is null)
+            {
+                ui?.Post(_ => announcer.AnnounceImmediate("Altimeter did not report back"), null);
+                return;
+            }
+            bool wasStd = IsStdMode(start);
+            double? mode = start;
+            foreach (var (name, press) in BaroPresses(!wasStd))
+            {
+                // the presses touch the input-event hashes and the SimConnect handle: send from the UI thread
+                if (ui != null) ui.Post(_ => press(sim), null); else press(sim);
+                await Task.Delay(700);
+                mode = await ReadBaroModeAsync(sim);
+                Log.Info(log, $"altimeter {(wasStd ? "QNH" : "STD")} via {name}: mode {start} -> {mode?.ToString(CultureInfo.InvariantCulture) ?? "none"}");
+                if (mode is null || IsStdMode(mode) != wasStd) break;
+            }
+            double? mb = await sim.ReadFreshAsync("A330_BARO_FRESH", 1000);
+            string msg = mode is null ? "Altimeter did not report back"
+                : IsStdMode(mode) == wasStd ? $"Altimeter did not change. {DescribeAltimeter(mb, mode)}"
+                : DescribeAltimeter(mb, mode);
+            if (ui != null) ui.Post(_ => announcer.AnnounceImmediate(msg), null);
+        });
+    }
+
+    private void ShowBaroDialog(SimConnectManager sim, ScreenReaderAnnouncer announcer, Form parent)
+    {
+        _ = sim.ReadFreshAsync("A330_BARO_MODE_FRESH", 1000);   // so the Standard button opens with the live state
+        string log = ShortName.ToLowerInvariant();
+        var toggles = new List<ToggleButtonDef>
+        {
+            new("&Standard", () => IsStdMode(sim.GetCachedVariableValue("A330_BARO_MODE_FRESH")) ? "STD" : "QNH",
+                () => ToggleStandard(sim, announcer)),
+        };
+        var dlg = new ValueInputForm("Altimeter Setting", "altimeter", "hPa (900-1100) or inHg (26.00-32.00)", announcer,
+            input => double.TryParse(input, NumberStyles.Any, CultureInfo.InvariantCulture, out double v)
+                     && ((v >= 900 && v <= 1100) || (v >= 26 && v <= 32))
+                ? (true, "") : (false, "Enter hPa (900-1100) or inHg (26.00-32.00)"),
+            toggles,
+            input =>
+            {
+                if (!double.TryParse(input, NumberStyles.Any, CultureInfo.InvariantCulture, out double v)) return;
+                if (!CanCalc(sim, announcer, "Altimeter")) return;
+                double hpa = v >= 900 ? v : v * 33.8639;
+                string mb16 = Num(Math.Round(hpa * 16));
+                // captain, first officer and standby: index first, then millibars x 16 (the A300's form)
+                for (int i = 1; i <= 3; i++) Write(sim, $"{i} {mb16} (>K:2:KOHLSMAN_SET)");
+                var ui = SynchronizationContext.Current;
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(500);
+                    double? got = await sim.ReadFreshAsync("A330_BARO_FRESH", 1500);
+                    double? mode = await ReadBaroModeAsync(sim);
+                    Log.Info(log, $"altimeter set {hpa:0.0} hPa: reads {got?.ToString(CultureInfo.InvariantCulture) ?? "none"}, mode {mode?.ToString(CultureInfo.InvariantCulture) ?? "none"}");
+                    string msg = got is null ? "Altimeter sent, it did not report back"
+                        : Math.Abs(got.Value - hpa) > 0.6 ? $"Altimeter shows {got.Value:0} hectopascals, not {hpa:0}"
+                        : IsStdMode(mode) ? $"{DescribeAltimeter(got, 0)} set behind standard. Standard is still selected."
+                        : DescribeAltimeter(got, mode);
+                    if (ui != null) ui.Post(_ => announcer.AnnounceImmediate(msg), null);
+                });
+            });
+        dlg.ShowCancelButton = false;
+        dlg.Show(parent);
     }
 
     private static void ReadRadios(SimConnectManager sim, ScreenReaderAnnouncer announcer)

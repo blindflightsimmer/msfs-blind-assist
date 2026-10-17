@@ -59,11 +59,17 @@ either. They are shared iniBuilds infrastructure: on this branch they serve the 
   advance 15.0, cap height 18.3 (must equal the trainer's `BASE_CAP` — pinned by a test), ink threshold 40 — grey text peaks ~77, so the A300's higher
   threshold loses it). Colour per character (`CduColour`); grey words are spoken
   "(unavailable)" (`CduLineText`). Glyphs: `Resources/a330-cdu-glyphs.bin`, trained in
-  `tools/a330-cdu-ocr` (36 labelled pages; leave-one-page-out 99.73 %, residual confusions O/Q,
-  R/P, long dash vs '=') — retrain there, never patch the .bin.
+  `tools/a330-cdu-ocr` (39 labelled pages; leave-one-page-out 99.79 % (4237/4246), residual
+  confusions O/Q, R/P, long dash vs '='). The three F-PLN pages added 2026-10-17 taught `(`, `)` and
+  the ditto `"` — before them "(T/C)" read "1T/C1" and a repeated speed read "." — retrain there, never patch the .bin.
 * **MCDU keys:** write 1 to `INI_MCDU1_<KEY>`. Verified: DIR PROG PERF INIT DATA FPLAN RADNAV
-  AIRPORT MENU FUEL SEC ATC PREV NEXT, letters, digits. From the iniBuilds A320 naming, unverified:
-  UARROW / DOWN (slew), OVERFLY, DECIMAL, SPACE, PLUS (the +/- key), CLR.
+  AIRPORT MENU FUEL SEC ATC PREV NEXT, letters, digits. Slew keys verified in flight 2026-10-17 and,
+  like the A300's, named BACKWARDS: `UARROW` moves on down the F-PLN, `DOWN` back toward the top. The
+  window follows the A320 convention: Page Up/Down and Alt+Up/Down scroll, Alt+Left/Right change page.
+  From the iniBuilds A320 naming, unverified: OVERFLY, DECIMAL, SPACE, PLUS (the +/- key), CLR.
+* **Camera restore after the MCDU pop-out** is written, read back and repeated until it holds, from
+  the UI thread: a single type+index write sent from the pop-out's pool thread was reported sent and
+  left the camera on the MCDU close-up (live 2026-10-17), which silences the cockpit ambience.
 * **EFB:** Coherent HTML page "iniEfbA330", `Resources/coherent-a330-efb-agent.js` (fork of the
   A300 agent) + `CoherentPmdgEfbClient.ForIniA330()`. Side-bar buttons, door state from the
   `door-open`/`door-transit` class or the tile's gradient, ground equipment from `INI_GPU_AVAIL`,
@@ -78,7 +84,7 @@ either. They are shared iniBuilds infrastructure: on this branch they serve the 
 * A/THR, AP1/AP2, LOC and APPR pulses do nothing on the ground — expected, but unproven in the air.
 * Parking brake direction (`AIRLINER_PARKINGBRAKE` input 0 = set), landing-light position words,
   dome/wiper labels, several `B:` reads.
-* MCDU slew keys' direction and OVERFLY (need a flight plan).
+* MCDU OVERFLY (needs a flight plan).
 
 ## Probe side effect left in the aircraft
 * Probing left RMP 1's NAV backup ON (`INI_RMP1_ILS_STATE`/`VOR_STATE` = 1) and it would not

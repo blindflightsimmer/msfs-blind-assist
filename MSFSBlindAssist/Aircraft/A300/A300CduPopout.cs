@@ -149,9 +149,47 @@ internal sealed class A300CduPopout
         }
         finally
         {
-            if (before is { } b && b.type == 1) setCamera(b.type, b.index);   // a built-in cockpit view
+            await RestoreCameraAsync(before, readCamera, setCamera);
             SetCursorPos(prevCursor.X, prevCursor.Y);
             if (prevForeground != IntPtr.Zero) BringToFront(prevForeground);
+        }
+    }
+
+    /// <summary>Takes the camera out of the MCDU close-up again. The pilot's own view is tried first;
+    /// when that write does not take — a user-saved custom cockpit view reads as type 1 with an index
+    /// the write refuses, and an instrument view (type 2) is not where anyone sits — the camera goes
+    /// to the default pilot seat (1, 0) rather than staying on the MCDU. Left in the close-up, the
+    /// cockpit's positioned ambience (avionics fans) went silent (A330, 2026-10-16). Views outside the
+    /// cockpit (external, drone) are left alone, as before.</summary>
+    private static async Task RestoreCameraAsync((int type, int index)? before,
+        Func<Task<(int type, int index)?>> readCamera, Action<int, int> setCamera)
+    {
+        if (before is not { } b || (b.type != 1 && b.type != InstrumentViewType)) return;
+        try
+        {
+            // Every write is checked by reading the camera back and repeated until it holds: measured
+            // live 2026-10-17 (A330, FS2024), a single type+index write sent straight after the pop-out
+            // was reported sent yet left the camera on the MCDU close-up — twice in one flight, the
+            // cockpit ambience silent each time. Writing again once the type has taken is what lands.
+            if (b.type == 1 && await SetAndConfirmAsync(b.index)) return;
+            if (await SetAndConfirmAsync(0))
+            {
+                if (b.type == 1) _log.Info($"pop-out: camera {b.type}/{b.index} could not be restored; returned to the pilot seat");
+                return;
+            }
+            _log.Warn("pop-out: the camera did not leave the CDU view; the pilot seat could not be restored");
+        }
+        catch (Exception ex) { _log.Warn($"pop-out: camera restore failed: {ex.Message}"); }
+
+        async Task<bool> SetAndConfirmAsync(int index)
+        {
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                setCamera(1, index);
+                await Task.Delay(400);
+                if (await readCamera() is { type: 1 } now && now.index == index) return true;
+            }
+            return false;
         }
     }
 

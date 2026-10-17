@@ -136,8 +136,8 @@ MCDU:
                Type into the scratchpad field and press Enter to send text
                Alt+S                Jump to the scratchpad field
                Alt+Home             Back to the screen
-               Page Up / Page Down  Previous / next page
-               Alt+Up / Alt+Down    Slew up / down
+               Page Up / Page Down  Scroll the flight plan up / down (slew keys; Alt+Up / Alt+Down too)
+               Alt+Left / Alt+Right Previous / next page
                Backspace            CLR (with the screen focused)
                Alt+D DIR, Alt+G PROG, Alt+P PERF, Alt+I INIT, Alt+A DATA,
                Alt+F F-PLN, Alt+R RAD NAV, Alt+U FUEL PRED, Alt+X SEC F-PLN,
