@@ -83,8 +83,6 @@ public partial class MainForm : Form
     private readonly Services.Geography.OfflineLocationService offlineLocationService =
         new(Services.Geography.LocationDataStore.Default);
 
-    private ChecklistForm? checklistForm;
-
     private FenixMonitorManagerForm? fenixMonitorManagerForm;
 
     private Forms.FBWA380.FBWA380MonitorManagerForm? fbwA380MonitorManagerForm;
@@ -108,6 +106,10 @@ public partial class MainForm : Form
     private MSFSBlindAssist.Services.FlyByWireMCDUService? flyByWireMCDUService;
 
     private System.Windows.Forms.Form? pmdgCDUForm;
+    /// <summary>The current aircraft's First Officer window (Shift+C, File → First Officer).
+    /// Built only by <see cref="Forms.FirstOfficer.FirstOfficerWindows.Create"/> (FO-24) and
+    /// disposed on every aircraft swap, so it always belongs to the loaded aircraft.</summary>
+    private Forms.FirstOfficer.IFirstOfficerWindow? firstOfficerForm;
 
     private Forms.FBWA380.FBWA380MCDUForm? fbwA380MCDUForm;
 
@@ -336,10 +338,11 @@ public partial class MainForm : Form
     // Periodic auto-refresh for the currently-shown Status Display box. SD-page content
     // (FOB, engine N1/N2, fuel per-tank, etc.) is an OnRequest snapshot — without this it
     // freezes at whatever it read when the panel opened and never reflects live changes.
-    // While a panel with a "_REFRESH_" button is shown, this ticks every few seconds and
+    // While a panel with a "_DISPLAY_" status list is shown, this ticks every second and
     // (a) rebuilds any snapshot SD content via OnDisplayPanelShown and (b) re-pulls the
     // panel's OnRequest display vars — silently (the "Loading..." placeholder only shows on
-    // the first empty populate, so the box updates in place with no flash).
+    // the first empty populate, so the box updates in place with no flash). F5 runs the same
+    // refresh at once (RefreshDisplayNow).
     private System.Windows.Forms.Timer? _sdAutoRefreshTimer;
 
     // Liftoff → Hand Fly handoff guard. The handoff is ARMED on the on-ground→
@@ -470,13 +473,6 @@ public partial class MainForm : Form
 
     private Dictionary<string, double> displayValues = new Dictionary<string, double>();  // Store display values
 
-    private Dictionary<string, TaskCompletionSource<bool>>? pendingDisplayRequests = null;  // Track pending display requests
-
-    // The control to return focus to after a status-box refresh (F5). The async refresh
-    // moves focus onto the Refresh button; the F5 handler captures the status box here so
-    // refreshButton.Click can restore it — otherwise the blind user "lands elsewhere".
-    private Control? _refreshFocusReturn = null;
-
     private ConcurrentDictionary<string, bool> pendingStateAnnouncements = new ConcurrentDictionary<string, bool>();  // Track state announcement requests
 
     private IAircraftDefinition currentAircraft;
@@ -524,6 +520,7 @@ public partial class MainForm : Form
         {
             sectionsListBox.Items.Add(section);
         }
+        WatchPanelVariant();
 
         // Sync menu items with the loaded aircraft (fixes first-launch menu mismatch)
         UpdateAircraftMenuItems();
@@ -551,6 +548,9 @@ public partial class MainForm : Form
         // it works whenever the sim + iFly plugin are running). Generic announcements
         // don't wait on SimConnect either — see StartIFlyAnnouncementGrace's call sites.
         StartIFlySdkBridge();
+
+        // PMDG 737: the display readers wait for the PMDG SDK themselves, so they start with the aircraft.
+        StartPmdg737Displays();
 
         // Don't set focus - let default tab order handle it for proper menu accessibility
     }
@@ -719,10 +719,15 @@ public partial class MainForm : Form
         simConnectManager.SimulatorVersionDetected += OnSimulatorVersionDetected;
         simConnectManager.SimVarUpdated += OnSimVarUpdated;
         simConnectManager.ContinuousBatchDelivered += OnContinuousBatchDelivered;
+
+        // The universal (all-aircraft) auto-gear/AP service and its 1 Hz feed: MainForm.UniversalAutomation.cs.
+        InitializeUniversalAutomation();
         simConnectManager.QueuedEventDispatched += OnQueuedEventDispatched;
         simConnectManager.TakeoffRunwayReferenceSet += OnTakeoffRunwayReferenceSet;
         simConnectManager.AircraftIcaoTypeDetected += OnAircraftIcaoTypeDetected;
         simConnectManager.AircraftLoaded += OnAircraftLoaded;
+        simConnectManager.SimStateChanged += OnSimStateChanged;
+        simConnectManager.SimRateChanged += OnSimRateChanged;
         simConnectManager.ConnectionLost += OnConnectionLost;
 
         // Warm the GSX door-offset map in the background so docking sessions have
@@ -973,9 +978,11 @@ public partial class MainForm : Form
             PrepareRunwayProbeWarmUp = taxiGuidanceManager.PrepareRunwayShapeWarmUp,
         };
 
-        // Per-aircraft rollout-anticipation lead for the taxi steering tone
-        // (see IAircraftDefinition.TaxiTurnLeadSeconds).
+        // Per-aircraft rollout-anticipation leads for the taxi steering tone, and their ceiling
+        // (see IAircraftDefinition.TaxiTurnLeadSeconds / TaxiSharpTurnLeadSeconds / TaxiTurnLeadMaxDegrees).
         taxiGuidanceManager.TurnLeadSeconds = currentAircraft.TaxiTurnLeadSeconds;
+        taxiGuidanceManager.SharpTurnLeadSeconds = currentAircraft.TaxiSharpTurnLeadSeconds;
+        taxiGuidanceManager.TurnLeadMaxDegrees = currentAircraft.TaxiTurnLeadMaxDegrees;
 
         // Read the raw navdata provider into a LOCAL, not the field: the field is assigned exactly
         // once below, through WithTaxiAugmentation — see its doc comment and ProviderWrapGuardTests.
@@ -1270,7 +1277,29 @@ public partial class MainForm : Form
 
     private void MarkUiSet(string? varName, double value)
     {
-        if (!string.IsNullOrEmpty(varName)) _uiSetEcho[varName] = (value, Environment.TickCount64);
+        if (string.IsNullOrEmpty(varName)) return;
+        long now = Environment.TickCount64;
+        _uiSetEcho[varName] = (value, now);
+        // A switch whose state comes back on a separate light (SimVarDefinition.UiEchoVariable)
+        // marks that light too: its change is the same echo the screen reader already spoke.
+        if (currentAircraft.GetVariables().TryGetValue(varName, out var def)
+            && !string.IsNullOrEmpty(def.UiEchoVariable))
+            _uiSetEcho[def.UiEchoVariable] = (value, now);
+    }
+
+    /// <summary>
+    /// A panel press of a button that flips its own state light (SimVarDefinition.PressTogglesStateVariable:
+    /// the Fenix EFIS FD and LS buttons): marks the light with the value the press should leave, so the light's
+    /// change is not spoken after the screen reader read the button's new label (CORE-7). It rides the same
+    /// value-matched gate as a combo pick (CORE-8, CORE-9), so a change the pilot did not cause with this press
+    /// still speaks. Nothing is marked while disconnected (no press is sent) or while the light is unread.
+    /// </summary>
+    private void MarkStateLightEchoForPress(SimVarDefinition buttonDef)
+    {
+        if (simConnectManager is not { IsConnected: true } || string.IsNullOrEmpty(buttonDef.StateVariable)) return;
+        double? cached = currentSimVarValues.TryGetValue(buttonDef.StateVariable, out double lit) ? lit : null;
+        if (buttonDef.StateVariableAfterPress(cached) is double expected)
+            MarkUiSet(buttonDef.StateVariable, expected);
     }
 
     /// <summary>
@@ -1313,10 +1342,10 @@ public partial class MainForm : Form
     }
 
     /// <summary>
-    /// True for the quick-access readout hotkeys (the H/V/Q/S/D/B/P/A/F set) — single
-    /// keypresses whose whole purpose is to speak a value. When one of these fires during
-    /// an active visual-guidance session, VG opens a grace window so its per-second
-    /// bank/centerline callouts don't talk over the readout.
+    /// True for the quick-access readout hotkeys (the H/V/Q/S/D/B/P/A/F set)
+    /// — single keypresses whose whole purpose is to speak a value. When
+    /// one of these fires during an active visual-guidance session, VG opens a grace window
+    /// so its per-second bank/centerline callouts don't talk over the readout.
     /// </summary>
     private static bool IsManualReadoutAction(HotkeyAction action) => action switch
     {
@@ -1363,6 +1392,13 @@ public partial class MainForm : Form
 
         _warmUpAfterLoadTimer?.Stop();
         _warmUpAfterLoadTimer?.Dispose();
+
+        // The First Officer window: only an aircraft switch disposed it, so on exit its 1 s timer
+        // and a running flow kept going through Disconnect()'s DoEvents pump below, still able to
+        // speak and to send writes. Its Dispose cancels the flow and detaches the executor.
+        firstOfficerForm?.Dispose(); firstOfficerForm = null;
+
+        DisposeUniversalAutomation();
 
         // Clean up taxi guidance, docking guidance, and ground traffic monitor
         taxiGuidanceManager?.Dispose();
@@ -1454,6 +1490,12 @@ public partial class MainForm : Form
         (currentAircraft as FlyByWireA380Definition)?.StopAllMotion();
         (currentAircraft as FlyByWireA320Definition)?.StopAllMotion();
         currentAircraft?.CancelDeferredFlush();
+        // The swap path's two other def hooks, which a quit never ran: the def's own timers that can
+        // still speak (OnSwitchedAway: the PMDG speed-brake settle call-out), and a held 737 warning
+        // test (stick shaker or overspeed clacker), released while the sim is still connected, or it
+        // kept sounding after MSFSBA had closed ([P737-6]).
+        (currentAircraft as BaseAircraftDefinition)?.OnSwitchedAway();
+        (currentAircraft as PMDG737Definition)?.ReleaseEngagedWarningTests(simConnectManager);
 
         // The MD-11 def owns the CEVENT pump and, during a hold-to-test's 3 s, a button the sim
         // still has pressed. Dispose it here — BEFORE Disconnect() — so its Dispose (which queues

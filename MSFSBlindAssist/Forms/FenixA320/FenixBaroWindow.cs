@@ -16,8 +16,10 @@ public partial class FenixBaroWindow : Form
     private ComboBox baroModeCombo = null!;
     private ComboBox unitCombo = null!;
     private TextBox valueTextBox = null!;
-    private Button setButton = null!;
     private Button closeButton = null!;
+    // A set is on its way to the aircraft (it awaits the FCU): a second Enter is refused aloud,
+    // never queued, so the pilot knows to press it again once the first set ends.
+    private bool _settingBaro;
 
     private readonly FenixA320Definition aircraft;
     private readonly SimConnect.SimConnectManager simConnect;
@@ -82,7 +84,11 @@ public partial class FenixBaroWindow : Form
         double? qnhValue = simConnect.GetCachedVariableValue("I_FCU_EFIS1_QNH");
         baroModeCombo.SelectedIndex = (qnhValue != null && qnhValue.Value > 0.5) ? 0 : 1;
 
-        baroModeCombo.SelectedIndexChanged += BaroModeCombo_SelectedIndexChanged;
+        // SelectionChangeCommitted fires only on the pilot's own pick. SelectedIndexChanged fires when the
+        // combo's handle is created, which happens after the initial mode above was assigned (see
+        // MainForm.PanelBuilder.cs, where the same event sent phantom writes), so opening this window
+        // would step the knob: a pull to STD when the QNH light is unread and the combo defaults to STD.
+        baroModeCombo.SelectionChangeCommitted += BaroModeCombo_SelectionChangeCommitted;
 
         // Unit ComboBox
         var unitLabel = new Label
@@ -124,18 +130,6 @@ public partial class FenixBaroWindow : Form
         };
         valueTextBox.KeyDown += ValueTextBox_KeyDown;
 
-        // Set Button
-        setButton = new Button
-        {
-            Text = "Set",
-            Location = new Point(190, 65),
-            Size = new Size(90, 30),
-            AccessibleName = "Set Altimeter",
-            AccessibleDescription = "Set the entered altimeter value",
-            TabIndex = 3
-        };
-        setButton.Click += async (s, e) => await HandleSetClick();
-
         // Close Button
         closeButton = new Button
         {
@@ -152,11 +146,10 @@ public partial class FenixBaroWindow : Form
         Controls.AddRange(new Control[]
         {
             modeLabel, baroModeCombo, unitLabel, unitCombo,
-            valueLabel, valueTextBox, setButton, closeButton
+            valueLabel, valueTextBox, closeButton
         });
 
         CancelButton = closeButton;
-        AcceptButton = setButton;
 
         UpdateControlState();
     }
@@ -182,13 +175,15 @@ public partial class FenixBaroWindow : Form
         };
     }
 
-    private void BaroModeCombo_SelectedIndexChanged(object? sender, EventArgs e)
+    private void BaroModeCombo_SelectionChangeCommitted(object? sender, EventArgs e)
     {
         bool isStd = baroModeCombo.SelectedIndex == 1;
 
-        // Set both EFIS altimeters
-        simConnect.SetLVar("S_FCU_EFIS1_BARO_STD", isStd ? 1 : 0);
-        simConnect.SetLVar("S_FCU_EFIS2_BARO_STD", isStd ? 1 : 0);
+        // Set both EFIS altimeters: a pull (+1, STD) or a push (-1, QNH) from the sim's own count. The
+        // STD knob is a push/pull counter the Fenix acts on by difference, so an absolute value could
+        // select the wrong mode or nothing.
+        simConnect.ExecuteCalculatorCodeUnique(FenixA320Definition.CounterStepCode("S_FCU_EFIS1_BARO_STD", isStd ? 1 : -1));
+        simConnect.ExecuteCalculatorCodeUnique(FenixA320Definition.CounterStepCode("S_FCU_EFIS2_BARO_STD", isStd ? 1 : -1));
 
         UpdateControlState();
     }
@@ -198,8 +193,11 @@ public partial class FenixBaroWindow : Form
         bool isStd = baroModeCombo.SelectedIndex == 1;
         unitCombo.Enabled = !isStd;
         valueTextBox.Enabled = !isStd;
-        setButton.Enabled = !isStd;
     }
+
+    // "Setting altimeter to 29.92": invariant, so a comma-decimal Windows never speaks "29,92".
+    internal static string SettingAltimeterAnnouncement(double inHg)
+        => FormattableString.Invariant($"Setting altimeter to {inHg:0.00}");
 
     private async void ValueTextBox_KeyDown(object? sender, KeyEventArgs e)
     {
@@ -213,7 +211,14 @@ public partial class FenixBaroWindow : Form
 
     private async System.Threading.Tasks.Task HandleSetClick()
     {
-        if (!setButton.Enabled) return;
+        // STD disables the value box (UpdateControlState).
+        if (!valueTextBox.Enabled) return;
+        // A set already on its way blocks a second, aloud: a silent drop let a corrected value vanish.
+        if (_settingBaro)
+        {
+            announcer.AnnounceImmediate("Altimeter set in progress, press Enter again when it finishes");
+            return;
+        }
 
         string input = valueTextBox.Text.Trim();
 
@@ -244,7 +249,7 @@ public partial class FenixBaroWindow : Form
                 return;
             }
 
-            setButton.Enabled = false;
+            _settingBaro = true;
             try
             {
                 announcer.AnnounceImmediate($"Setting altimeter to {hpaValue}");
@@ -257,7 +262,7 @@ public partial class FenixBaroWindow : Form
             }
             finally
             {
-                setButton.Enabled = baroModeCombo.SelectedIndex != 1;
+                _settingBaro = false;
                 valueTextBox.SelectAll();
             }
         }
@@ -279,10 +284,10 @@ public partial class FenixBaroWindow : Form
                 return;
             }
 
-            setButton.Enabled = false;
+            _settingBaro = true;
             try
             {
-                announcer.AnnounceImmediate($"Setting altimeter to {inHgValue:0.00}");
+                announcer.AnnounceImmediate(SettingAltimeterAnnouncement(inHgValue));
                 double targetInHg = Math.Round(inHgValue, 2);
                 await aircraft.SetFCUBaro(null, targetInHg, simConnect, announcer);
             }
@@ -293,7 +298,7 @@ public partial class FenixBaroWindow : Form
             }
             finally
             {
-                setButton.Enabled = baroModeCombo.SelectedIndex != 1;
+                _settingBaro = false;
                 valueTextBox.SelectAll();
             }
         }

@@ -703,12 +703,20 @@ public class SimBriefService
 
     /// <summary>
     /// Parses a SimBrief XML OFP document into a SimBriefOFP model.
-    /// All fields gracefully fall back to empty string if not present.
+    /// All fields gracefully fall back to empty string if not present. Internal for its tests.
     /// </summary>
-    private SimBriefOFP ParseFullOFP(XmlDocument doc)
+    internal SimBriefOFP ParseFullOFP(XmlDocument doc)
     {
         var ofp = new SimBriefOFP();
         string V(XmlNode? n, string child) => n?.SelectSingleNode(child)?.InnerText?.Trim() ?? "";
+
+        // ── Identity ─────────────────────────────────────────────────────────
+        var prm = doc.SelectSingleNode("//params");
+        string requestId = V(prm, "request_id");
+        ofp.PlanId = requestId.Length > 0 ? requestId : V(prm, "time_generated");
+        // The pilot's weight unit for this plan (fuel, weights, nav log, TLR) lives in params,
+        // not general; the general object has no units field.
+        ofp.Units = V(prm, "units").ToUpperInvariant() is "KGS" or "KG" ? "kgs" : "lbs";
 
         // ── General ──────────────────────────────────────────────────────────
         var gen = doc.SelectSingleNode("//general");
@@ -730,7 +738,6 @@ public class SimBriefService
             ofp.Passengers      = V(gen, "passengers");
             ofp.AvgWindComp     = V(gen, "avg_wind_comp");
             ofp.AvgIsaDev       = V(gen, "avg_temp_dev");
-            ofp.Units           = V(gen, "units").ToUpperInvariant() is "KGS" or "KG" ? "kgs" : "lbs";
             ofp.StepClimbString = V(gen, "stepclimb_string");
         }
 
@@ -843,9 +850,11 @@ public class SimBriefService
             // Field name for flaps varies across SimBrief OFP versions
             ofp.TakeoffFlaps    = First(toa, "flap_setting", "flaps", "flap", "takeoff_flap");
             ofp.TakeoffTrim     = First(toa, "trim", "stab_trim", "cg_trim");
-            ofp.TakeoffHw       = First(toa, "headwind", "head_wind", "hw");
-            ofp.TakeoffXw       = First(toa, "crosswind", "cross_wind", "xw");
-            ofp.PerfLimitFactor = First(toa, "limiting_factor", "limit", "perf_limit");
+            ofp.TakeoffHw           = First(toa, "headwind", "head_wind", "hw");
+            ofp.TakeoffXw           = First(toa, "crosswind", "cross_wind", "xw");
+            ofp.PerfLimitFactor     = First(toa, "limiting_factor", "limit", "perf_limit");
+            ofp.TakeoffEngineRating = First(toa, "engine_rating", "thrust_rating", "eng_rating", "derate", "rating");
+            ofp.TakeoffAssumedTemp  = First(toa, "assumed_oat", "assumed_temp", "flex_temp", "red_temp", "derate_temp", "assumed_temperature");
         }
 
         // ── Performance – Landing ─────────────────────────────────────────────
@@ -870,6 +879,26 @@ public class SimBriefService
             ofp.LandingHw           = First(lda, "headwind", "head_wind", "hw");
             ofp.LandingXw           = First(lda, "crosswind", "cross_wind", "xw");
         }
+
+        // ── TLR structured values ─────────────────────────────────────────────
+        // The same runway lengths and landing distances the TLR text prints, as fields. Feet: the
+        // TLR text labels them "FT", and they match it (YPDN-AYPY: LDA 9022, actual dry 3775).
+        var tlrTo  = doc.DocumentElement?.SelectSingleNode("tlr/takeoff");
+        var tlrLdg = doc.DocumentElement?.SelectSingleNode("tlr/landing");
+        foreach (XmlNode r in tlrTo?.SelectNodes("runway")?.Cast<XmlNode>() ?? Enumerable.Empty<XmlNode>())
+        {
+            string id = V(r, "identifier");
+            if (id.Length > 0) ofp.TlrTakeoffToraFt[id] = V(r, "length_tora");
+        }
+        foreach (XmlNode r in tlrLdg?.SelectNodes("runway")?.Cast<XmlNode>() ?? Enumerable.Empty<XmlNode>())
+        {
+            string id = V(r, "identifier");
+            if (id.Length > 0) ofp.TlrLandingLdaFt[id] = V(r, "length_lda");
+        }
+        ofp.TlrLdgActualDryFt   = V(tlrLdg, "distance_dry/actual_distance");
+        ofp.TlrLdgActualWetFt   = V(tlrLdg, "distance_wet/actual_distance");
+        ofp.TlrLdgFactoredDryFt = V(tlrLdg, "distance_dry/factored_distance");
+        ofp.TlrLdgFactoredWetFt = V(tlrLdg, "distance_wet/factored_distance");
 
         // ── Nav Log ───────────────────────────────────────────────────────────
         // Use doc.DocumentElement to scope to the top-level navlog only,

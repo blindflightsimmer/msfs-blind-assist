@@ -24,7 +24,9 @@ public partial class MainForm
         // Actions that don't require SimConnect connection (can be used offline)
         var offlineActions = new HashSet<HotkeyAction>
         {
-            HotkeyAction.ShowChecklist,
+            // The First Officer window opens before the sim connects (as from the File menu) and
+            // re-wires on connect (IFirstOfficerWindow.OnSimConnectChanged).
+            HotkeyAction.ShowFirstOfficer,
             HotkeyAction.ShowMETARReport,
             HotkeyAction.ShowColdTempCorrection,
             HotkeyAction.SimBriefBriefing,
@@ -40,7 +42,13 @@ public partial class MainForm
             // Muting VATSIM chatter has nothing to do with the simulator. Without this
             // the pilot gets "Not connected to simulator, please wait" while trying to
             // silence a busy frequency.
-            HotkeyAction.ToggleVatsimAnnouncements
+            HotkeyAction.ToggleVatsimAnnouncements,
+            // The Volanta window reads Volanta's web map and opens from Extras whether or not the
+            // sim is connected; its hotkey must too.
+            HotkeyAction.ShowVolanta,
+            // The aircraft's window list opens before the sim connects, like the MCDU and EFB windows.
+            // An aircraft without one must still say so rather than "Not connected to simulator".
+            HotkeyAction.ShowAircraftWindows
         };
 
         // Guard clause: Block SimConnect-dependent actions if not fully connected
@@ -172,6 +180,9 @@ public partial class MainForm
             case HotkeyAction.ShowWeatherRadar:
                 OpenWeatherRadarWindow();
                 break;
+            case HotkeyAction.ShowVolanta:
+                OpenVolantaWindow();
+                break;
             case HotkeyAction.ReadOutsideTemperature:
                 simConnectManager.RequestOutsideTemperature();
                 break;
@@ -202,8 +213,8 @@ public partial class MainForm
             case HotkeyAction.ShowChecklistECL:
                 ShowChecklistECLDialog();
                 break;
-            case HotkeyAction.ShowChecklist:
-                ShowChecklistDialog();
+            case HotkeyAction.ShowFirstOfficer:
+                ShowFirstOfficerFromHotkey();
                 break;
             case HotkeyAction.ShowElectronicFlightBag:
                 ShowElectronicFlightBagDialog();
@@ -279,8 +290,9 @@ public partial class MainForm
                 }
                 else if (currentAircraft?.AircraftCode == "FENIX_A320CEO")
                 {
-                    // The Fenix EFB web UI is already screen-reader accessible, so we
-                    // host the live site directly (no scraping/shim like the FBW flyPad).
+                    // The Fenix EFB web UI is not screen-reader accessible on its own, so we host
+                    // the live site directly and inject an accessibility layer into it (no
+                    // scraping/shim like the FBW flyPad).
                     ShowFenixEFBDialog();
                 }
                 break;
@@ -312,6 +324,11 @@ public partial class MainForm
                 {
                     announcer.AnnounceImmediate("The DCDU window is only available on the A32NX and the Headwind A330.");
                 }
+                break;
+            case HotkeyAction.ShowAircraftWindows:
+                // Reached only when the aircraft did not handle the key (today the Fenix A320 is the one
+                // aircraft with a window list). Say so: a silent key reads as a broken one.
+                announcer.AnnounceImmediate("This aircraft has no extra windows.");
                 break;
             case HotkeyAction.ShowOANS:
                 if (currentAircraft?.AircraftCode == "FBW_A380")
@@ -509,20 +526,6 @@ public partial class MainForm
 
             // Start monitoring position, pitch, and IAS for takeoff assist
             simConnectManager.StartTakeoffAssistMonitoring();
-
-            // If Fenix aircraft, read V1/VR speeds from MCDU performance data (already continuously monitored)
-            if (currentAircraft.AircraftCode == "FENIX_A320CEO")
-            {
-                // Use N_MISC_PERF_TO_V1/VR (MCDU performance data), not FNX2PLD_speedV1/VR (display variables)
-                bool foundV1 = currentSimVarValues.TryGetValue("N_MISC_PERF_TO_V1", out double v1Val);
-                bool foundVR = currentSimVarValues.TryGetValue("N_MISC_PERF_TO_VR", out double vrVal);
-
-                double? v1 = foundV1 ? v1Val : null;
-                double? vr = foundVR ? vrVal : null;
-                takeoffAssistManager.SetFenixVSpeeds(v1, vr);
-
-                Log.Debug("MainForm", $"Fenix V-speeds from MCDU: V1={v1Val}, VR={vrVal}");
-            }
         }
         else
         {
@@ -539,9 +542,6 @@ public partial class MainForm
 
             // Stop monitoring
             simConnectManager.StopTakeoffAssistMonitoring();
-
-            // Clear Fenix V-speeds on deactivation
-            takeoffAssistManager.ClearFenixVSpeeds();
         }
     }
 
@@ -791,18 +791,17 @@ public partial class MainForm
         {
             if (currentControls.TryGetValue("_DISPLAY_", out var dispCtrl) && dispCtrl is ListBox dispBox)
             {
+                bool wasFocused = dispBox.Focused;
                 dispBox.Focus();
                 // If the list is empty (OnRequest display vars don't auto-update until a
                 // refresh), pull live content so the user lands on real status rather than a
                 // blank list. The refresh is silent; the screen reader reads the list itself.
                 // If it already has content (continuously-monitored vars / a prior refresh),
-                // leave it untouched so NVDA reads the current value immediately.
-                if (dispBox.Items.Count == 0 &&
-                    currentControls.TryGetValue("_REFRESH_", out var refreshOnJump) &&
-                    refreshOnJump is Button jumpRefreshBtn && jumpRefreshBtn.Enabled)
-                {
-                    jumpRefreshBtn.PerformClick();
-                }
+                // leave it untouched so NVDA reads the current value immediately. Focus() just
+                // rebuilt the SD-page snapshot through the list's GotFocus unless the list
+                // already had focus, so the refresh does not rebuild it a second time.
+                if (dispBox.Items.Count == 0)
+                    RefreshDisplayNow(dispBox, "Ctrl+3", rebuildSnapshot: wasFocused);
             }
             else
             {
@@ -810,18 +809,18 @@ public partial class MainForm
             }
             return true;
         }
-        // F5 refreshes the current panel's Status Display without leaving the
-        // edit field/combo you're on (easier than tabbing to the Refresh button).
+        // F5 refreshes the current panel's Status Display at once, from the list or from the
+        // edit field/combo you're on, without moving focus. The list also updates itself live.
+        // A held F5 refreshes once: its auto-repeats would re-read the whole panel about 30 times
+        // a second. The refresh changes nothing the screen reader would say, so it is confirmed
+        // once ([CORE-7]), as the E/WD window's F5 is.
         else if (keyData == Keys.F5 &&
-                 currentControls.TryGetValue("_REFRESH_", out var refreshCtrl) &&
-                 refreshCtrl is Button refreshBtn && refreshBtn.Enabled)
+                 currentControls.TryGetValue("_DISPLAY_", out var refreshCtrl) &&
+                 refreshCtrl is ListBox refreshList)
         {
-            // F5 must not steal focus from the status box the user is reading. Capture the
-            // box as the focus-return target BEFORE PerformClick (the async refresh moves
-            // focus onto the Refresh button); refreshButton.Click restores it when done.
-            if (currentControls.TryGetValue("_DISPLAY_", out var dispCtrl) && dispCtrl is Control dispC && dispC.Focused)
-                _refreshFocusReturn = dispC;
-            refreshBtn.PerformClick();
+            bool isAutoRepeat = (msg.LParam.ToInt64() & 0x40000000) != 0;   // WM_KEYDOWN bit 30: the key was already down
+            if (!isAutoRepeat && RefreshDisplayNow(refreshList, "F5"))
+                announcer.Announce("Status display refreshed");
             return true;
         }
 

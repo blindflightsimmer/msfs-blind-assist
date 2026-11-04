@@ -92,6 +92,14 @@ CREATE TABLE ils (
     dme_range REAL, dme_altitude REAL, dme_lonx REAL, dme_laty REAL,
     gs_range REAL, gs_pitch REAL, gs_altitude REAL, gs_lonx REAL, gs_laty REAL,
     altitude REAL, lonx REAL, laty REAL
+);
+-- Only the columns PublishedLocalizerCourse.ReadAirport reads: the published localizer course.
+CREATE TABLE approach (
+    approach_id INTEGER PRIMARY KEY, airport_id INTEGER, airport_ident TEXT, runway_name TEXT, type TEXT
+);
+CREATE TABLE approach_leg (
+    approach_leg_id INTEGER PRIMARY KEY, approach_id INTEGER, is_missed INTEGER, type TEXT,
+    fix_ident TEXT, recommended_fix_ident TEXT, is_true_course INTEGER, course REAL
 );";
         using var cmd = _writeConnection!.CreateCommand();
         cmd.CommandText = sql;
@@ -142,6 +150,22 @@ CREATE TABLE ils (
             ("is_takeoff", 1), ("is_landing", 1), ("is_pattern", "Yes"), ("end_type", "PRIMARY"),
             ("left_vasi_type", null), ("left_vasi_pitch", null), ("right_vasi_type", null), ("right_vasi_pitch", null));
 
+    /// <summary>An approach procedure to one runway end; its legs go in with
+    /// <see cref="InsertApproachLeg"/>.</summary>
+    public void InsertApproach(int approachId, int airportId, string airportIdent, string runwayName, string type = "ILS")
+        => Insert("approach",
+            ("approach_id", approachId), ("airport_id", airportId), ("airport_ident", airportIdent),
+            ("runway_name", runwayName), ("type", type));
+
+    /// <summary>A procedure leg, by default a CF leg with a magnetic course, flown on
+    /// <paramref name="navaidIdent"/> (navdatareader's recommended_fix_ident).</summary>
+    public void InsertApproachLeg(int legId, int approachId, string fixIdent, string navaidIdent, double course,
+        bool isMissed = false, bool isTrueCourse = false, string legType = "CF")
+        => Insert("approach_leg",
+            ("approach_leg_id", legId), ("approach_id", approachId), ("is_missed", isMissed ? 1 : 0),
+            ("type", legType), ("fix_ident", fixIdent), ("recommended_fix_ident", navaidIdent),
+            ("is_true_course", isTrueCourse ? 1 : 0), ("course", course));
+
     /// <summary>
     /// An ORPHANED ils row: correct ident/frequency/position/course, but the
     /// loc_airport_ident / loc_runway_name join columns NULL, exactly as navdatareader
@@ -154,10 +178,38 @@ CREATE TABLE ils (
         => InsertIlsRow(ident, null, null, locHeading, frequency, 3.0, 18,
             name ?? $"ILS/GS {ident}", lonx, laty, gsPitch: 3.0);
 
+    /// <summary>
+    /// An airport-scoped ils row. The DME and glideslope blocks of the runway page show only
+    /// when <paramref name="dmeRange"/> or <paramref name="gsRange"/> is above 0; their
+    /// altitude and position then take <paramref name="altitude"/>, <paramref name="lonx"/> and
+    /// <paramref name="laty"/>, the localizer's own.
+    /// </summary>
     public void InsertIls(string ident, string locAirportIdent, string locRunwayName, double locHeading = 0,
-        double frequency = 111100, double locWidth = 3.0, double range = 18)
+        double frequency = 111100, double locWidth = 3.0, double range = 18,
+        double lonx = 0, double laty = 0, double altitude = 0, double gsPitch = 0,
+        double dmeRange = 0, double gsRange = 0, string type = "ILS", string? name = null,
+        double? magVar = null)
         => InsertIlsRow(ident, locAirportIdent, locRunwayName, locHeading, frequency, locWidth, range,
-            $"ILS/GS {ident}", lonx: 0, laty: 0, gsPitch: 0);
+            name ?? $"ILS/GS {ident}", lonx, laty, gsPitch, altitude, dmeRange, gsRange, type, magVar);
+
+    /// <summary>
+    /// A localizer with NO glideslope, as navdatareader writes one (ils.type "0", gs_range and
+    /// gs_pitch NULL): MSFS 2020's ESST 16 "NST" and 34 "ST". Some carry an "ILS RW…" name
+    /// regardless, so <paramref name="name"/> is settable. <paramref name="magVar"/> is the
+    /// localizer's OWN variation (ils.mag_var), which its course is read with; NULL falls back
+    /// to the airport's.
+    /// </summary>
+    public void InsertLocalizerOnly(string ident, string? locAirportIdent, string? locRunwayName,
+        double locHeading, double frequency, double lonx = 0, double laty = 0, string? name = null,
+        double? magVar = null)
+        => Insert("ils",
+            ("ident", ident), ("loc_airport_ident", locAirportIdent), ("loc_runway_name", locRunwayName),
+            ("frequency", frequency), ("name", name ?? $"LOC {ident}"), ("region", "K1"), ("type", "0"),
+            ("loc_heading", locHeading), ("loc_width", 3.0), ("range", 18),
+            ("has_backcourse", 0), ("perf_indicator", "N/A"), ("provider", "N/A"), ("mag_var", magVar),
+            ("dme_range", null), ("dme_altitude", null), ("dme_lonx", null), ("dme_laty", null),
+            ("gs_range", null), ("gs_pitch", null), ("gs_altitude", null), ("gs_lonx", null), ("gs_laty", null),
+            ("altitude", 0), ("lonx", lonx), ("laty", laty));
 
     /// <summary>
     /// The single spelling of the `ils` column list. Both InsertIls and InsertOrphanIls go
@@ -167,13 +219,17 @@ CREATE TABLE ils (
     /// </summary>
     private void InsertIlsRow(string ident, string? locAirportIdent, string? locRunwayName,
         double locHeading, double frequency, double locWidth, double range,
-        string name, double lonx, double laty, double gsPitch)
+        string name, double lonx, double laty, double gsPitch,
+        double altitude = 0, double dmeRange = 0, double gsRange = 0, string type = "ILS",
+        double? magVar = null)
         => Insert("ils",
             ("ident", ident), ("loc_airport_ident", locAirportIdent), ("loc_runway_name", locRunwayName),
-            ("frequency", frequency), ("name", name), ("region", "K1"), ("type", "ILS"),
+            ("frequency", frequency), ("name", name), ("region", "K1"), ("type", type),
             ("loc_heading", locHeading), ("loc_width", locWidth), ("range", range),
-            ("has_backcourse", 0), ("perf_indicator", "N/A"), ("provider", "N/A"), ("mag_var", 0),
-            ("dme_range", 0), ("dme_altitude", 0), ("dme_lonx", 0), ("dme_laty", 0),
-            ("gs_range", 0), ("gs_pitch", gsPitch), ("gs_altitude", 0), ("gs_lonx", 0), ("gs_laty", 0),
-            ("altitude", 0), ("lonx", lonx), ("laty", laty));
+            ("has_backcourse", 0), ("perf_indicator", "N/A"), ("provider", "N/A"), ("mag_var", magVar),
+            ("dme_range", dmeRange), ("dme_altitude", dmeRange > 0 ? altitude : 0),
+            ("dme_lonx", dmeRange > 0 ? lonx : 0), ("dme_laty", dmeRange > 0 ? laty : 0),
+            ("gs_range", gsRange), ("gs_pitch", gsPitch), ("gs_altitude", gsRange > 0 ? altitude : 0),
+            ("gs_lonx", gsRange > 0 ? lonx : 0), ("gs_laty", gsRange > 0 ? laty : 0),
+            ("altitude", altitude), ("lonx", lonx), ("laty", laty));
 }
