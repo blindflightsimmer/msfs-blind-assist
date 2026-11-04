@@ -65,7 +65,7 @@ public class TransitionAltimetersTests
             TransitionAltimeters.ReminderInstead(X.DescendToQnh, autoAltimetersEnabled: false));
 
     /// <summary>Every First Officer phase monitor reads the setting (beyond declaring it) and
-    /// speaks the no-plan reminder through the shared helper, so the setting reaches all eight
+    /// speaks the no-plan reminder through the shared helper, so the setting reaches all nine
     /// aircraft and any new one. Fails when a monitor declares the property but never reads it.</summary>
     [Fact]
     public void EveryPhaseMonitor_GatesItsAltimeterWritesOnTheSetting()
@@ -77,18 +77,29 @@ public class TransitionAltimetersTests
             .Where(f => Regex.IsMatch(File.ReadAllText(f), @":\s*IFoPhaseMonitor\b"))
             .ToArray();
 
-        Assert.Equal(8, monitorTypes.Count);
+        Assert.Equal(9, monitorTypes.Count);
         Assert.Equal(monitorTypes.Count, files.Length);
         foreach (string file in files)
         {
             string src = StripComments(File.ReadAllText(file));
             string name = Path.GetFileName(file);
+            if (ReminderOnlyMonitors.Contains(name))
+            {
+                // never writes an altimeter (its STD press is unverified): every crossing is the reminder,
+                // and the no-plan reminder never promises automatic changes
+                Assert.Contains("TransitionAltimeters.ReminderInstead(crossing, AltimeterWritesVerified)", src);
+                Assert.Contains("TransitionAltimeters.NoTransitionLoadedReminder(AltimeterWritesVerified)", src);
+                Assert.DoesNotContain("SetBaro", src);
+                continue;
+            }
             Assert.True(Regex.Matches(src, @"\bAutoAltimetersEnabled\b").Count >= 3,
                 $"{name} must read AutoAltimetersEnabled at its transition crossings and its no-plan reminder.");
             Assert.Contains("TransitionAltimeters.NoTransitionLoadedReminder(AutoAltimetersEnabled)", src);
             Assert.DoesNotContain("Load SimBrief in the First Officer window", src);
         }
     }
+
+    private static readonly HashSet<string> ReminderOnlyMonitors = new() { "IniAirbusFlightPhaseMonitor.cs" };
 
     private static string StripComments(string src)
         => Regex.Replace(Regex.Replace(src, @"/\*.*?\*/", " ", RegexOptions.Singleline), @"//[^\n]*", "");

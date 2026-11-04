@@ -47,6 +47,12 @@ subclass of the A330's definition (`IniA330Definition`), which carries virtual h
   (`CoherentPmdgEfbClient.ForIniA321()`). Its doors are 1 and 4 on the page itself (2 and 3 are over-wing exits).
 * **Camera views (0-based):** ECAM 3, PFD/ND 23, captain MCDU 12, F/O MCDU 13, EFB 4/5.
 
+* **First Officer (Shift+C):** `FirstOfficer/IniAirbus/` (one profile for both airframes, its key table
+  `IniAirbusKeys`, shared with the A340-300); it writes only through this definition's `HandleUIVariableSet`,
+  starts and shuts down the engines itself (masters and mode selector, since 2026-10-28) and leaves the
+  ADIRS, flaps, spoilers, parking brake and altimeter STD to the Captain. The engine masters (2026-10-28) are `A321_ENG1/2_MASTER`, direct writes of `INI_MIXTURE_RATIOn_HANDLE`: NOT verified in the sim.
+  See docs/first-officer.md and docs/inibuilds-a330-a321-first-officer-test-plan.md.
+
 ## Unverified (needs a flight)
 * A/THR (`AP8_BUTTON`, the A300's numbering) — a press arms nothing on the ground, as on the real aircraft.
 * AP 1/2, LOC, APPR engage; FMA words (A330Fma; `fma.log` has the raw numbers).

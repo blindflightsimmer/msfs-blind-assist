@@ -1,4 +1,4 @@
-// A330 MCDU harness (adapted from the iniBuilds A300 harness; same INI_MCDU1_ keys): presses keys through the MobiFlight calc channel (seq-prefixed so repeats
+// A330 MCDU harness (copied from tools/a300-cdu-ocr; same INI_MCDU1_ keys): presses keys through the MobiFlight calc channel (seq-prefixed so repeats
 // never coalesce) and captures the popped-out CDU window with PrintWindow. Reads a script:
 //   key NAME        press INI_MCDU1_NAME
 //   type TEXT       press one key per character (A-Z 0-9 . / - + and space)

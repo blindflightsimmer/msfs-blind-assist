@@ -4,6 +4,7 @@ paths:
   - "MSFSBlindAssist/MainForm*.cs"
   - "MSFSBlindAssist/Utils/ReadoutFormat.cs"
   - "MSFSBlindAssist/Utils/PanelRowRules.cs"
+  - "MSFSBlindAssist/Services/WheelChocksAutoRemover.cs"
   - "tests/MSFSBlindAssist.Tests/**/*CalcPath*.cs"
   - "tests/MSFSBlindAssist.Tests/**/*FreshRead*.cs"
   - "tests/MSFSBlindAssist.Tests/**/*RequestId*.cs"

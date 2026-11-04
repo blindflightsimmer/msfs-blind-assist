@@ -1,4 +1,4 @@
-"""Glyph segmentation for the A330 MCDU pop-out (adapted from the iniBuilds A300 trainer; grid measured 2026-10-16): rows are on a fixed vertical grid, but text can be
+"""Glyph segmentation for the A330 MCDU pop-out (forked from tools/a300-cdu-ocr; grid measured 2026-10-16): rows are on a fixed vertical grid, but text can be
 placed off the 24-column grid horizontally (centred titles), so glyphs are found by ink runs."""
 import numpy as np
 from PIL import Image

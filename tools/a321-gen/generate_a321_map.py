@@ -37,7 +37,7 @@ SECTIONS = [
                   "Interior Lights", "Wipers", "Engine Start", "Oxygen", "Calls", "Cargo"]),
     ("Glareshield", ["Warnings", "Captain EFIS", "First officer EFIS"]),
     ("Main panel", ["Brakes", "GPWS and Terrain", "Instrument Switching", "Clocks", "Standby Instrument"]),
-    ("Pedestal", ["ECAM", "Captain Radio Panel", "Transponder and TCAS", "Weather Radar"]),
+    ("Pedestal", ["Engine Masters", "ECAM", "Captain Radio Panel", "Transponder and TCAS", "Weather Radar"]),
 ]
 
 # A330 controls with no A321 counterpart, or whose L:var exists but drives nothing here (direct-write probe;
@@ -173,6 +173,14 @@ select("CPT_WIPER", "Wipers", "Captain wiper", "CPT_WIPER_SWITCH", [(0, "Off"), 
 select("FO_WIPER", "Wipers", "First officer wiper", "FO_WIPER_SWITCH", [(0, "Off"), (1, "Slow"), (2, "Fast")])
 
 select("AFT_CRG_HEAT", "Cargo", "Aft cargo heat", "INI_AFT_CRG_BUTTON", ON_OFF)
+
+# The engine masters, for the First Officer's engine start (2026-10-28). NOT VERIFIED IN THE SIM (the A321 was
+# not loaded): a direct write of INI_MIXTURE_RATIOn_HANDLE (1 = ON, in the panel-state list), the A340's way
+# — on the A340 of the same generation the master's input event only flips that L:var, and nothing syncs
+# it back. The engine mode selector (A321_ENG_MODE, INI_IGNITION_KNOB) is already re-pointed from the A330.
+for n in (1, 2):
+    select(f"ENG{n}_MASTER", "Engine Masters", f"Engine {n} master", f"INI_MIXTURE_RATIO{n}_HANDLE", [(0, "Off"), (1, "On")],
+           section=P, notes="not verified in the sim")
 
 for key, label, var in [("CKPT_TEMP", "Cockpit temperature", "INI_AIRCOND_LVL_1"),
                         ("FWD_CAB_TEMP", "Forward cabin temperature", "INI_AIRCOND_LVL_2"),

@@ -47,6 +47,7 @@
   {
    "name": "Pedestal",
    "panels": [
+    "Engine Masters",
     "ECAM",
     "Captain Radio Panel",
     "Transponder and TCAS",
@@ -3410,6 +3411,52 @@
    "kind": "button",
    "mode": "rpn",
    "rpn": "1 (>L:INI_ISIS_BUGS_COMMAND)"
+  },
+  {
+   "key": "A321_ENG1_MASTER",
+   "section": "Pedestal",
+   "panel": "Engine Masters",
+   "label": "Engine 1 master",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_MIXTURE_RATIO1_HANDLE)",
+   "read": "INI_MIXTURE_RATIO1_HANDLE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ],
+   "notes": "not verified in the sim"
+  },
+  {
+   "key": "A321_ENG2_MASTER",
+   "section": "Pedestal",
+   "panel": "Engine Masters",
+   "label": "Engine 2 master",
+   "kind": "select",
+   "mode": "rpn",
+   "rpn": "{value} (>L:INI_MIXTURE_RATIO2_HANDLE)",
+   "read": "INI_MIXTURE_RATIO2_HANDLE",
+   "positions": [
+    {
+     "value": 0,
+     "input": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "input": 1,
+     "label": "On"
+    }
+   ],
+   "notes": "not verified in the sim"
   },
   {
    "key": "A321_ECAM_PAGE",

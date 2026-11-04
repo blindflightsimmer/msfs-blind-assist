@@ -518,6 +518,51 @@ public partial class MainForm
             return true;
         }
 
+        // MSFS 2024 wheel chocks: removed whenever seen on. A background state change (the sim
+        // placed them, nobody pressed anything here), so the result is spoken.
+        if (e.VarName == MSFSBlindAssist.SimConnect.SimConnectManager.WheelChocksVarName)
+        {
+            switch (wheelChocksRemover.OnSample(e.Value > 0.5, DateTime.UtcNow))
+            {
+                case MSFSBlindAssist.Services.WheelChocksAutoRemover.Action.Remove:
+                    Log.Info("WheelChocks", "Chocks on — removing (COVER_SET 0)");
+                    simConnectManager?.RemoveWheelChocks();
+                    break;
+                case MSFSBlindAssist.Services.WheelChocksAutoRemover.Action.AnnounceRemoved:
+                    Log.Info("WheelChocks", "Chocks removed");
+                    announcer.Announce("Wheel chocks removed.");
+                    break;
+                case MSFSBlindAssist.Services.WheelChocksAutoRemover.Action.AnnounceGivingUp:
+                    Log.Warn("WheelChocks", "Chocks keep coming back — leaving them on");
+                    announcer.Announce("Wheel chocks keep being put back. Leaving them on.");
+                    break;
+            }
+            return true;
+        }
+
+        // MSFS 2024 covers (engine, pitot, …): the same policy as the chocks, one remover per cover.
+        if (MSFSBlindAssist.SimConnect.SimCovers.IndexForVarName(e.VarName) is int coverIndex
+            && coverRemovers.TryGetValue(coverIndex, out var coverRemover))
+        {
+            string coverName = MSFSBlindAssist.SimConnect.SimCovers.NameOf(coverIndex);
+            switch (coverRemover.OnSample(e.Value > 0.5, DateTime.UtcNow))
+            {
+                case MSFSBlindAssist.Services.WheelChocksAutoRemover.Action.Remove:
+                    Log.Info("WheelChocks", $"{coverName} on (COVER ON:{coverIndex}) — removing (COVER_SET {coverIndex}, 0)");
+                    simConnectManager?.RemoveCover(coverIndex);
+                    break;
+                case MSFSBlindAssist.Services.WheelChocksAutoRemover.Action.AnnounceRemoved:
+                    Log.Info("WheelChocks", $"{coverName} removed");
+                    announcer.Announce($"{coverName} removed.");
+                    break;
+                case MSFSBlindAssist.Services.WheelChocksAutoRemover.Action.AnnounceGivingUp:
+                    Log.Warn("WheelChocks", $"{coverName} still on after {MSFSBlindAssist.Services.WheelChocksAutoRemover.MaxRemovalsInWindow} removals — giving up");
+                    announcer.Announce($"{coverName} are still on and could not be removed.");
+                    break;
+            }
+            return true;
+        }
+
         // 1,000-foot crossing callouts. INDICATED_ALTITUDE is also a panel-display var, so
         // this is a NON-terminal feed (no early return) — processing continues so the
         // display box still updates. The var is registered IsAnnounced=true (that flag is what

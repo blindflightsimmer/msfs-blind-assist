@@ -334,6 +334,26 @@ public partial class SimConnectManager
         aircraftCode == "FBW_A380"
         && eventName.StartsWith("A32NX.FCU_", StringComparison.Ordinal);
 
+    /// <summary>
+    /// Sends a stock event that takes TWO numbers (an indexed event such as <c>COVER_SET</c>) with
+    /// <c>TransmitClientEvent_EX1</c>. Stock events only: none of <see cref="SendEvent"/>'s H:/dotted
+    /// routing applies, and the name is mapped into the same table <see cref="SendEvent"/> uses.
+    /// </summary>
+    public void SendEventEx1(string eventName, uint data0, uint data1)
+    {
+        if (!CanSendEvent) return;
+        Log.Debug("SimConnect", $"Sending event: {eventName} with data: {data0}, {data1}");
+        if (!eventIds.ContainsKey(eventName))
+        {
+            uint eventId = nextEventId++;
+            eventIds[eventName] = eventId;
+            simConnect!.MapClientEventToSimEvent((EVENTS)eventId, eventName);
+            Log.Debug("SimConnect", $"Registered new event: {eventName} with ID: {eventId}");
+        }
+        simConnect!.TransmitClientEvent_EX1(SIMCONNECT_OBJECT_ID_USER, (EVENTS)eventIds[eventName],
+            GROUP_PRIORITY.HIGHEST, SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY, data0, data1, 0, 0, 0);
+    }
+
     // Fire a calculator-path event via the MobiFlight bridge. H: events are momentary (no param);
     // dotted custom events take the data param. Callers route here once the verdict/connection
     // gates have been applied (the H: flush may fire during the brief connect window —

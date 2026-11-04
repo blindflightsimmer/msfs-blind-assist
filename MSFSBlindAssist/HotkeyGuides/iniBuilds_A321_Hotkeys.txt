@@ -84,8 +84,25 @@ Time:
   Z          Read Zulu Time
   Shift+Z    Read Local Time
 
+First Officer:
+  Shift+C    First Officer window (checklists and flows). The First Officer
+             works the overhead, lights, signs, transponder, radar and APU; the
+             engine masters, engine mode selector, ADIRS, fire tests, flaps, ground
+             spoilers and parking brake stay yours, and it reminds you of each.
+
 Guides:
   Shift+K    Open this Hotkey List
+
+VATSIM:
+  Alt+V      Mute or unmute VATSIM announcements (vPilot)
+
+Surroundings and traffic:
+  Alt+L      Look Around (where you are, the apron or concourse you are in, and the nearest buildings with direction and distance)
+  Ctrl+Shift+L  Surroundings window (everything nearby as a list, with the airport's fuel and frequencies)
+                In its Frequencies list, Enter tunes the selected frequency into COM 1 standby
+                and Shift+Enter tunes it straight into COM 1 active; COM 1 is read back to confirm.
+  Shift+O    Open Volanta window (Volanta users and network pilots around you,
+             your Volanta friends and online ATC; also Extras > Volanta)
 
 INPUT MODE - Press left bracket to activate
 
@@ -144,12 +161,6 @@ MCDU:
                Alt+T ATC COMM, Alt+M MCDU MENU, Alt+O AIRPORT
              Text the MCDU draws in grey (an option that is not available yet) is
              read with "(unavailable)" after it.
-
-Position:
-  Alt+L      Look Around (where you are, the apron or concourse you are in, and the nearest buildings with direction and distance)
-  Ctrl+Shift+L  Surroundings window (everything nearby as a list, with the airport's fuel and frequencies)
-                In its Frequencies list, Enter tunes the selected frequency into COM 1 standby
-                and Shift+Enter tunes it straight into COM 1 active; COM 1 is read back to confirm.
 
 EFB:
   Shift+T    Open the EFB tablet. The Pages list at the top is the tablet's side

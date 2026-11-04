@@ -18,6 +18,7 @@ public partial class SimConnectManager
         {
             DetectedSimulatorVersion = Utils.SimulatorDetector.DetectRunningSimulator();
             Log.Debug("SimConnect", $"Detected simulator: {DetectedSimulatorVersion}");
+            StartWheelChocksMonitor(); // no-op unless FS2024; once per connection
         }
         catch (Exception ex)
         {
@@ -74,6 +75,19 @@ public partial class SimConnectManager
         if (_cameraReads.Owns((int)data.dwRequestID))
         {
             CompleteCameraViewRead((int)data.dwRequestID, (CameraViewData)data.dwData[0]);
+            return;
+        }
+
+        // MSFS 2024's covers (COVER ON:1..8), one request id each — see SimConnectManager.WheelChocks.cs
+        if (SimCovers.IndexForRequest(data.dwRequestID) is int coverIndex)
+        {
+            SingleValue coverData = (SingleValue)data.dwData[0];
+            SimVarUpdated?.Invoke(this, new SimVarUpdateEventArgs
+            {
+                VarName = SimCovers.VarName(coverIndex),
+                Value = coverData.value,
+                Description = coverData.value > 0.5 ? "On" : "Off"
+            });
             return;
         }
 
@@ -323,6 +337,16 @@ public partial class SimConnectManager
                     VarName = "AIRSPEED_TRUE",
                     Value = tasData.value,
                     Description = $"{tasData.value:0}"
+                });
+                break;
+
+            case DATA_REQUESTS.REQUEST_WHEEL_CHOCKS:
+                SingleValue chocksData = (SingleValue)data.dwData[0];
+                SimVarUpdated?.Invoke(this, new SimVarUpdateEventArgs
+                {
+                    VarName = WheelChocksVarName,
+                    Value = chocksData.value,
+                    Description = chocksData.value > 0.5 ? "On" : "Off"
                 });
                 break;
 

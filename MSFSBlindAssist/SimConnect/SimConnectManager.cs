@@ -507,6 +507,12 @@ public partial class SimConnectManager
         // see SimConnectManager.Camera.cs. Backs the instrument-view switch of AI display reads.
         // The FIRST of CameraReadIdCount (8) ids, 341-348: each read goes out under its own id
         // (CameraReadWaiters), so keep 342-348 free (pinned by CameraReadWaitersTests).
+        // MSFS 2024's own wheel chocks (COVER ON:0), a PERIOD.SECOND + CHANGED subscription
+        // registered only when FS2024 is detected — see SimConnectManager.WheelChocks.cs.
+        REQUEST_WHEEL_CHOCKS = 360,
+        // MSFS 2024's covers COVER ON:1..8, one PERIOD.SECOND subscription each (SimConnectManager
+        // .WheelChocks.cs): the FIRST of 8 ids, 361-368 — keep 362-368 free.
+        REQUEST_COVER_FIRST = SimCovers.FirstRequestId,
         REQUEST_CAMERA_VIEW = 341,
         // COM 1 active + standby, one-shot (RequestCom1Radio). 349: the first id past the
         // camera's rotating 341-348.
@@ -610,6 +616,9 @@ public partial class SimConnectManager
         // read's rotating request-id range: the dispatcher matches it BY RANGE and casts the answer
         // to CameraViewData, so a definition landing at 342 would have its SingleValue answer
         // mis-cast. Pinned by CameraReadWaitersTests.
+        DEF_WHEEL_CHOCKS = 360,
+        // The covers' 8 definitions, 361-368 (see REQUEST_COVER_FIRST) — keep 362-368 free.
+        DEF_COVER_FIRST = SimCovers.FirstRequestId,
         DEF_CAMERA_VIEW = 341,
         DEF_COM1_RADIO = 349,
         DEF_SLEW_STATE = 350,
@@ -971,6 +980,7 @@ public partial class SimConnectManager
             else if (DetectedSimulatorVersion == "FS2024")
             {
                 SimulatorVersionDetected?.Invoke(this, "MSFS 2024 detected");
+                StartWheelChocksMonitor();
             }
 
             // Warm the universal aircraft.cfg ICAO catalog in the background so the rare

@@ -131,7 +131,9 @@ public partial class IniA330Definition
                 // control's own rpn (an L:var key, the A321) or its input event's _Push (the A330).
                 if ((cur is null || Math.Abs(cur.Value - value) > 0.5) && CanCalc(simConnect, announcer, c.Label))
                 {
-                    if (!string.IsNullOrWhiteSpace(c.Rpn)) Write(simConnect, c.Rpn);
+                    // {value} = the pick (the A330's engine masters pass it to their input event's Set, right
+                    // whether that Set toggles or sets by value); a press-flag rpn carries none
+                    if (!string.IsNullOrWhiteSpace(c.Rpn)) Write(simConnect, c.Rpn.Replace("{value}", Num(value)));
                     else PushEvent(simConnect, c.Event!, c.HoldMs ?? DefaultPushMs);
                 }
                 return true;
@@ -140,16 +142,30 @@ public partial class IniA330Definition
             case "push":
                 if (CanCalc(simConnect, announcer, c.Label)) PushEvent(simConnect, c.Event, c.HoldMs ?? DefaultPushMs);
                 return true;
+            case "rpn" when c.Kind == "button" && c.Press is double press && c.Release is double release && c.HoldMs is > 0:
+                // a HELD key (the A340's tests, ECAM page keys, calls: 1 while pressed, 0 on release):
+                // write the press, then the release after the hold, from this (the UI) thread
+                if (!string.IsNullOrWhiteSpace(c.Rpn) && CanCalc(simConnect, announcer, c.Label))
+                    PressHeld(simConnect, c.Rpn.Replace("{value}", Num(press)), c.Rpn.Replace("{value}", Num(release)), c.HoldMs.Value);
+                return true;
             case "rpn":
                 if (!string.IsNullOrWhiteSpace(c.Rpn) && CanCalc(simConnect, announcer, c.Label))
                     Write(simConnect, c.Rpn.Replace("{value}", Num(value)));
                 return true;
             default:
-                if (c.Event is not { Length: > 0 } ev) return false;
                 double input = c.Kind == "continuous" ? value : A330ControlMap.InputFor(c, value) ?? value;
-                SetInputEvent(simConnect, announcer, c.Label, ev, input);
+                SetInputEvent(simConnect, announcer, c.Label, c.Event, input);
                 return true;
         }
+    }
+
+    /// <summary>A held key written as two RPN strings: the press now, the release after the hold.</summary>
+    private void PressHeld(SimConnectManager sim, string down, string up, int holdMs)
+    {
+        Write(sim, down);
+        _ = ReleaseLater();
+        // awaited on the caller's context (the UI thread), so the release is sent from there too
+        async Task ReleaseLater() { await Task.Delay(holdMs); Write(sim, up); }
     }
 
     internal static string? AutobrakeEvent(int level) => level switch
@@ -184,6 +200,11 @@ public partial class IniA330Definition
     /// <summary>The parking brake lever's input for set / released. A330: 0 = set (measured: input 0 with
     /// the brake set, INI status 1).</summary>
     internal virtual double ParkingBrakeInput(bool set) => set ? 0 : 1;
+
+    /// <summary>Where the parking brake's state is read (A330_PARKBRK: 1 = set). A330: iniBuilds' own
+    /// INI_PARKING_BRAKE_STATUS.</summary>
+    internal virtual (string name, string units, SimVarType type) ParkingBrakeRead =>
+        ("INI_PARKING_BRAKE_STATUS", "number", SimVarType.LVar);
 
     /// <summary>The ALT knob step selector's input for 100-foot / 1000-foot steps. A330: input 0 = 100 ft
     /// (measured: input 0 reads 1 and the knob steps 100 feet).</summary>
@@ -603,33 +624,9 @@ public partial class IniA330Definition
         });
     }
 
-    internal static string DescribeFmsDistance(double? nm, double gsKnots, bool toTod)
-    {
-        if (nm is not double d || d <= 0.5 || double.IsNaN(d))
-            return toTod ? "Top of descent not available" : "Distance to destination not available. Enter a flight plan in the MCDU.";
-        string time = "";
-        if (gsKnots >= 30)
-        {
-            int min = (int)Math.Round(d / gsKnots * 60);
-            time = min >= 60 ? $", {min / 60} hour{(min / 60 == 1 ? "" : "s")} {min % 60} minutes" : $", {min} minute{(min == 1 ? "" : "s")}";
-        }
-        return toTod ? $"{d:0} miles to top of descent{time}" : $"Destination {d:0} miles{time}";
-    }
-
     // =====================================================================
     // Altimeter: the B key and its set dialog (captain's side; a set writes all three altimeters)
     // =====================================================================
-
-    /// <summary>The cockpit's baro mode: 2 and 3 are STD (the A300 code base's XMLVAR_Baro1_Mode).</summary>
-    internal static bool IsStdMode(double? mode) => mode is double m && m >= 1.5;
-
-    internal static string DescribeAltimeter(double? millibars, double? mode)
-    {
-        if (IsStdMode(mode)) return "Altimeter standard";
-        if (millibars is not double mb || mb <= 0) return "Altimeter not available";
-        return $"Altimeter {mb.ToString("0", CultureInfo.InvariantCulture)} hectopascals, "
-             + $"{(mb / 33.8639).ToString("0.00", CultureInfo.InvariantCulture)} inches";
-    }
 
     /// <summary>STD from the cockpit's own mode var; the stock STD flag only when that did not answer.</summary>
     private static async Task<double?> ReadBaroModeAsync(SimConnectManager sim)
@@ -932,4 +929,28 @@ public partial class IniA330Definition
         dlg.ShowCancelButton = false;
         dlg.Show(parent);
     }
+    internal static string DescribeFmsDistance(double? nm, double gsKnots, bool toTod)
+    {
+        if (nm is not double d || d <= 0.5 || double.IsNaN(d))
+            return toTod ? "Top of descent not available" : "Distance to destination not available. Enter a flight plan in the MCDU.";
+        string time = "";
+        if (gsKnots >= 30)
+        {
+            int min = (int)Math.Round(d / gsKnots * 60);
+            time = min >= 60 ? $", {min / 60} hour{(min / 60 == 1 ? "" : "s")} {min % 60} minutes" : $", {min} minute{(min == 1 ? "" : "s")}";
+        }
+        return toTod ? $"{d:0} miles to top of descent{time}" : $"Destination {d:0} miles{time}";
+    }
+
+    /// <summary>The cockpit's baro mode: 2 and 3 are STD (the A300 code base's XMLVAR_Baro1_Mode).</summary>
+    internal static bool IsStdMode(double? mode) => mode is double m && m >= 1.5;
+
+    internal static string DescribeAltimeter(double? millibars, double? mode)
+    {
+        if (IsStdMode(mode)) return "Altimeter standard";
+        if (millibars is not double mb || mb <= 0) return "Altimeter not available";
+        return $"Altimeter {mb.ToString("0", CultureInfo.InvariantCulture)} hectopascals, "
+             + $"{(mb / 33.8639).ToString("0.00", CultureInfo.InvariantCulture)} inches";
+    }
+
 }

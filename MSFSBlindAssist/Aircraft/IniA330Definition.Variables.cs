@@ -93,8 +93,70 @@ public partial class IniA330Definition
     /// <see cref="Tanks"/> and anything left over in the sim's total is additional centre tanks (the A321LR).</summary>
     internal virtual bool CentreTankFromSim => true;
 
+    /// <summary>What INI_AUTOBRAKE_LEVEL reads for each autobrake setting (the A330/A321: 0 off, 1 LO, 2 MED, 3 MAX).
+    /// The panel combo writes the raw value back to <c>SetAutobrake</c>.</summary>
+    internal virtual Dictionary<double, string> AutobrakeLevels => new() { [0] = "Off", [1] = "Low", [2] = "Medium", [3] = "Max" };
+
     /// <summary>Green dot, S and F speed L:vars.</summary>
     internal virtual (string greenDot, string s, string f) SpeedLvars => ("INI_GREENDOT_SPEED", "INI_S_SPEED", "INI_F_SPEED");
+
+    /// <summary>The First Officer's own read-only keys (both airframes; FirstOfficer/IniAirbus).</summary>
+    internal const string FoEng1AvailKey = "A330_FO_ENG1_AVAIL", FoEng2AvailKey = "A330_FO_ENG2_AVAIL",
+        FoApuFlapKey = "A330_FO_APU_FLAP", FoApuStartPbKey = "A330_FO_APU_START_PB", FoGearLeftKey = "A330_FO_GEAR_LEFT", FoGearRightKey = "A330_FO_GEAR_RIGHT";
+
+    internal static readonly (string key, string name, string display, string units, SimVarType type)[] FoReadVars =
+    {
+        (FoEng1AvailKey, "ENGINE_1_AVAIL", "Engine 1 available", "number", SimVarType.LVar),
+        (FoEng2AvailKey, "ENGINE_2_AVAIL", "Engine 2 available", "number", SimVarType.LVar),
+        (FoApuFlapKey, "INI_APU_FLAP_PERCENT", "APU air intake flap", "number", SimVarType.LVar),
+        // the APU START press flag (panel state: 0 cold and dark, 1 on the A321 with the APU running): the
+        // A321 First Officer presses START only while this reads 0
+        (FoApuStartPbKey, "INI_APU_START_BUTTON", "APU start button", "number", SimVarType.LVar),
+        (FoGearLeftKey, "GEAR LEFT POSITION", "Left main gear", "percent", SimVarType.SimVar),
+        (FoGearRightKey, "GEAR RIGHT POSITION", "Right main gear", "percent", SimVarType.SimVar),
+    };
+
+    /// <summary>First Officer reads an airframe adds to <see cref="FoReadVars"/>, registered the same way
+    /// (OnRequest, silent). None on the A330 and A321; the A340's engines 3/4 AVAIL and the like
+    /// (IniA340Definition.FirstOfficer.cs).</summary>
+    internal virtual IEnumerable<(string key, string name, string display, string units, SimVarType type)> FoExtraReadVars
+        => Array.Empty<(string, string, string, string, SimVarType)>();
+
+    /// <summary>
+    /// How a First Officer write of <paramref name="key"/> reaches the aircraft through
+    /// <see cref="HandleUIVariableSet"/>, so the First Officer can refuse a write that cannot land
+    /// instead of reporting success (HandleUIVariableSet itself only speaks the failure, and the First
+    /// Officer suppresses that). <c>Calc</c>: the calculator path (MobiFlight) — a push, rpn or toggle
+    /// control, or the A321's autobrake. <c>InputEvent</c>: SetInputEvent / a value press on this input
+    /// event. <c>Toggle</c>: the control presses only when its read differs, so an unread state must not
+    /// be written. <c>HoldMs</c>: a held momentary key (the tests). Null: not a control the First Officer
+    /// may write.
+    /// </summary>
+    internal (bool Calc, string? InputEvent, bool Toggle, int HoldMs)? FoWriteRoute(string key)
+    {
+        GetVariables();
+        if (key == "A330_AUTOBRAKE")
+            return AutobrakeWritesCalc ? (true, null, false, 0) : (false, Ev(AutobrakeEvent(3)!), false, 0);
+        if (!_controlsByKey.TryGetValue(key, out var c) || c.Kind == "status") return null;
+        return c.Mode switch
+        {
+            "push" when !string.IsNullOrEmpty(c.Event) => (true, null, false, c.HoldMs ?? 0),
+            "rpn" when !string.IsNullOrEmpty(c.Rpn) => (true, null, false, c.HoldMs ?? 0),
+            "toggle" when !string.IsNullOrEmpty(c.Rpn) || !string.IsNullOrEmpty(c.Event) => (true, null, true, 0),
+            "set" when !string.IsNullOrEmpty(c.Event) => (false, c.Event, false, 0),
+            _ => null,
+        };
+    }
+
+    /// <summary>The read-back value of the generated control <paramref name="key"/> for the position
+    /// labelled <paramref name="label"/>, or null when the control or label does not exist (tests pin the
+    /// First Officer's values against the measured map).</summary>
+    internal double? FoPositionValue(string key, string label)
+    {
+        GetVariables();
+        return _controlsByKey.TryGetValue(key, out var c)
+            ? c.Positions?.FirstOrDefault(p => p.Label == label)?.Value : null;
+    }
 
     internal const string TakeoffIasKey = "A330_TO_IAS", TakeoffV1Key = "A330_TO_V1", TakeoffVrKey = "A330_TO_VR", TakeoffV2Key = "A330_TO_V2";
 
@@ -188,8 +250,9 @@ public partial class IniA330Definition
         _silentKeys.Add("A330_SPDBRK");
         Watched("A330_SPLR_ARM", "SPOILERS ARMED", "Ground spoilers", new() { [0] = "Disarmed", [1] = "Armed" }, units: "Bool", type: SimVarType.SimVar);
         Watched("A330_GEAR", "INI_GEAR_HANDLE_STATUS", "Landing gear lever", new() { [0] = "Up", [1] = "Down" });
-        Watched("A330_PARKBRK", "INI_PARKING_BRAKE_STATUS", "Parking brake", new() { [0] = "Off", [1] = "Set" });
-        Watched("A330_AUTOBRAKE", "INI_AUTOBRAKE_LEVEL", "Autobrake", new() { [0] = "Off", [1] = "Low", [2] = "Medium", [3] = "Max" });
+        var park = ParkingBrakeRead;
+        Watched("A330_PARKBRK", park.name, "Parking brake", new() { [0] = "Off", [1] = "Set" }, units: park.units, type: park.type);
+        Watched("A330_AUTOBRAKE", "INI_AUTOBRAKE_LEVEL", "Autobrake", new(AutobrakeLevels));
         Silent("A330_FLAP_ANGLE", "TRAILING EDGE FLAPS LEFT ANGLE", "Flap angle", "degrees", SimVarType.SimVar);
         Silent("A330_SLAT_ANGLE", "LEADING EDGE FLAPS LEFT ANGLE", "Slat angle", "degrees", SimVarType.SimVar);
         Silent("A330_GEAR_POS", "GEAR CENTER POSITION", "Nose gear", "percent", SimVarType.SimVar);
@@ -271,6 +334,14 @@ public partial class IniA330Definition
                 _mapDisplayRows.Add((c.Panel, lk));
             }
         }
+
+        // ---------------- First Officer reads (OnRequest, silent; polled by the FO window) ----------------
+        // Each name is in the aircraft's own panel-state files (data/panelstates/*.ini in the streamed
+        // package, both airframes) with values that follow the state they name: ENGINE_n_AVAIL 0 cold and
+        // dark, 1 ready for take-off (the E/WD's green AVAIL); INI_APU_FLAP_PERCENT 0 cold and dark, 1 with
+        // the APU running or still spinning down. Read only — the First Officer never writes them.
+        foreach (var (key, name, display, units, type) in FoReadVars.Concat(FoExtraReadVars))
+            if (!vars.ContainsKey(key)) OnRequest(key, name, display, units, type);
 
         // ---------------- Read-outs (fresh on the key press) ----------------
         foreach (var (key, lvar, display) in new[]

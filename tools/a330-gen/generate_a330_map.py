@@ -19,6 +19,8 @@ Conventions the probe found (do not "correct" them by intuition):
 Deliberately NOT probed (dangerous to toggle with engines running) and taken from their current
 values + the HubHop preset set instead: engine masters, engine start selector, ADIRS, IR/ADR, fire
 handles and agents, IDG, RAT, gear lever, parking brake. Their positions follow the conventions above.
+The engine masters (2026-10-28) are toggles read on INI_MIXTURE_RATIOn_HANDLE, from the A340's readable
+code of the same generation — NOT verified on the A330 in the sim (see the master lines below).
 
 Run:  python tools/a330-gen/generate_a330_map.py
 """
@@ -186,8 +188,14 @@ select("BULK_ISO", O, "Cargo Smoke", "Bulk cargo isolation valve", "BULK_ISO_VAL
 # ---------------------------------------------------------------- APU
 select("APU_MASTER", O, "APU", "APU master", "APU_MASTER", "INI_APU_MASTER_SWITCH", pb_direct("On", "Off"),
        lamps=[{"read": "INI_APU_MASTER_SWITCH_FAULT", "legend": "fault"}])
-button("APU_START", O, "APU", "APU start", "APU_START",
-       lamps=[{"read": "INI_APU_START_BUTTON_CMD", "legend": "start"}, {"read": "INI_APU_AVAILABLE", "legend": "available"}])
+# APU START is the aircraft's own start command, written directly: measured 2026-10-28, the input
+# event's _Push/_Release reached nothing (pressed twice with the master ON and the flap open, the APU
+# never started), while `1 (>L:INI_APU_START_BUTTON_CMD)` — what the A340's START Set writes — started
+# it at once (the WASM consumes the command and latches INI_APU_START_BUTTON). The START legend is
+# that latch, never the command, which reads 0 again within a frame.
+add("APU_START", O, "APU", "APU start", "button", "APU_START", mode="rpn",
+    rpn="1 (>L:INI_APU_START_BUTTON_CMD)",
+    lamps=[{"read": "INI_APU_START_BUTTON", "legend": "start"}, {"read": "INI_APU_AVAILABLE", "legend": "available"}])
 
 # ---------------------------------------------------------------- Bleed
 select("ENG1_BLEED", O, "Bleed Air", "Engine 1 bleed", "ENG1_BLEED", "INI_ENGINE1_BLEED", pb())
@@ -348,7 +356,16 @@ for key, label, ev in [("CPT_MCDU_BRT", "Captain MCDU", "CPT_MCDU_BRT"), ("FO_MC
 
 # ---------------------------------------------------------------- Pedestal
 for n in (1, 2):
-    select(f"ENG{n}_MASTER", P, "Engine Masters", f"Engine {n} master", f"ENG{n}_CUTOFF", f"A:GENERAL ENG FUEL VALVE:{n}, bool", direct("Off", "On"))
+    # NOT VERIFIED IN THE SIM (2026-10-28, added for the First Officer's engine start; the A330 was not
+    # loaded). On the A340 of the same iniBuilds generation, whose cockpit code is readable, the master's
+    # AIRLINER_ENGn_CUTOFF Set TOGGLES INI_MIXTURE_RATIOn_HANDLE whatever its value ("(L:...) ! (>L:...)"),
+    # so a plain set by value could switch a running engine OFF. So: a toggle that presses only when
+    # INI_MIXTURE_RATIOn_HANDLE (1 = ON, the A321's panel-state name) differs from the pick, passing the pick
+    # as the Set's value — right whether this airframe's Set toggles or sets by value.
+    add(f"ENG{n}_MASTER", P, "Engine Masters", f"Engine {n} master", "select", f"ENG{n}_CUTOFF",
+        f"INI_MIXTURE_RATIO{n}_HANDLE", direct("Off", "On"), mode="toggle",
+        rpn=f"{{value}} (>B:AIRLINER_ENG{n}_CUTOFF_Set)",
+        notes="not verified in the sim: the A340's Set toggles; pressed only when the read differs")
 
 EC = "ECAM"
 for ev, label in [("ECAM_ENG", "ENG"), ("ECAM_BLEED", "BLEED"), ("ECAM_PRESS", "PRESS"), ("ECAM_ELAC", "EL/AC"), ("ECAM_ELDC", "EL/DC"),

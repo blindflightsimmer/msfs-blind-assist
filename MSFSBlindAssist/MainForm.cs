@@ -209,6 +209,22 @@ public partial class MainForm : Form
 
     private MSFSBlindAssist.Services.GroundSpeedAnnouncer groundSpeedAnnouncer = null!;
 
+    // Takes MSFS 2024's own wheel chocks off whenever they are seen on (they hold the aircraft
+    // at any thrust and are only reachable from the sim's tablet). Pure policy; see HandleSpecialAnnouncements.
+    private readonly MSFSBlindAssist.Services.WheelChocksAutoRemover wheelChocksRemover = new();
+
+    // The same policy for each of MSFS 2024's covers (engine, pitot, …), keyed by cover index:
+    // engine covers left on hold the engine at 0 % N2 with the starter engaged, and nothing says why
+    // (iniBuilds A330, 2026-10-28 — every start failed, the sim's own auto-start included).
+    private readonly Dictionary<int, MSFSBlindAssist.Services.WheelChocksAutoRemover> coverRemovers =
+        MSFSBlindAssist.SimConnect.SimCovers.All.ToDictionary(c => c.Index, _ => new MSFSBlindAssist.Services.WheelChocksAutoRemover());
+
+    private void ResetCoverRemovers()
+    {
+        wheelChocksRemover.Reset();
+        foreach (var r in coverRemovers.Values) r.Reset();
+    }
+
     private MSFSBlindAssist.Services.LandingRateAnnouncer landingRateAnnouncer = null!;
 
     private MSFSBlindAssist.Services.AltitudeCalloutAnnouncer altitudeCalloutAnnouncer = null!;

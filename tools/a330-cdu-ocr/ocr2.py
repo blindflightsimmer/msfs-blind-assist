@@ -1,4 +1,4 @@
-"""A330 MCDU reader (the iniBuilds A300 trainer, adapted): segmentation (seg.py) + learned native-pixel templates + gap-based spacing."""
+"""A330 MCDU reader (forked from tools/a300-cdu-ocr): segmentation (seg.py) + learned native-pixel templates + gap-based spacing."""
 import os, sys, json
 import numpy as np
 import seg
@@ -115,9 +115,19 @@ SYNTH_PENALTY = 0.06  # rendered-font templates only win where no real sample is
 
 
 def synthetic_templates():
-    """The A300 trainer rendered extra templates from the aircraft's font files; these MCDUs' fonts are
-    inside their encrypted packages, so the libraries are built from real samples only."""
-    return []
+    """Templates rendered from the aircraft's own CDU fonts (cached): fill characters/sizes never seen."""
+    return []   # the A330's MCDU fonts are inside its encrypted package: real samples only
+    import pickle
+    p = os.path.join(HERE, "big", "synth.pkl")
+    if os.path.exists(p):
+        return pickle.load(open(p, "rb"))
+    from synth import render_set, FONTS
+    out = []
+    for fontname, bold, caps in (("INI_CDUA-Regular.ttf", 1, (47, 39, 31)), ("INI_CDUB-Regular.ttf", 0, (36, 31, 26))):
+        for cap in caps:
+            out += render_set(os.path.join(FONTS, fontname), cap, bold=bold)
+    pickle.dump(out, open(p, "wb"))
+    return out
 
 
 class Matcher:

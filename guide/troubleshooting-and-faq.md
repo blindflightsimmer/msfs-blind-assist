@@ -145,6 +145,8 @@ Press Windows+R, type %APPDATA%\\MSFSBlindAssist\\logs and press Enter. Zip that
 
 **Can I use BA with MSFS 2020 and MSFS 2024?** Yes. Build the navigation database for each simulator you use.
 
+**Why did BA say "Engine covers removed"?** In MSFS 2024 the simulator can put wheel chocks and covers on the aircraft, and you can only take them off from the sim's own tablet. Engine covers stop the engines from starting, and wheel chocks hold the aircraft still at any thrust, with nothing to tell you why. So in MSFS 2024 BA takes them off whenever it sees them, and tells you, for example *"Wheel chocks removed."* or *"Pitot covers removed."*. If something keeps putting them back, BA stops after a few tries and says so, for example *"Wheel chocks keep being put back. Leaving them on."*
+
 **My aircraft is not listed. Can I still use BA?** Yes, for the general features: taxi guidance, ground traffic, weather, location, planning, teleport and many readouts. The panels and aircraft-specific windows are only available for the aircraft in the Aircraft menu.
 
 **Where do I get help?** The MSFS Blind Assist Discord server, linked from the project's home page, is where users and developers talk. Bring your logs.

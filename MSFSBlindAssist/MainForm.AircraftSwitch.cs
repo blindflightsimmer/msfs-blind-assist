@@ -203,6 +203,7 @@ public partial class MainForm
         }
         _lastAircraftLoadedTick = Environment.TickCount64;
         currentAircraft?.OnSimContextReset();
+        ResetCoverRemovers();
         RestartPmdg737DisplaysIfSimulatorChanged();
         // The First Officer window outlives a flight load (only an aircraft switch disposes it):
         // the last flight's SimBrief plan and phase latches are dropped here, and so are the
@@ -269,6 +270,7 @@ public partial class MainForm
         }
         currentAircraft?.OnSimContextReset();
         currentAircraft?.OnVariableCacheCleared();
+        ResetCoverRemovers();
     }
 
     private void OnConnectionStatusChanged(object? sender, string status)

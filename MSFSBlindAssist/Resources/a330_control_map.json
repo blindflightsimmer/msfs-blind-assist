@@ -2072,10 +2072,11 @@
    "label": "APU start",
    "kind": "button",
    "event": "AIRLINER_APU_START",
-   "mode": "push",
+   "mode": "rpn",
+   "rpn": "1 (>L:INI_APU_START_BUTTON_CMD)",
    "lamps": [
     {
-     "read": "INI_APU_START_BUTTON_CMD",
+     "read": "INI_APU_START_BUTTON",
      "legend": "start"
     },
     {
@@ -4769,8 +4770,8 @@
    "label": "Engine 1 master",
    "kind": "select",
    "event": "AIRLINER_ENG1_CUTOFF",
-   "mode": "set",
-   "read": "A:GENERAL ENG FUEL VALVE:1, bool",
+   "mode": "toggle",
+   "read": "INI_MIXTURE_RATIO1_HANDLE",
    "positions": [
     {
      "value": 0,
@@ -4782,7 +4783,9 @@
      "input": 1,
      "label": "On"
     }
-   ]
+   ],
+   "rpn": "{value} (>B:AIRLINER_ENG1_CUTOFF_Set)",
+   "notes": "not verified in the sim: the A340's Set toggles; pressed only when the read differs"
   },
   {
    "key": "A330_ENG2_MASTER",
@@ -4791,8 +4794,8 @@
    "label": "Engine 2 master",
    "kind": "select",
    "event": "AIRLINER_ENG2_CUTOFF",
-   "mode": "set",
-   "read": "A:GENERAL ENG FUEL VALVE:2, bool",
+   "mode": "toggle",
+   "read": "INI_MIXTURE_RATIO2_HANDLE",
    "positions": [
     {
      "value": 0,
@@ -4804,7 +4807,9 @@
      "input": 1,
      "label": "On"
     }
-   ]
+   ],
+   "rpn": "{value} (>B:AIRLINER_ENG2_CUTOFF_Set)",
+   "notes": "not verified in the sim: the A340's Set toggles; pressed only when the read differs"
   },
   {
    "key": "A330_ECAM_ENG",

@@ -47,6 +47,12 @@ public static class FirstOfficerWindows
             (ifly, sc, a, s) => Window(new Fo.IFly737.IFly737FoProfile(ifly, a), sc, a, s)),
         ["TFDI_MD11"] = Of<TFDiMD11Definition>("TFDi MD-11 First Officer",
             (md11, sc, a, s) => Window(new Fo.MD11.Md11FoProfile(md11), sc, a, s)),
+        // One profile class for both iniBuilds airframes, bound to each one's keys. IniA321Definition
+        // derives from IniA330Definition; the exact-code keys keep each on its own row.
+        ["INI_A330"] = Of<IniA330Definition>("iniBuilds A330 First Officer",
+            (a330, sc, a, s) => Window(Fo.IniAirbus.IniAirbusFoProfile.ForA330(a330, a), sc, a, s)),
+        ["INI_A321"] = Of<IniA321Definition>("iniBuilds A321LR First Officer",
+            (a321, sc, a, s) => Window(Fo.IniAirbus.IniAirbusFoProfile.ForA321(a321, a), sc, a, s)),
     };
 
     private static Row? RowFor(IAircraftDefinition? aircraft) =>
