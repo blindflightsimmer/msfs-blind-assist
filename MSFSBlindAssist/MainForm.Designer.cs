@@ -24,6 +24,7 @@
         private System.Windows.Forms.ToolStripMenuItem headwindA330MenuItem = null!;
         private System.Windows.Forms.ToolStripMenuItem ifly737MaxMenuItem = null!;
         private System.Windows.Forms.ToolStripMenuItem tfdiMd11MenuItem = null!;
+        private System.Windows.Forms.ToolStripMenuItem bbs757MenuItem = null!;
         private System.Windows.Forms.ToolStripMenuItem iniA330MenuItem = null!;
         private System.Windows.Forms.ToolStripMenuItem iniA321MenuItem = null!;
         private System.Windows.Forms.ToolStripMenuItem extrasMenuItem = null!;
@@ -68,6 +69,7 @@
             this.headwindA330MenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.ifly737MaxMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.tfdiMd11MenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.bbs757MenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.iniA330MenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.iniA321MenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.extrasMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -217,6 +219,7 @@
             this.horizonSim787MenuItem,
             this.ifly737MaxMenuItem,
             this.tfdiMd11MenuItem,
+            this.bbs757MenuItem,
             this.iniA330MenuItem,
             this.iniA321MenuItem});
             this.aircraftMenuItem.Name = "aircraftMenuItem";
@@ -313,6 +316,16 @@
             this.tfdiMd11MenuItem.Checked = false;
             this.tfdiMd11MenuItem.Click += new System.EventHandler(this.TFDiMD11MenuItem_Click);
             //
+            // bbs757MenuItem
+            //
+            this.bbs757MenuItem.AccessibleName = "BlueBird 757-200";
+            this.bbs757MenuItem.AccessibleDescription = "Switch to the BlueBird 757-200";
+            this.bbs757MenuItem.Name = "bbs757MenuItem";
+            this.bbs757MenuItem.Size = new System.Drawing.Size(240, 26);
+            this.bbs757MenuItem.Text = "&BlueBird 757-200";
+            this.bbs757MenuItem.Checked = false;
+            this.bbs757MenuItem.Click += new System.EventHandler(this.BBS757MenuItem_Click);
+            //
             // iniA330MenuItem
             //
             this.iniA330MenuItem.AccessibleName = "iniBuilds Airbus A330 (MSFS 2024)";
@@ -332,6 +345,7 @@
             this.iniA321MenuItem.Text = "iniBuilds Airbus A32&1LR (MSFS 2024)";
             this.iniA321MenuItem.Checked = false;
             this.iniA321MenuItem.Click += new System.EventHandler(this.IniA321MenuItem_Click);
+            //
             // extrasMenuItem
             //
             this.extrasMenuItem.AccessibleName = "Extras menu";
