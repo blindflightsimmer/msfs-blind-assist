@@ -383,6 +383,48 @@ Full explanations: [Headwind A330-900neo](airbus-aircraft.md#airbus-a330).
 
 The keys are exactly those of the [FlyByWire A320neo](#hk-a32nx), including the MCDU, DCDU and flyPad windows. The only difference you will hear is **Output B**, which reads the simulator's own altimeter on this aircraft.
 
+## iniBuilds A330 (MSFS 2024) {#hk-ini-a330}
+
+Full explanations: [iniBuilds A330 (MSFS 2024)](airbus-aircraft.md#airbus-ini-a330).
+
+### Output keys {#output-keys-ini-a330}
+
+| Key | Action |
+|---|---|
+| Shift+H | FCU heading or track, with the lateral mode |
+| Shift+S | FCU speed or Mach, with the thrust mode (managed speed says so) |
+| Shift+A | FCU altitude, with the vertical mode |
+| Shift+V | FCU vertical speed or flight path angle, with the vertical mode |
+| Shift+1, Shift+2, Shift+3, Shift+4, Shift+6 | Green dot, S speed, F speed, VLS, maximum speed |
+| Ctrl+0 | Landing capability |
+| L | Flap lever and slat and flap angles |
+| Shift+G | Gear lever |
+| F | Fuel, total and each tank |
+| B | Altimeter |
+| N | ILS, both VORs and VHF 1 |
+| D | Distance to destination |
+| Shift+D | Distance to top of descent |
+| Alt+P, Alt+N, Alt+E, Alt+S | AI read of the PFD, ND, upper ECAM, system display |
+| Ctrl+M | Monitor Manager |
+| Shift+C | First Officer |
+
+### Input keys {#input-keys-ini-a330}
+
+| Key | Action |
+|---|---|
+| Ctrl+H, Ctrl+S, Ctrl+A, Ctrl+V | Set FCU heading, speed, altitude, vertical speed |
+| Ctrl+B | Altimeter window |
+| Ctrl+P | A330 Autopilot window |
+| Ctrl+1 to Ctrl+4 | Pull the heading, altitude, speed, V/S knob |
+| Shift+1 to Shift+4 | Push the heading, altitude, speed, V/S knob |
+| Shift+A | Autopilot 1 |
+| Ctrl+O | Autopilot 2 |
+| Ctrl+J | Autothrust |
+| Ctrl+L | LOC |
+| Shift+P | APPR |
+| Shift+M | MCDU window |
+| Shift+T | EFB |
+
 ## PMDG 737 {#hk-pmdg737}
 
 Full explanations: [PMDG 737 (NG3)](boeing-aircraft-and-the-md-11.md#boeing-pmdg737).

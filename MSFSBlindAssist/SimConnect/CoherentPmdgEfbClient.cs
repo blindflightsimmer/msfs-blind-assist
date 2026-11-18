@@ -134,6 +134,13 @@ namespace MSFSBlindAssist.SimConnect
         public static CoherentPmdgEfbClient ForMd11()
             => new("TFDi_MD11_efb", "coherent-md11-efb-agent.js", "__MSFSBA_MD11_EFB", side: null);
 
+        /// <summary>
+        /// The iniBuilds A330 (MSFS 2024) EFB: one Coherent view titled "VCockpitNN - iniEfbA330", an
+        /// msfs-sdk/Bootstrap tablet with a side bar for its pages, read by its own agent.
+        /// </summary>
+        public static CoherentPmdgEfbClient ForIniA330()
+            => new("iniEfbA330", "coherent-a330-efb-agent.js", "__MSFSBA_A330_EFB", side: null);
+
         public void Start()
         {
             if (_cts != null)

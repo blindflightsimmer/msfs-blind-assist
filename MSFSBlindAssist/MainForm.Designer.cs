@@ -25,6 +25,7 @@
         private System.Windows.Forms.ToolStripMenuItem ifly737MaxMenuItem = null!;
         private System.Windows.Forms.ToolStripMenuItem tfdiMd11MenuItem = null!;
         private System.Windows.Forms.ToolStripMenuItem bbs757MenuItem = null!;
+        private System.Windows.Forms.ToolStripMenuItem iniA330MenuItem = null!;
         private System.Windows.Forms.ToolStripMenuItem extrasMenuItem = null!;
         private System.Windows.Forms.ToolStripMenuItem volantaMenuItem = null!;
         private System.Windows.Forms.ToolStripMenuItem helpMenuItem = null!;
@@ -68,6 +69,7 @@
             this.ifly737MaxMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.tfdiMd11MenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.bbs757MenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.iniA330MenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.extrasMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.volantaMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.helpMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -215,7 +217,8 @@
             this.horizonSim787MenuItem,
             this.ifly737MaxMenuItem,
             this.tfdiMd11MenuItem,
-            this.bbs757MenuItem});
+            this.bbs757MenuItem,
+            this.iniA330MenuItem});
             this.aircraftMenuItem.Name = "aircraftMenuItem";
             this.aircraftMenuItem.Size = new System.Drawing.Size(75, 24);
             this.aircraftMenuItem.Text = "&Aircraft";
@@ -319,6 +322,16 @@
             this.bbs757MenuItem.Text = "&BlueBird 757-200";
             this.bbs757MenuItem.Checked = false;
             this.bbs757MenuItem.Click += new System.EventHandler(this.BBS757MenuItem_Click);
+            //
+            // iniA330MenuItem
+            //
+            this.iniA330MenuItem.AccessibleName = "iniBuilds Airbus A330 (MSFS 2024)";
+            this.iniA330MenuItem.AccessibleDescription = "Switch to the iniBuilds Airbus A330 (MSFS 2024)";
+            this.iniA330MenuItem.Name = "iniA330MenuItem";
+            this.iniA330MenuItem.Size = new System.Drawing.Size(240, 26);
+            this.iniA330MenuItem.Text = "iniBuilds Airbus A33&0 (MSFS 2024)";
+            this.iniA330MenuItem.Checked = false;
+            this.iniA330MenuItem.Click += new System.EventHandler(this.IniA330MenuItem_Click);
             //
             // extrasMenuItem
             //

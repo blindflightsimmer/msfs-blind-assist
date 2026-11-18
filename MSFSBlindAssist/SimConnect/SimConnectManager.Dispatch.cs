@@ -46,6 +46,9 @@ public partial class SimConnectManager
             // guard applies until the next answer re-learns it (OwnAircraftFilter).
             _ownAircraft.Reset();
             AircraftLoaded?.Invoke(this, data.szFileName ?? string.Empty);
+            // A newly loaded model has its own input events (and hashes): re-read them for an aircraft
+            // that reads input events (no-op for every other aircraft).
+            RefreshInputEventReads(reenumerate: true);
             // Re-read ATC MODEL so AircraftIcaoTypeDetected fires for the newly loaded aircraft.
             RequestAircraftInfo();
         }

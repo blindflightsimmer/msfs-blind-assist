@@ -415,6 +415,13 @@ public class UserSettings
         [JsonIgnore]
         public HashSet<string> BBS757DisabledMonitorVariablesSet { get; private set; } = new HashSet<string>();
 
+        // iniBuilds A330 (MSFS 2024) Monitor Manager (Ctrl+M): unticked background announcements. Persisted.
+        public List<string> A330DisabledMonitorVariables { get; set; } = new List<string>();
+
+        /// <summary>Runtime-only HashSet sidecar of <see cref="A330DisabledMonitorVariables"/>.</summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public HashSet<string> A330DisabledMonitorVariablesSet { get; private set; } = new HashSet<string>();
+
         // The MD-11 walker's learned step polarity (docs/md11.md §3): node ids whose step events run
         // INVERTED relative to the walker's conventional guess (left click / wheel up = increase).
         // Absent = conventional. Written the moment a wrong-way step teaches the walker, read on the
@@ -665,6 +672,7 @@ public class UserSettings
         IFlyDisabledMonitorVariablesSet = new HashSet<string>(IFlyDisabledMonitorVariables);
         Md11DisabledMonitorVariablesSet = new HashSet<string>(Md11DisabledMonitorVariables);
         BBS757DisabledMonitorVariablesSet = new HashSet<string>(BBS757DisabledMonitorVariables);
+        A330DisabledMonitorVariablesSet = new HashSet<string>(A330DisabledMonitorVariables);
     }
 
     /// <summary>

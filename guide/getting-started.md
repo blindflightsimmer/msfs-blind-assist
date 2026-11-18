@@ -215,7 +215,7 @@ If the simulator closes or the connection drops, BA says *"Disconnected from sim
 
 BA has a separate profile for each aircraft it supports: its own panels, hotkeys and announcements. BA does not switch profiles for you when you load a different aircraft in the simulator. Choose the matching profile from the **Aircraft** menu. BA remembers your choice and uses it the next time it starts. The first time you run BA, the FlyByWire A320neo is selected.
 
-The Aircraft menu lists the ten supported aircraft, in this order:
+The Aircraft menu lists the eleven supported aircraft, in this order:
 
 1. FlyByWire Airbus A320neo
 2. FlyByWire Airbus A380X
@@ -227,6 +227,7 @@ The Aircraft menu lists the ten supported aircraft, in this order:
 8. iFly Boeing 737 MAX8
 9. TFDi Design MD-11
 10. BlueBird 757-200
+11. iniBuilds Airbus A330 (MSFS 2024)
 
 To open the menu, press Alt, then use Right Arrow to reach Aircraft and Down Arrow to move through the list; the current aircraft is marked as checked. Press Enter on the one you are flying. You hear *"Switched to"* and the aircraft name, and the main window's Sections list fills with that aircraft's sections.
 

@@ -158,6 +158,7 @@ public partial class MainForm
             "IFLY_737MAX8" => new IFly737MAXDefinition(),
             "TFDI_MD11" => new TFDiMD11Definition(),
             "BBS_757" => new BBS757Definition(),
+            "INI_A330" => new IniA330Definition(),
             // Future aircraft will be added here
             _ => new FlyByWireA320Definition() // Default to A320
         };
@@ -917,6 +918,9 @@ public partial class MainForm
         if (simConnectManager.IsConnected)
         {
             simConnectManager.ReregisterAllVariables();
+            // An Aircraft-menu switch never reconnects, so nothing else would subscribe the new
+            // aircraft's input-event reads (the iniBuilds A330's switch states).
+            simConnectManager.RefreshInputEventReads(reenumerate: false);
             simConnectManager.RestartContinuousMonitoring();
             // Re-read ATC MODEL / ICAO for the newly selected aircraft definition so
             // the door-offset map is refreshed for the new aircraft profile.
@@ -1315,6 +1319,7 @@ public partial class MainForm
         ifly737MaxMenuItem.Checked = false;
         tfdiMd11MenuItem.Checked = false;
         bbs757MenuItem.Checked = false;
+        iniA330MenuItem.Checked = false;
 
         // Set the check on the current aircraft's menu item.
         // NOTE: HeadwindA330Definition derives from FlyByWireA320Definition, so it MUST
@@ -1322,6 +1327,10 @@ public partial class MainForm
         if (currentAircraft is TFDiMD11Definition)
         {
             tfdiMd11MenuItem.Checked = true;
+        }
+        else if (currentAircraft is IniA330Definition)
+        {
+            iniA330MenuItem.Checked = true;
         }
         else if (currentAircraft is HeadwindA330Definition)
         {

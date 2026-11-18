@@ -16,17 +16,18 @@ Chapter 1 of 2 in [Part 8: Aircraft Guides](index.md#part-7-aircraft-guides) of 
 - [Fenix A320 CEO](#airbus-fenix)
 - [FlyByWire A380X](#airbus-a380)
 - [Headwind A330-900neo](#airbus-a330)
+- [iniBuilds A330 (MSFS 2024)](#airbus-ini-a330)
 
 </nav>
 
-BA supports four Airbus aircraft: the FlyByWire A320neo (often called the A32NX), the Fenix A320 CEO, the FlyByWire A380X and the Headwind A330-900neo. Three of them come from the same family of code. The Headwind A330 is built on top of the FlyByWire A320, and the A380X is made by the same FlyByWire team, so once you have learned one of these three, the others will feel familiar. The Fenix is a separate product with its own way of working, and BA treats it differently in a few places.
+BA supports five Airbus aircraft: the FlyByWire A320neo (often called the A32NX), the Fenix A320 CEO, the FlyByWire A380X, the Headwind A330-900neo and the iniBuilds A330 that comes with MSFS 2024. Three of them come from the same family of code. The Headwind A330 is built on top of the FlyByWire A320, and the A380X is made by the same FlyByWire team, so once you have learned one of these three, the others will feel familiar. The Fenix and the iniBuilds A330 are separate products with their own way of working, and BA treats them differently in a few places.
 
-A few things are true of all four:
+A few things are true of all five:
 
 - BA does not switch profiles by itself: choose the aircraft from the Aircraft menu before you fly (see [Choosing Your Aircraft](getting-started.md#gs-aircraft)).
-- They all need the free MobiFlight WASM module to operate switches and knobs (see [What You Need](getting-started.md#gs-requirements)).
+- They all need the free MobiFlight WASM module to operate switches and knobs (see [What You Need](getting-started.md#gs-requirements)). On the iniBuilds A330 most panel switches work without it, but its MCDU and FCU still need it.
 - The FCU windows work as described in [Autopilot Windows](takeoff-climb-and-cruise.md#autopilot-windows); this chapter covers the Airbus details.
-- On the A32NX, the Headwind A330 and the Fenix, the MCDU line select keys are Ctrl+1 to Ctrl+6 (left) and Alt+1 to Alt+6 (right), or F1 to F12 with the alternate setting in [FMC Settings](planning-your-flight.md#planning-fmc-settings). The A380's MFD has no line select keys; you arrow to a line and press Enter instead (see its section).
+- On the A32NX, the Headwind A330, the Fenix and the iniBuilds A330, the MCDU line select keys are Ctrl+1 to Ctrl+6 (left) and Alt+1 to Alt+6 (right), or F1 to F12 with the alternate setting in [FMC Settings](planning-your-flight.md#planning-fmc-settings). The A380's MFD has no line select keys; you arrow to a line and press Enter instead (see its section).
 - Output Ctrl+M opens the aircraft's [Monitor Manager](core-concepts.md#monitor-manager).
 
 ## FlyByWire A320neo (A32NX) {#airbus-a32nx}
@@ -719,6 +720,85 @@ The hotkeys and automatic callouts are the A32NX's, including *"V1"*, *"Rotate"*
 
 - **The Ctrl+B altimeter window** sets both sides as on the A32NX. Its own change is not announced twice.
 - **Visual guidance and taxi guidance use widebody settings** on the A330: a heavier, faster approach profile and a slightly earlier turn cue when taxiing, to suit the longer aircraft.
+
+## iniBuilds A330 (MSFS 2024) {#airbus-ini-a330}
+
+The iniBuilds A330-200 is the A330 that comes with Microsoft Flight Simulator 2024. It is a different aircraft from the Headwind A330-900neo above, and it works differently in BA: choose **iniBuilds Airbus A330 (MSFS 2024)** from the Aircraft menu, not the Headwind profile. It is an MSFS 2024 aircraft only.
+
+<div class="callout note" role="note" markdown="1">
+
+**Note:** Support for this aircraft is new and has not yet been flown through every phase of flight. The flight mode words, the autopilot, autothrust, LOC and APPR buttons in the air, the parking brake direction, the MCDU overfly key, the altimeter window's Standard button and the engine masters have not been checked in flight yet. Report anything that reads wrong.
+
+</div>
+
+### Before you fly {#before-you-fly-ini-a330}
+
+You need:
+
+- MSFS 2024 with the iniBuilds A330.
+- The MobiFlight WASM module. Most panel switches work without it, but the MCDU, the FCU knob pushes and pulls, the FCU set windows and the momentary buttons (ECAM page keys, calls, master warning and caution) need it.
+- The MCDU powered and its brightness up: BA reads the MCDU from its screen, so a dark MCDU reads as blank. The two MCDU brightness controls are on the **Display Brightness** panel.
+
+### How the panels are organised {#how-the-panels-are-organised-ini-a330}
+
+The panels follow the same order as the other Airbus aircraft: Overhead, Glareshield, Main Instrument Panel, Pedestal.
+
+- **Overhead:** Electrical, ADIRS, APU, Oxygen, Fire (engine 1, APU and engine 2 fire handles, agents and tests), Hydraulics, Fuel, Air Conditioning, Bleed Air, Pressurization, Ventilation, Anti-Ice, Wipers, Signs, Interior Lights, Exterior Lights, Calls, GPWS, Flight Control Computers (PRIMs and SECs), Cargo Smoke, Recorders and Engine Start (engine mode selector, manual start, FADEC ground power).
+- **Glareshield:** FCU (every FCU button and switch, with the FCU windows and the autopilot and autothrust state in its status box), Flight Modes (the flight mode annunciator, read live), Captain EFIS, First Officer EFIS and Warnings.
+- **Main Instrument Panel:** Landing Gear, Brakes (autobrake, anti-skid, brake fans), Standby Instrument, Instrument Switching, Clocks and Display Brightness.
+- **Pedestal:** Flaps and Speedbrake, Parking Brake, Engine Masters, ECAM, Weather Radar, Transponder and TCAS, Captain Radio Panel and Captain Audio.
+
+A switch under a guard has its own "guard" row just before it.
+
+### Autopilot / FCU windows {#autopilot-fcu-windows-ini-a330}
+
+Input Ctrl+H, Ctrl+S, Ctrl+A and Ctrl+V set the heading (or track), speed (knots or Mach), altitude and vertical speed (or flight path angle). BA sets the FCU window directly and reads it back, so you hear the value the FCU really shows. Each window also has the buttons that sit beside that knob on the real FCU, each showing its live state:
+
+- **Heading:** heading pull, heading push (NAV), LOC, and HDG-V/S or TRK-FPA.
+- **Speed:** speed pull, speed push, SPD/MACH and A/THR.
+- **Altitude:** altitude pull, altitude push, ALT, knob steps (100 or 1000 feet), metric altitude, AP 1 and AP 2.
+- **Vertical speed:** V/S pull, V/S push (level off), HDG-V/S or TRK-FPA, and APPR.
+
+Input Ctrl+P opens the **A330 Autopilot** window, with both autopilots, A/THR, LOC, APPR, all four knobs' push and pull, ALT and a **Read flight modes** button. The knob keys Input Ctrl+1 to Ctrl+4 (pull) and Shift+1 to Shift+4 (push), and the autoflight keys (Shift+A autopilot 1, Ctrl+O autopilot 2, Ctrl+J autothrust, Ctrl+L LOC, Shift+P APPR) work as on the other Airbus aircraft. What engages is announced from the aircraft's own state, not from the key press, so you hear what actually happened.
+
+Input Ctrl+B opens the altimeter window. Type hectopascals (900 to 1100) or inches (26.00 to 32.00); its **Standard** button switches between STD and QNH.
+
+### MCDU {#mcdu-ini-a330}
+
+Input Shift+M opens the **A330 MCDU** window. This A330 does not share its MCDU text, so BA reads the screen itself. The first time you open the window, BA pops the captain's MCDU out of the cockpit: it briefly switches to the MCDU camera, brings the simulator to the front, clicks the MCDU and moves the pop-out off your desktop, then puts your camera and focus back. This takes a few seconds.
+
+Inside the window:
+
+- Ctrl+1 to Ctrl+6 are the left line select keys and Alt+1 to Alt+6 the right ones (or F1 to F12 with the alternate layout).
+- Type into the scratchpad field and press Enter to send it. Alt+S jumps to the scratchpad, Alt+Home back to the screen.
+- Page Up and Page Down (or Alt+Up and Alt+Down) scroll the flight plan; Alt+Left and Alt+Right change page. Backspace is CLR when the screen has focus.
+- Page keys: Alt+D DIR, Alt+G PROG, Alt+P PERF, Alt+I INIT, Alt+A DATA, Alt+F F-PLN, Alt+R RAD NAV, Alt+U FUEL PRED, Alt+X SEC F-PLN, Alt+T ATC COMM, Alt+M MCDU MENU, Alt+O AIRPORT.
+
+Text the MCDU draws in grey, an option that is not available yet, is read with "(unavailable)" after it.
+
+### EFB {#efb-ini-a330}
+
+Input Shift+T opens the tablet in a window called **A330 EFB**. Its Pages list is the tablet's side bar: Dashboard, OFP, Ground (doors, GPU, the aircraft's chocks and covers, jetway, catering, luggage, pushback), Payload, Panel State, Take Off (performance) and Options. Doors and ground equipment say their state.
+
+### Aircraft-specific hotkeys and callouts {#aircraft-specific-hotkeys-and-callouts-ini-a330}
+
+In output mode:
+
+- **Shift+H, Shift+S, Shift+A, Shift+V** read the FCU heading, speed, altitude and vertical speed, each followed by the active mode, for example *"FCU altitude 5000 feet"* and then the vertical mode. When the speed is managed, Shift+S says *"Speed managed"* with the managed target speed.
+- **Shift+1 to Shift+4 and Shift+6** read green dot, S speed, F speed, VLS and the maximum speed.
+- **Ctrl+0** reads the landing capability, or *"No landing capability shown"*.
+- **L** reads the flap lever and the actual slat and flap angles, **Shift+G** the gear lever, **F** the fuel (total and each tank, in the aircraft's own weight unit), **B** the altimeter, **N** the ILS, both VORs and VHF 1.
+- **D** and **Shift+D** read the distance to the destination and to the top of descent, with the time at the current ground speed.
+- **Alt+P, Alt+N, Alt+E, Alt+S** read the PFD, ND, upper ECAM and system display with AI vision (they need a Gemini or Claude API key). BA switches to the aircraft's own instrument camera for these.
+- **Ctrl+M** opens the A330 Monitor Manager. Its "Flight mode changes" row mutes every flight mode callout; V1, Rotate and V2 each have their own row.
+- **Shift+C** opens the First Officer.
+
+BA announces flight mode changes (thrust, vertical, lateral, armed modes and landing capability), autopilot 1, autopilot 2 and autothrust engaging and disengaging, the flap lever positions, and *"V1"*, *"Rotate"* and *"V2"* on the take-off roll.
+
+### Things to know {#things-to-know-ini-a330}
+
+- **The first MCDU open moves your camera for a moment.** BA puts it back afterwards. If the camera ever stays on the MCDU, press your own view key.
+- **Unknown flight modes are read as a number**, for example *"vertical mode 17"*, rather than guessed. Report the number and what the aircraft was doing.
 
 <nav class="guide-nav" aria-label="Guide chapters" markdown="1">
 
